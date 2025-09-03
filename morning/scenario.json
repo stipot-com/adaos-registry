@@ -1,0 +1,27 @@
+{
+  "id": "morning",
+  "version": "1.0.0",
+  "name": "Доброе утро",
+  "triggers": [
+    { "type": "intent", "name": "good_morning", "runOn": "member:self" }
+  ],
+  "slots": { "weather": { "cap": "weather" } },
+  "params": { "city": "${ctx.user.city}" },
+  "io": {
+    "input": ["voice", "text"],
+    "output": ["voice", "text"],
+    "settings": { "output.active": "voice" }
+  },
+  "steps": [
+    { "id": "hello", "do": "say", "text": "Доброе утро, ${ctx.user.name}!" },
+    {
+      "id": "w",
+      "do": "call",
+      "slot": "weather",
+      "method": "get",
+      "args": { "city": "${params.city}" },
+      "alias": "w"
+    },
+    { "id": "say", "do": "say", "text": "Сейчас ${w.temp}°C, ${w.description}" }
+  ]
+}
