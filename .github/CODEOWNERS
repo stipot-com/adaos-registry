@@ -1,0 +1,6 @@
+# глобально
+*                              @your-org/core-team
+
+# точечно (пример)
+skills/*                        @your-org/skills-owners
+scenarios/*                     @your-org/scenarios-owners
