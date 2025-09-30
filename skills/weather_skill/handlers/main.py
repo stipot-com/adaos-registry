@@ -3,7 +3,7 @@ from typing import Dict, Optional, Tuple
 
 import requests
 
-from adaos.sdk.skills.i18n import _
+from adaos.sdk.data.i18n import _
 from adaos.sdk.data.context import get_current_skill
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data.bus import emit
