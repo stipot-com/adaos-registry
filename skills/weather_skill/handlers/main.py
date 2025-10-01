@@ -3,12 +3,12 @@ from typing import Dict, Optional, Tuple
 
 import requests
 
+from adaos.sdk.data import secrets as skill_secrets
 from adaos.sdk.data.i18n import _
-from adaos.sdk.data.context import get_current_skill
+from adaos.sdk.data.context import get_current_skill, set_current_skill
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data.bus import emit
 from adaos.sdk.data.skill_memory import get as get_env, set as set_env
-from adaos.services.agent_context import get_ctx
 
 """   ```
 
@@ -33,7 +33,7 @@ def _load_and_cache_config() -> Tuple[Optional[str], Optional[str], Optional[str
     Возвращает (api_key, api_entry_point, default_city), беря сперва из env,
     затем — из prep/prep_result.json, и кэширует обратно в env.
     """
-    api_key = get_env("api_key")
+    api_key = skill_secrets.read("api_key") or get_env("api_key")
     api_entry_point = get_env("api_entry_point")
     default_city = get_env("default_city")
 
@@ -46,12 +46,12 @@ def _load_and_cache_config() -> Tuple[Optional[str], Optional[str], Optional[str
         if prep_file.exists():
             data = json.loads(prep_file.read_text(encoding="utf-8"))
             res = data.get("resources", {}) or {}
-            api_key = api_key or res.get("api_key")
+            if not api_key and res.get("api_key"):
+                api_key = res["api_key"]
+                skill_secrets.write("api_key", api_key)
             api_entry_point = api_entry_point or res.get("api_entry_point")
             default_city = default_city or res.get("default_city")
 
-            if api_key:
-                set_env("api_key", api_key)
             if api_entry_point:
                 set_env("api_entry_point", api_entry_point)
             if default_city:
@@ -120,7 +120,7 @@ def handle(topic: str, payload: dict):
       - topic: строка события/интента
       - payload: словарь с возможным ключом "city"
     """
-    get_ctx().skill_ctx.set("weather_skill", get_ctx().paths.skills_dir() / "weather_skill")
+    set_current_skill("weather_skill")
     api_key, api_entry_point, default_city = _load_and_cache_config()
     if not api_key:
         output(_("prep.weather.missing_key"))
@@ -167,6 +167,22 @@ def get_weather(city: str) -> dict:
         return {"ok": False, **data}
 
     return {"ok": True, **data}
+
+
+@tool("setup")
+def setup(payload: Optional[dict] = None) -> dict:
+    payload = payload or {}
+    provided = (payload.get("api_key") or "").strip()
+    if not provided:
+        try:
+            provided = input("Enter weather API key: ").strip()
+        except EOFError:
+            provided = ""
+    if not provided:
+        return {"ok": False, "error": "api_key not provided"}
+
+    skill_secrets.write("api_key", provided)
+    return {"ok": True, "message": "api key saved"}
 
 
 # подписка на событие: nlp.intent.weather.get

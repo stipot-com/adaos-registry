@@ -9,6 +9,7 @@
   "permissions": [
     "network"
   ],
+  "default_tool": "get_weather",
   "tools": [
     {
       "name": "get_weather",
@@ -33,6 +34,30 @@
           "city": {"type": "string"},
           "temp": {"type": "number"},
           "description": {"type": "string"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "setup",
+      "entry": "handlers.main:setup",
+      "description": "Collect credentials required to call the upstream API",
+      "timeout": 60,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "description": "Optional API key provided via CLI payload"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["ok"],
+        "properties": {
+          "ok": {"type": "boolean"},
+          "message": {"type": "string"},
           "error": {"type": "string"}
         }
       }
