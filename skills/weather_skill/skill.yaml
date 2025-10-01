@@ -1,6 +1,7 @@
+# yaml-language-server: $schema=../../../src/adaos/abi/skill.schema.json
 # .adaos\skills\weather_skill\skill.yaml
 name: weather_skill
-version: 1.0.4
+version: "1.0.4"
 description: Навык для получения текущей погоды на сегодня
 runtime:
   python: "3.11"
