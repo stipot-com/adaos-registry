@@ -1,4 +1,4 @@
-from handlers.main import get_weather
+from skills.weather_skill.handlers.main import get_weather
 
 if __name__ == "__main__":
     result = get_weather(city="Test City")
