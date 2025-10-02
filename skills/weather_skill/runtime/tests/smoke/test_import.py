@@ -3,8 +3,8 @@ import sys
 from pathlib import Path
 
 
-def _ensure_src_on_path() -> None:
-    """Insert the slot src directory so namespace imports work standalone."""
+def _ensure_slot_paths() -> None:
+    """Insert vendored and source directories for the active slot."""
 
     current = Path(__file__).resolve()
     try:
@@ -12,10 +12,20 @@ def _ensure_src_on_path() -> None:
     except StopIteration as exc:  # pragma: no cover - defensive guard
         raise RuntimeError("unable to locate slot src directory") from exc
 
-    src_str = str(src_root)
-    if src_str not in sys.path:
-        sys.path.insert(0, src_str)
+    slot_root = src_root.parent
+    vendor_root = slot_root / "vendor"
+
+    paths: list[Path] = []
+    if vendor_root.is_dir():
+        paths.append(vendor_root)
+    paths.append(src_root)
+
+    for path in reversed(paths):
+        path_str = str(path)
+        if path_str not in sys.path:
+            sys.path.insert(0, path_str)
+
 
 if __name__ == "__main__":
-    _ensure_src_on_path()
+    _ensure_slot_paths()
     importlib.import_module("skills.weather_skill.handlers.main")
