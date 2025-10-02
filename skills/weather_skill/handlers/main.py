@@ -1,168 +1,133 @@
+"""Weather skill handlers for the runtime reference implementation."""
+
+from __future__ import annotations
+
 import json
 from typing import Dict, Optional, Tuple
 
 import requests
 
-from adaos.sdk.data import secrets as skill_secrets
-from adaos.sdk.data.i18n import _
-from adaos.sdk.data.context import get_current_skill, set_current_skill
 from adaos.sdk.core.decorators import subscribe, tool
+from adaos.sdk.data import secrets as skill_secrets
 from adaos.sdk.data.bus import emit
-from adaos.sdk.data.skill_memory import get as get_env, set as set_env
-
-"""   ```
-
-  Example:
-
-  ```python
-  city = entities.get("city") or get("last_city") or get_env("default_city") """
-from adaos.sdk.data.skill_memory import get, set
+from adaos.sdk.data.context import get_current_skill, set_current_skill
+from adaos.sdk.data.i18n import _
+from adaos.sdk.data.skill_memory import get as memory_get, set as memory_set
 
 
-# ---------------------------
-# helpers: config & api calls
-# ---------------------------
+DEFAULT_API_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
 
 
-def output(txt: str):
-    print(txt)
+def _output(message: str) -> None:
+    print(message)
 
 
-def _load_and_cache_config() -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """
-    Возвращает (api_key, api_entry_point, default_city), беря сперва из env,
-    затем — из prep/prep_result.json, и кэширует обратно в env.
-    """
-    api_key = skill_secrets.read("api_key") or get_env("api_key")
-    api_entry_point = get_env("api_entry_point")
-    default_city = get_env("default_city")
+def _load_config() -> Tuple[Optional[str], str, Optional[str]]:
+    """Load the runtime configuration from the SDK stores."""
 
-    if api_key and api_entry_point and default_city:
-        return api_key, api_entry_point, default_city
+    api_key = skill_secrets.get("api_key")
+    api_entry_point = memory_get("api_entry_point") or DEFAULT_API_ENDPOINT
+    default_city = memory_get("default_city")
 
-    # попытка подтянуть из prep_result.json
+    if api_entry_point is None:
+        api_entry_point = DEFAULT_API_ENDPOINT
+
+    # Legacy support: migrate values from the local prep cache if present.
     try:
-        prep_file = get_current_skill().path / "prep" / "prep_result.json"
-        if prep_file.exists():
-            data = json.loads(prep_file.read_text(encoding="utf-8"))
-            res = data.get("resources", {}) or {}
-            if not api_key and res.get("api_key"):
-                api_key = res["api_key"]
-                skill_secrets.write("api_key", api_key)
-            api_entry_point = api_entry_point or res.get("api_entry_point")
-            default_city = default_city or res.get("default_city")
-
-            if api_entry_point:
-                set_env("api_entry_point", api_entry_point)
-            if default_city:
-                set_env("default_city", default_city)
+        skill = get_current_skill()
+        if skill:
+            prep_file = skill.path / "prep" / "prep_result.json"
+            if prep_file.exists():
+                data = json.loads(prep_file.read_text(encoding="utf-8"))
+                resources = data.get("resources") or {}
+                if not api_key and resources.get("api_key"):
+                    api_key = resources["api_key"]
+                    skill_secrets.set("api_key", api_key)
+                if not default_city and resources.get("default_city"):
+                    default_city = resources["default_city"]
+                    memory_set("default_city", default_city)
+                if resources.get("api_entry_point"):
+                    api_entry_point = resources["api_entry_point"]
+                    memory_set("api_entry_point", api_entry_point)
     except Exception:
-        # молча: отсутствие prep — нормальный кейс
+        # Prep artefacts are optional; swallow errors to keep runtime resilient.
         pass
 
     return api_key, api_entry_point, default_city
 
 
-def _resolve_city(payload_city: Optional[str] = None) -> Optional[str]:
-    """
-    Выбираем город по приоритету:
-    1) переданный в payload/entities,
-    2) last_city (skill_memory),
-    3) default_city (env).
-    """
-    city = payload_city or get("last_city") or get_env("default_city")
+def _resolve_city(requested_city: Optional[str]) -> Optional[str]:
+    city = requested_city or memory_get("last_city") or memory_get("default_city")
     if city:
-        set("last_city", city)
+        memory_set("last_city", city)
     return city
 
 
 def _fetch_weather(api_entry_point: str, api_key: str, city: str) -> Tuple[bool, Dict]:
-    """
-    Делает запрос к погодному API. Возвращает (ok, data_or_error).
-    """
     try:
-        r = requests.get(
+        response = requests.get(
             api_entry_point,
             params={"q": city, "appid": api_key, "units": "metric", "lang": "en"},
             timeout=6,
         )
-    except Exception as e:
-        return False, {"error": f"request_error: {e!s}"}
+    except Exception as exc:  # pragma: no cover - network error surface only
+        return False, {"error": f"request_error: {exc!s}"}
 
-    if r.status_code != 200:
-        return False, {"error": f"api_status_{r.status_code}"}
+    if response.status_code != 200:
+        return False, {"error": f"api_status_{response.status_code}"}
 
     try:
-        d = r.json()
+        payload = response.json()
     except Exception:
         return False, {"error": "invalid_json"}
 
-    temp = (d.get("main") or {}).get("temp")
-    desc = (d.get("weather") or [{}])[0].get("description", "")
-
+    main = payload.get("main") or {}
+    temp = main.get("temp")
+    description = (payload.get("weather") or [{}])[0].get("description", "")
     if temp is None:
         return False, {"error": "invalid_response"}
 
-    return True, {"city": city, "temp": temp, "description": desc}
+    return True, {"city": city, "temp": temp, "description": description}
 
 
-# ---------------------------
-# primary entrypoints
-# ---------------------------
+def handle(topic: str, payload: dict) -> None:
+    """Local development entrypoint for the skill."""
 
-
-def handle(topic: str, payload: dict):
-    """
-    Унифицированная точка входа для локального запуска навыка:
-    `adaos skill run ... --topic nlp.intent.weather.get --payload '{"city": "Berlin"}'`
-
-    Ожидает:
-      - topic: строка события/интента
-      - payload: словарь с возможным ключом "city"
-    """
     set_current_skill("weather_skill")
-    api_key, api_entry_point, default_city = _load_and_cache_config()
+    api_key, api_entry_point, default_city = _load_config()
     if not api_key:
-        output(_("prep.weather.missing_key"))
+        _output(_("prep.weather.missing_key"))
         return
 
-    city = _resolve_city((payload or {}).get("city"))
+    city = _resolve_city((payload or {}).get("city")) or default_city
     if not city:
-        # нет города — сообщим и выйдем
-        output(_("prep.weather.api_error", city=""))
+        _output(_("prep.weather.api_error", city=""))
         return
 
     ok, data = _fetch_weather(api_entry_point, api_key, city)
     if not ok:
-        output(_("prep.weather.api_error", city=city))
+        _output(_("prep.weather.api_error", city=city))
         return
 
-    output(_("prep.weather.success", city=data["city"], temp=data["temp"], description=data["description"]))
+    _output(_("prep.weather.success", city=data["city"], temp=data["temp"], description=data["description"]))
 
 
-# Back-compat: если кто-то всё ещё вызывает старую сигнатуру
-def handle_intent(intent: str, entities: dict):
-    """
-    Совместимость со старым вызовом `handle(intent, entities)`.
-    Преобразуем к новому виду.
-    """
+def handle_intent(intent: str, entities: dict) -> None:
     city = (entities or {}).get("city")
-    return handle(intent or "nlp.intent.weather.get", {"city": city} if city else {})
+    handle(intent or "nlp.intent.weather.get", {"city": city} if city else {})
 
 
-# инструмент для LLM (/api/tools/call)
 @tool("get_weather")
-def get_weather(city: str) -> dict:
-    api_key, api_entry_point, default_city = _load_and_cache_config()
-
-    if not api_key or not api_entry_point:
+def get_weather(city: Optional[str] = None) -> Dict:
+    api_key, api_entry_point, default_city = _load_config()
+    if not api_key:
         return {"ok": False, "error": "missing api config"}
 
-    city = city or default_city or get("last_city")
-    if not city:
+    target_city = city or default_city or memory_get("last_city")
+    if not target_city:
         return {"ok": False, "error": "missing city"}
 
-    ok, data = _fetch_weather(api_entry_point, api_key, city)
+    ok, data = _fetch_weather(api_entry_point, api_key, target_city)
     if not ok:
         return {"ok": False, **data}
 
@@ -170,7 +135,7 @@ def get_weather(city: str) -> dict:
 
 
 @tool("setup")
-def setup(payload: Optional[dict] = None) -> dict:
+def setup(payload: Optional[dict] = None) -> Dict:
     payload = payload or {}
     provided = (payload.get("api_key") or "").strip()
     if not provided:
@@ -181,15 +146,14 @@ def setup(payload: Optional[dict] = None) -> dict:
     if not provided:
         return {"ok": False, "error": "api_key not provided"}
 
-    skill_secrets.write("api_key", provided)
+    skill_secrets.set("api_key", provided)
     return {"ok": True, "message": "api key saved"}
 
 
-# подписка на событие: nlp.intent.weather.get
 @subscribe("nlp.intent.weather.get")
-async def on_weather_intent(evt):
-    api_key, api_entry_point, _ = _load_and_cache_config()
-    if not api_key or not api_entry_point:
+async def on_weather_intent(evt) -> None:
+    api_key, api_entry_point, default_city = _load_config()
+    if not api_key:
         await emit(
             "ui.notify",
             {"text": _("prep.weather.missing_key")},
@@ -199,7 +163,7 @@ async def on_weather_intent(evt):
         )
         return
 
-    city = _resolve_city((evt.payload or {}).get("city"))
+    city = _resolve_city((evt.payload or {}).get("city")) or default_city
     if not city:
         await emit(
             "ui.notify",
@@ -211,10 +175,7 @@ async def on_weather_intent(evt):
         return
 
     ok, data = _fetch_weather(api_entry_point, api_key, city)
-    if ok:
-        msg = _("prep.weather.success", city=data["city"], temp=data["temp"], description=data["description"])
-        await emit("ui.notify", {"text": msg}, actor=evt.actor, source="weather_skill", trace_id=evt.trace_id)
-    else:
+    if not ok:
         await emit(
             "ui.notify",
             {"text": _("prep.weather.api_error", city=city)},
@@ -222,12 +183,29 @@ async def on_weather_intent(evt):
             source="weather_skill",
             trace_id=evt.trace_id,
         )
+        return
+
+    await emit(
+        "ui.notify",
+        {
+            "text": _(
+                "prep.weather.success",
+                city=data["city"],
+                temp=data["temp"],
+                description=data["description"],
+            )
+        },
+        actor=evt.actor,
+        source="weather_skill",
+        trace_id=evt.trace_id,
+    )
 
 
-def lang_res() -> Dict[str, str]:
-    return {
-        "prep.weather.api_error": "Could not get weather for {city}",
-        "prep.weather.success": "Current weather in {city}: {temp}°C, {description}",
-        "prep.weather.missing_key": "API key is missing",
-        "prep.weather.invalid_response": "Invalid response from weather service",
-    }
+__all__ = [
+    "handle",
+    "handle_intent",
+    "get_weather",
+    "setup",
+    "on_weather_intent",
+]
+
