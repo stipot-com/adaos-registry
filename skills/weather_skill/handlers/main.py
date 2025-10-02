@@ -71,21 +71,21 @@ def _fetch_weather(api_entry_point: str, api_key: str, city: str) -> Tuple[bool,
             timeout=6,
         )
     except Exception as exc:  # pragma: no cover - network error surface only
-        return False, {"error": f"request_error: {exc!s}"}
+        return False, {"error": _("runtime.weather.errors.request", reason=str(exc))}
 
     if response.status_code != 200:
-        return False, {"error": f"api_status_{response.status_code}"}
+        return False, {"error": _("runtime.weather.errors.status", status=response.status_code)}
 
     try:
         payload = response.json()
     except Exception:
-        return False, {"error": "invalid_json"}
+        return False, {"error": _("runtime.weather.errors.invalid_json")}
 
     main = payload.get("main") or {}
     temp = main.get("temp")
     description = (payload.get("weather") or [{}])[0].get("description", "")
     if temp is None:
-        return False, {"error": "invalid_response"}
+        return False, {"error": _("runtime.weather.errors.invalid_response")}
 
     return True, {"city": city, "temp": temp, "description": description}
 
@@ -121,11 +121,11 @@ def handle_intent(intent: str, entities: dict) -> None:
 def get_weather(city: Optional[str] = None) -> Dict:
     api_key, api_entry_point, default_city = _load_config()
     if not api_key:
-        return {"ok": False, "error": "missing api config"}
+        return {"ok": False, "error": _("runtime.weather.errors.missing_api_config")}
 
     target_city = city or default_city or memory_get("last_city")
     if not target_city:
-        return {"ok": False, "error": "missing city"}
+        return {"ok": False, "error": _("runtime.weather.errors.missing_city")}
 
     ok, data = _fetch_weather(api_entry_point, api_key, target_city)
     if not ok:
@@ -140,14 +140,14 @@ def setup(payload: Optional[dict] = None) -> Dict:
     provided = (payload.get("api_key") or "").strip()
     if not provided:
         try:
-            provided = input("Enter weather API key: ").strip()
+            provided = input(_("prep.ask_api_key")).strip()
         except EOFError:
             provided = ""
     if not provided:
-        return {"ok": False, "error": "api_key not provided"}
+        return {"ok": False, "error": _("runtime.weather.setup.missing")}
 
     skill_secrets.set("api_key", provided)
-    return {"ok": True, "message": "api key saved"}
+    return {"ok": True, "message": _("runtime.weather.setup.saved")}
 
 
 @subscribe("nlp.intent.weather.get")

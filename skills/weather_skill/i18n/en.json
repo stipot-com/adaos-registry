@@ -12,6 +12,15 @@
 	"prep.tested_hypotheses": "Tested Hypotheses",
 	"prep.failed_header": "Preparation Failed",
 	"prep.reason": "Reason",
-	"prep.weather.api_error": "Weather API error",
-	"prep.weather.success": "In {city} the temperature is {temp}. {description}"
+        "prep.weather.api_error": "Weather API error",
+        "prep.weather.success": "In {city} the temperature is {temp}. {description}",
+        "runtime.weather.setup.missing": "Weather API key is required",
+        "runtime.weather.setup.saved": "Weather API key saved",
+        "runtime.weather.errors.missing_api_config": "Weather API key is not configured",
+        "runtime.weather.errors.missing_city": "City is required",
+        "runtime.weather.errors.request": "Weather request failed: {reason}",
+        "runtime.weather.errors.status": "Weather API returned status {status}",
+        "runtime.weather.errors.invalid_json": "Weather API returned invalid JSON",
+        "runtime.weather.errors.invalid_response": "Weather API returned invalid data",
+        "runtime.weather.errors.generic": "Weather data is unavailable"
 }
