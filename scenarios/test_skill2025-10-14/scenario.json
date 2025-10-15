@@ -1,0 +1,28 @@
+{
+    "id": "test_skill2025-10-14",
+    "version": "0.1.1",
+    "name": "New Scenario",
+    "triggers": [],
+    "slots": {},
+    "params": {},
+    "io": {
+        "input": [
+            "voice",
+            "text"
+        ],
+        "output": [
+            "voice",
+            "text"
+        ],
+        "settings": {
+            "output.active": "voice"
+        }
+    },
+    "steps": [
+        {
+            "id": "hello",
+            "do": "say",
+            "text": "Привет! Это новый сценарий ${ctx.user}!"
+        }
+    ]
+}

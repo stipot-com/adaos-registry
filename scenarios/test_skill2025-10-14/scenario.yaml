@@ -1,0 +1,8 @@
+id: s1
+version: 0.0.1
+trigger: manual
+vars: {}
+steps: []
+name: test_skill2025-10-14
+prototype: morning
+updated_at: '2025-10-15T11:17:31+00:00'
