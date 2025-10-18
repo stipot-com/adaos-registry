@@ -1,5 +1,5 @@
 name: test12
-version: 0.0.1
+version: 0.0.2
 description: Навык для получения текущей погоды на сегодня
 runtime:
   python: '3.11'
@@ -59,4 +59,4 @@ tools:
       error:
         type: string
 prototype: weather_skill
-updated_at: '2025-10-15T06:00:19+00:00'
+updated_at: '2025-10-18T07:14:18+00:00'
