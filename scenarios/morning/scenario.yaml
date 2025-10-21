@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=../../../src/adaos/abi/scenario.schema.json
-id: s1
+id: morning
 version: "0.1.0"
 trigger: manual
 vars: {}
