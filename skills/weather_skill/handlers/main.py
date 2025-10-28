@@ -14,6 +14,7 @@ from adaos.sdk.data.bus import emit
 from adaos.sdk.data.context import get_current_skill, set_current_skill
 from adaos.sdk.data.i18n import _, I18n
 from adaos.sdk.data.skill_memory import get as memory_get, set as memory_set
+from adaos.sdk.data.events import publish as publish_event
 
 
 DEFAULT_API_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
@@ -67,9 +68,11 @@ def _resolve_city(requested_city: Optional[str]) -> Optional[str]:
 
 def _fetch_weather(api_entry_point: str, api_key: str, city: str) -> Tuple[bool, Dict]:
     try:
+        # Determine UI language preference
+        lang = memory_get("ui_lang") or "ru"
         response = requests.get(
             api_entry_point,
-            params={"q": city, "appid": api_key, "units": "metric", "lang": "en"},
+            params={"q": city, "appid": api_key, "units": "metric", "lang": lang},
             timeout=6,
         )
     except Exception as exc:  # pragma: no cover - network error surface only
@@ -132,6 +135,18 @@ def get_weather(city: Optional[str] = None) -> Dict:
     ok, data = _fetch_weather(api_entry_point, api_key, target_city)
     if not ok:
         return {"ok": False, **data}
+
+    # Emit ui.notify for router (stdout routing) in tools/call path as well
+    try:
+        text = _(
+            "prep.weather.success",
+            city=data["city"],
+            temp=data["temp"],
+            description=data["description"],
+        )
+        publish_event("ui.notify", {"text": text}, source="weather_skill")
+    except Exception:
+        pass
 
     return {"ok": True, **data}
 
