@@ -138,9 +138,12 @@ def get_weather(city: Optional[str] = None) -> Dict:
 
     # Emit ui.notify for router (stdout routing) in tools/call path as well
     try:
+        _city = data.get("city")
+        if isinstance(_city, dict):
+            _city = _city.get("city") or _city.get("name") or str(_city)
         text = _(
             "prep.weather.success",
-            city=data["city"],
+            city=_city,
             temp=data["temp"],
             description=data["description"],
         )
