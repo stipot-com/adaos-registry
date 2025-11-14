@@ -1,0 +1,7 @@
+name: web_desktop
+version: 0.0.1
+title: Web Desktop
+description: Scenario that defines the desktop UI, registry and base catalog.
+depends:
+- web_desktop_skill
+updated_at: '2025-11-14T18:14:36+00:00'
