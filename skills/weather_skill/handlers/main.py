@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 
 import requests
 import re
@@ -15,11 +15,14 @@ from adaos.sdk.data.context import get_current_skill, set_current_skill
 from adaos.sdk.data.i18n import _, I18n
 from adaos.sdk.data.skill_memory import get as memory_get, set as memory_set
 from adaos.sdk.data.events import publish as publish_event
+from adaos.services.agent_context import get_ctx
+from adaos.services.eventbus import emit as bus_emit_sync
 
 
 DEFAULT_API_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
 _PLACE_RE = re.compile(r"(?:\bв|\bпо)\s+([A-Za-zА-Яа-яЁё\-]+)")
 _CANON_RE = re.compile(r"^[A-Za-z][A-Za-z\-\s]+,\s*[A-Za-z]{2}$")
+
 
 def _output(message: str) -> None:
     print(message)
@@ -133,6 +136,10 @@ def get_weather(city: Optional[str] = None) -> Dict:
         return {"ok": False, "error": _("runtime.weather.errors.missing_city")}
 
     ok, data = _fetch_weather(api_entry_point, api_key, target_city)
+    if ok:
+        text = f"Погода: {data['city']['city']}: {data['temp']} C, {data['description']}"
+        bus_emit_sync(get_ctx().bus, "ui.notify", {"text": text}, "weather_skill")
+
     if not ok:
         return {"ok": False, **data}
 
@@ -213,17 +220,15 @@ async def on_weather_intent(evt) -> None:
                 city=data["city"],
                 temp=data["temp"],
                 description=data["description"],
-            )	
+            )
         },
         actor=evt.actor,
         source="weather_skill",
         trace_id=evt.trace_id,
     )
 
-def resolve_location(*, text: str, lang: str = "ru",
-                     slots: Dict[str, Any] | None = None,
-                     resources: Dict[str, Any] | None = None
-                     ) -> Optional[Tuple[str, float]]:
+
+def resolve_location(*, text: str, lang: str = "ru", slots: Dict[str, Any] | None = None, resources: Dict[str, Any] | None = None) -> Optional[Tuple[str, float]]:
     token = (slots or {}).get("place_raw")
 
     if not token:
@@ -252,4 +257,5 @@ def resolve_location(*, text: str, lang: str = "ru",
 
     return None
 
-__all__ = [*__all__, "resolve_location"] if "__all__" in globals() else ["resolve_location"]
+
+__all__ = ["resolve_location"]
