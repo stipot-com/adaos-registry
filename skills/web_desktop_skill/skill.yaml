@@ -1,0 +1,12 @@
+name: web_desktop_skill
+version: 0.0.1
+entry: handlers/main.py
+runtime:
+  python: '3.11'
+description: ''
+dependencies: []
+events: {}
+tools: []
+exports: {}
+prototype: default
+updated_at: '2025-11-14T18:38:58+00:00'
