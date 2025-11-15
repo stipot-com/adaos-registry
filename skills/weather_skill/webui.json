@@ -1,0 +1,22 @@
+{
+  "apps": [
+    {
+      "id": "weather_app",
+      "title": "Погода",
+      "icon": "cloud-outline",
+      "launchModal": "weather_modal"
+    }
+  ],
+  "widgets": [
+    {
+      "id": "weather",
+      "title": "Погода",
+      "type": "weather",
+      "source": "y:data/weather/current"
+    }
+  ],
+  "registry": {
+    "modals": ["weather_modal"],
+    "widgets": ["weather"]
+  }
+}
