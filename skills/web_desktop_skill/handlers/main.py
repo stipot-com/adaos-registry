@@ -3,17 +3,26 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 import asyncio
+import re
+import secrets
 
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
 from adaos.services.yjs.doc import get_ydoc, async_get_ydoc
+from adaos.apps.workspaces import index as workspace_index
+from adaos.apps.yjs.y_store import ystore_path_for_webspace
+from adaos.apps.yjs.y_bootstrap import ensure_webspace_seeded_from_scenario
+from adaos.apps.yjs.webspace import default_webspace_id
+from ypy_websocket.ystore import SQLiteYStore
 
 _log = logging.getLogger("skills.web_desktop")
 _ctx = require_ctx("skills.web_desktop_skill")
 _ACTIVE: Dict[str, Dict[str, Dict[str, Any]]] = {}
+_DEFAULT_SCENARIO_ID = "web_desktop"
+_WS_ID_RE = re.compile(r"[^a-z0-9-_]+")
 
 
 def _payload(evt: Any) -> Dict[str, Any]:
@@ -27,6 +36,11 @@ def _payload(evt: Any) -> Dict[str, Any]:
 
 
 def _webspace_id(payload: Dict[str, Any]) -> str:
+    meta = payload.get("_meta") if isinstance(payload, dict) else None
+    if isinstance(meta, dict):
+        token = meta.get("webspace_id")
+        if token:
+            return str(token)
     return str(payload.get("webspace_id") or payload.get("workspace_id") or "default")
 
 
@@ -165,6 +179,86 @@ def _rebuild_catalog(webspace_id: str) -> None:
             data_map.set(txn, "installed", filtered_installed)
             registry_map.set(txn, "merged", merged_registry)
 
+def _slugify_webspace_id(raw: str | None) -> str:
+    if not raw:
+        return ""
+    token = _WS_ID_RE.sub("-", str(raw).strip().lower())
+    return token.strip("-")
+
+
+def _allocate_webspace_id(raw: str | None) -> str:
+    candidate = _slugify_webspace_id(raw)
+    if not candidate:
+        candidate = f"space-{secrets.token_hex(2)}"
+    base = candidate
+    suffix = 1
+    while workspace_index.get_workspace(candidate):
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _webspace_listing() -> List[Dict[str, Any]]:
+    rows = workspace_index.list_workspaces()
+    return [
+        {
+            "id": row.workspace_id,
+            "title": (row.display_name or row.workspace_id),
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]
+
+
+def _seed_webspace_async(
+    webspace_id: str,
+    scenario_id: str | None = None,
+    post: Callable[[], None] | None = None,
+) -> None:
+    async def _worker() -> None:
+        ystore = SQLiteYStore(str(ystore_path_for_webspace(webspace_id)))
+        try:
+            await ensure_webspace_seeded_from_scenario(
+                ystore,
+                webspace_id=webspace_id,
+                default_scenario_id=scenario_id or _DEFAULT_SCENARIO_ID,
+            )
+        finally:
+            try:
+                await ystore.stop()
+            except Exception:
+                pass
+        if callable(post):
+            try:
+                post()
+            except Exception:
+                _log.exception("post-seed hook failed for webspace %s", webspace_id)
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_worker())
+    else:
+        loop.create_task(_worker(), name=f"webspace-seed-{webspace_id}")
+
+
+def _sync_webspace_listing_async() -> None:
+    async def _worker() -> None:
+        listing = _webspace_listing()
+        rows = workspace_index.list_workspaces()
+        for row in rows:
+            async with async_get_ydoc(row.workspace_id) as ydoc:
+                data_map = ydoc.get_map("data")
+                with ydoc.begin_transaction() as txn:
+                    data_map.set(txn, "webspaces", {"items": listing})
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_worker())
+    else:
+        loop.create_task(_worker(), name="webspace-listing-sync")
+
 
 def _rebuild_async(webspace_id: str) -> None:
     async def _worker() -> None:
@@ -235,6 +329,7 @@ def on_scenario_synced(evt) -> None:
     webspace_id = _webspace_id(payload)
     _log.info("scenario synced for webspace %s", webspace_id)
     _rebuild_async(webspace_id)
+    _sync_webspace_listing_async()
 
 
 @subscribe("skills.activated")
@@ -328,3 +423,58 @@ def on_toggle_install(evt) -> None:
     if item_type not in ("app", "widget") or not target_id:
         return
     _toggle_install_async(webspace_id, item_type, str(target_id))
+
+
+@subscribe("desktop.webspace.create")
+def on_webspace_create(evt) -> None:
+    payload = _payload(evt)
+    requested = payload.get("id") or payload.get("webspace_id")
+    display_name = payload.get("title")
+    scenario_id = payload.get("scenario_id") or _DEFAULT_SCENARIO_ID
+    webspace_id = _allocate_webspace_id(requested)
+    _log.info("creating webspace %s (requested=%s)", webspace_id, requested)
+    workspace_index.ensure_workspace(webspace_id)
+    workspace_index.set_display_name(webspace_id, display_name or webspace_id)
+    _seed_webspace_async(webspace_id, scenario_id=scenario_id, post=lambda: _rebuild_async(webspace_id))
+    _sync_webspace_listing_async()
+
+
+@subscribe("desktop.webspace.rename")
+def on_webspace_rename(evt) -> None:
+    payload = _payload(evt)
+    webspace_id = str(payload.get("id") or "")
+    title = str(payload.get("title") or "").strip()
+    if not webspace_id or not title:
+        return
+    if not workspace_index.get_workspace(webspace_id):
+        _log.warning("cannot rename missing webspace %s", webspace_id)
+        return
+    workspace_index.set_display_name(webspace_id, title)
+    _sync_webspace_listing_async()
+
+
+@subscribe("desktop.webspace.delete")
+def on_webspace_delete(evt) -> None:
+    payload = _payload(evt)
+    webspace_id = str(payload.get("id") or "")
+    if not webspace_id or webspace_id == default_webspace_id():
+        return
+    _log.info("deleting webspace %s", webspace_id)
+    try:
+        workspace_index.delete_workspace(webspace_id)
+    except Exception as exc:
+        _log.warning("failed to delete webspace %s: %s", webspace_id, exc)
+        return
+    _ACTIVE.pop(webspace_id, None)
+    try:
+        from adaos.apps.yjs.y_gateway import y_server  # pylint: disable=import-outside-toplevel
+
+        y_server.rooms.pop(webspace_id, None)
+    except Exception:
+        pass
+    _sync_webspace_listing_async()
+
+
+@subscribe("desktop.webspace.refresh")
+def on_webspace_refresh(evt) -> None:  # noqa: ARG001
+    _sync_webspace_listing_async()
