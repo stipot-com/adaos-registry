@@ -262,7 +262,8 @@ async def on_weather_city_changed(evt) -> None:
     payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
     if not isinstance(payload, dict):
         return
-    workspace_id = str(payload.get("webspace_id") or payload.get("workspace_id") or "default")
+    meta = payload.get("_meta") if isinstance(payload, dict) else None
+    webspace_id = str((meta or {}).get("webspace_id") or payload.get("webspace_id") or payload.get("workspace_id") or "default")
     city = payload.get("city")
     if not city:
         return
@@ -274,7 +275,7 @@ async def on_weather_city_changed(evt) -> None:
         "wind_ms": snapshot["wind_ms"],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    async with async_get_ydoc(workspace_id) as ydoc:
+    async with async_get_ydoc(webspace_id) as ydoc:
         with ydoc.begin_transaction() as txn:
             data_map = ydoc.get_map("data")
             current_weather = data_map.get("weather")
