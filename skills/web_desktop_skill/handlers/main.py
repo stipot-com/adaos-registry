@@ -26,8 +26,8 @@ def _payload(evt: Any) -> Dict[str, Any]:
     return {}
 
 
-def _workspace_id(payload: Dict[str, Any]) -> str:
-    return str(payload.get("workspace_id") or "default")
+def _webspace_id(payload: Dict[str, Any]) -> str:
+    return str(payload.get("webspace_id") or payload.get("workspace_id") or "default")
 
 
 def _webui_path(skill_name: str, space: str) -> Path:
@@ -110,8 +110,8 @@ def _filter_installed(installed: Dict[str, List[str]], apps: List[Dict[str, Any]
     return {"apps": current_apps, "widgets": current_widgets}
 
 
-def _rebuild_catalog(workspace_id: str) -> None:
-    with get_ydoc(workspace_id) as ydoc:
+def _rebuild_catalog(webspace_id: str) -> None:
+    with get_ydoc(webspace_id) as ydoc:
         ui_map = ydoc.get_map("ui")
         data_map = ydoc.get_map("data")
         registry_map = ydoc.get_map("registry")
@@ -128,7 +128,7 @@ def _rebuild_catalog(workspace_id: str) -> None:
         base_registry_modals = [str(x) for x in (registry_entry.get("modals") or [])]
         base_registry_widgets = [str(x) for x in (registry_entry.get("widgets") or [])]
 
-        skill_decls = list((_ACTIVE.get(workspace_id) or {}).values())
+        skill_decls = list((_ACTIVE.get(webspace_id) or {}).values())
         skill_apps: List[Dict[str, Any]] = []
         skill_widgets: List[Dict[str, Any]] = []
         skill_registry_modals: List[List[str]] = []
@@ -166,9 +166,9 @@ def _rebuild_catalog(workspace_id: str) -> None:
             registry_map.set(txn, "merged", merged_registry)
 
 
-def _rebuild_async(workspace_id: str) -> None:
+def _rebuild_async(webspace_id: str) -> None:
     async def _worker() -> None:
-        async with async_get_ydoc(workspace_id) as ydoc:
+        async with async_get_ydoc(webspace_id) as ydoc:
             ui_map = ydoc.get_map("ui")
             data_map = ydoc.get_map("data")
             registry_map = ydoc.get_map("registry")
@@ -184,7 +184,7 @@ def _rebuild_async(workspace_id: str) -> None:
             base_registry_modals = [str(x) for x in (registry_entry.get("modals") or [])]
             base_registry_widgets = [str(x) for x in (registry_entry.get("widgets") or [])]
 
-            skill_decls = list((_ACTIVE.get(workspace_id) or {}).values())
+            skill_decls = list((_ACTIVE.get(webspace_id) or {}).values())
             skill_apps: List[Dict[str, Any]] = []
             skill_widgets: List[Dict[str, Any]] = []
             skill_registry_modals: List[List[str]] = []
@@ -226,15 +226,15 @@ def _rebuild_async(workspace_id: str) -> None:
     except RuntimeError:
         asyncio.run(_worker())
     else:
-        loop.create_task(_worker(), name=f"web-desktop-catalog-{workspace_id}")
+        loop.create_task(_worker(), name=f"web-desktop-catalog-{webspace_id}")
 
 
 @subscribe("scenarios.synced")
 def on_scenario_synced(evt) -> None:
     payload = _payload(evt)
-    workspace_id = _workspace_id(payload)
-    _log.info("scenario synced for workspace %s", workspace_id)
-    _rebuild_async(workspace_id)
+    webspace_id = _webspace_id(payload)
+    _log.info("scenario synced for webspace %s", webspace_id)
+    _rebuild_async(webspace_id)
 
 
 @subscribe("skills.activated")
@@ -244,13 +244,13 @@ def on_skill_activated(evt) -> None:
     if not skill:
         return
     space = str(payload.get("space") or "default")
-    workspace_id = _workspace_id(payload)
+    webspace_id = _webspace_id(payload)
     decl = _load_webui(str(skill), space)
     if not decl:
         return
-    _ACTIVE.setdefault(workspace_id, {})[f"{space}:{skill}"] = decl
-    _log.info("skill %s activated in workspace %s (%s)", skill, workspace_id, space)
-    _rebuild_async(workspace_id)
+    _ACTIVE.setdefault(webspace_id, {})[f"{space}:{skill}"] = decl
+    _log.info("skill %s activated in webspace %s (%s)", skill, webspace_id, space)
+    _rebuild_async(webspace_id)
 
 
 @subscribe("skills.rolledback")
@@ -260,15 +260,15 @@ def on_skill_rolled_back(evt) -> None:
     if not skill:
         return
     space = str(payload.get("space") or "default")
-    workspace_id = _workspace_id(payload)
-    active = _ACTIVE.get(workspace_id)
+    webspace_id = _webspace_id(payload)
+    active = _ACTIVE.get(webspace_id)
     if active and active.pop(f"{space}:{skill}", None) is not None:
-        _log.info("skill %s rolled back in workspace %s (%s)", skill, workspace_id, space)
-        _rebuild_async(workspace_id)
+        _log.info("skill %s rolled back in webspace %s (%s)", skill, webspace_id, space)
+        _rebuild_async(webspace_id)
 
 
-def _toggle_install(workspace_id: str, item_type: str, target_id: str) -> None:
-    with get_ydoc(workspace_id) as ydoc:
+def _toggle_install(webspace_id: str, item_type: str, target_id: str) -> None:
+    with get_ydoc(webspace_id) as ydoc:
         data_map = ydoc.get_map("data")
         installed = data_map.get("installed") or {}
         if not isinstance(installed, dict):
@@ -289,9 +289,9 @@ def _toggle_install(workspace_id: str, item_type: str, target_id: str) -> None:
             data_map.set(txn, "installed", {"apps": list(apps), "widgets": list(widgets)})
 
 
-def _toggle_install_async(workspace_id: str, item_type: str, target_id: str) -> None:
+def _toggle_install_async(webspace_id: str, item_type: str, target_id: str) -> None:
     async def _worker() -> None:
-        async with async_get_ydoc(workspace_id) as ydoc:
+        async with async_get_ydoc(webspace_id) as ydoc:
             data_map = ydoc.get_map("data")
             installed = data_map.get("installed") or {}
             if not isinstance(installed, dict):
@@ -316,15 +316,15 @@ def _toggle_install_async(workspace_id: str, item_type: str, target_id: str) -> 
     except RuntimeError:
         asyncio.run(_worker())
     else:
-        loop.create_task(_worker(), name=f"web-desktop-toggle-{workspace_id}")
+        loop.create_task(_worker(), name=f"web-desktop-toggle-{webspace_id}")
 
 
 @subscribe("desktop.toggleInstall")
 def on_toggle_install(evt) -> None:
     payload = _payload(evt)
-    workspace_id = _workspace_id(payload)
+    webspace_id = _webspace_id(payload)
     item_type = payload.get("type")
     target_id = payload.get("id")
     if item_type not in ("app", "widget") or not target_id:
         return
-    _toggle_install_async(workspace_id, item_type, str(target_id))
+    _toggle_install_async(webspace_id, item_type, str(target_id))
