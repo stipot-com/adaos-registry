@@ -262,7 +262,7 @@ async def on_weather_city_changed(evt) -> None:
     payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
     if not isinstance(payload, dict):
         return
-    workspace_id = str(payload.get("workspace_id") or "default")
+    workspace_id = str(payload.get("webspace_id") or payload.get("workspace_id") or "default")
     city = payload.get("city")
     if not city:
         return
