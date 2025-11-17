@@ -7,6 +7,7 @@ from typing import Dict, Optional, Tuple, Any
 
 import requests
 import re
+from datetime import datetime, timezone
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import secrets as skill_secrets
@@ -17,6 +18,7 @@ from adaos.sdk.data.skill_memory import get as memory_get, set as memory_set
 from adaos.sdk.data.events import publish as publish_event
 from adaos.services.agent_context import get_ctx
 from adaos.services.eventbus import emit as bus_emit_sync
+from adaos.services.yjs.doc import async_get_ydoc
 
 
 DEFAULT_API_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
@@ -258,4 +260,42 @@ def resolve_location(*, text: str, lang: str = "ru", slots: Dict[str, Any] | Non
     return None
 
 
-__all__ = ["resolve_location"]
+__all__ = [*__all__, "resolve_location"] if "__all__" in globals() else ["resolve_location"]
+
+
+@subscribe("weather.city_changed")
+async def on_weather_city_changed(evt) -> None:
+    payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
+    if not isinstance(payload, dict):
+        return
+    meta = payload.get("_meta") if isinstance(payload, dict) else None
+    webspace_id = str((meta or {}).get("webspace_id") or payload.get("webspace_id") or payload.get("workspace_id") or "default")
+    city = payload.get("city")
+    if not city:
+        return
+    snapshot = CITY_SNAPSHOTS.get(str(city), CITY_SNAPSHOTS["Berlin"])
+    data = {
+        "city": city,
+        "temp_c": snapshot["temp_c"],
+        "condition": snapshot["condition"],
+        "wind_ms": snapshot["wind_ms"],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    async with async_get_ydoc(webspace_id) as ydoc:
+        with ydoc.begin_transaction() as txn:
+            data_map = ydoc.get_map("data")
+            current_weather = data_map.get("weather")
+            if not isinstance(current_weather, dict):
+                current_weather = {}
+            next_weather = dict(current_weather)
+            next_weather["current"] = data
+            data_map.set(txn, "weather", next_weather)
+
+
+CITY_SNAPSHOTS = {
+    "Berlin": {"temp_c": 7.5, "condition": "cloudy", "wind_ms": 3.1},
+    "Moscow": {"temp_c": -3.0, "condition": "snow", "wind_ms": 5.2},
+    "New York": {"temp_c": 12.4, "condition": "sunny", "wind_ms": 2.8},
+    "Tokyo": {"temp_c": 18.0, "condition": "clear", "wind_ms": 1.9},
+    "Paris": {"temp_c": 10.6, "condition": "rain", "wind_ms": 4.5},
+}
