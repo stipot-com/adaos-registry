@@ -18,8 +18,7 @@ from adaos.sdk.data.skill_memory import get as memory_get, set as memory_set
 from adaos.sdk.data.events import publish as publish_event
 from adaos.services.agent_context import get_ctx
 from adaos.services.eventbus import emit as bus_emit_sync
-from adaos.services.yjs.doc import async_get_ydoc
-
+from adaos.services.yjs.doc import async_get_ydoc, mutate_live_room
 
 DEFAULT_API_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
 _PLACE_RE = re.compile(r"(?:\bв|\bпо)\s+([A-Za-zА-Яа-яЁё\-]+)")
@@ -281,15 +280,39 @@ async def on_weather_city_changed(evt) -> None:
         "wind_ms": snapshot["wind_ms"],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if mutate_live_room(webspace_id, lambda doc, txn: _write_weather_snapshot(doc, txn, data)):
+        return
     async with async_get_ydoc(webspace_id) as ydoc:
         with ydoc.begin_transaction() as txn:
-            data_map = ydoc.get_map("data")
-            current_weather = data_map.get("weather")
-            if not isinstance(current_weather, dict):
-                current_weather = {}
-            next_weather = dict(current_weather)
-            next_weather["current"] = data
-            data_map.set(txn, "weather", next_weather)
+            _write_weather_snapshot(ydoc, txn, data)
+
+
+def _write_weather_snapshot(ydoc, txn, data: dict) -> None:
+    data_map = ydoc.get_map("data")
+    current_weather = data_map.get("weather")
+    next_weather = _coerce_weather_mapping(current_weather)
+    next_weather["current"] = data
+    data_map.set(txn, "weather", next_weather)
+
+
+def _coerce_weather_mapping(value) -> dict:
+    if isinstance(value, dict):
+        return dict(value)
+    if value is None:
+        return {}
+    try:
+        return dict(value)
+    except Exception:
+        pass
+    to_json = getattr(value, "to_json", None)
+    if callable(to_json):
+        try:
+            json_value = to_json()
+            if isinstance(json_value, dict):
+                return dict(json_value)
+        except Exception:
+            pass
+    return {}
 
 
 CITY_SNAPSHOTS = {
