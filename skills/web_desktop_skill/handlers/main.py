@@ -13,10 +13,9 @@ from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
 from adaos.services.yjs.doc import get_ydoc, async_get_ydoc
 from adaos.apps.workspaces import index as workspace_index
-from adaos.apps.yjs.y_store import ystore_path_for_webspace
+from adaos.apps.yjs.y_store import ystore_path_for_webspace, AdaosSQLiteYStore
 from adaos.apps.yjs.y_bootstrap import ensure_webspace_seeded_from_scenario
 from adaos.apps.yjs.webspace import default_webspace_id
-from ypy_websocket.ystore import SQLiteYStore
 
 _log = logging.getLogger("skills.web_desktop")
 _ctx = require_ctx("skills.web_desktop_skill")
@@ -138,7 +137,10 @@ def _rebuild_catalog(webspace_id: str) -> None:
         scenario_widgets = [it for it in (base_catalog.get("widgets") or []) if isinstance(it, dict)]
 
         scenario_registry = registry_map.get("scenarios") or {}
-        registry_entry = scenario_registry.get(scenario_id) if isinstance(scenario_registry, dict) else {}
+        raw_registry_entry = (
+            scenario_registry.get(scenario_id) if isinstance(scenario_registry, dict) else {}
+        )
+        registry_entry = raw_registry_entry if isinstance(raw_registry_entry, dict) else {}
         base_registry_modals = [str(x) for x in (registry_entry.get("modals") or [])]
         base_registry_widgets = [str(x) for x in (registry_entry.get("widgets") or [])]
 
@@ -216,7 +218,7 @@ def _seed_webspace_async(
     post: Callable[[], None] | None = None,
 ) -> None:
     async def _worker() -> None:
-        ystore = SQLiteYStore(str(ystore_path_for_webspace(webspace_id)))
+        ystore = AdaosSQLiteYStore(webspace_id)
         try:
             await ensure_webspace_seeded_from_scenario(
                 ystore,
