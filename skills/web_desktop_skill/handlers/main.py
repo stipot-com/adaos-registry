@@ -11,9 +11,9 @@ import secrets
 
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
-from adaos.services.yjs.doc import get_ydoc, async_get_ydoc
+from adaos.services.yjs.doc import get_ydoc, async_get_ydoc, mutate_live_room
 from adaos.apps.workspaces import index as workspace_index
-from adaos.apps.yjs.y_store import ystore_path_for_webspace, AdaosSQLiteYStore
+from adaos.apps.yjs.y_store import ystore_path_for_webspace, get_ystore_for_webspace
 from adaos.apps.yjs.y_bootstrap import ensure_webspace_seeded_from_scenario
 from adaos.apps.yjs.webspace import default_webspace_id
 
@@ -141,6 +141,7 @@ def _rebuild_catalog(webspace_id: str) -> None:
             scenario_registry.get(scenario_id) if isinstance(scenario_registry, dict) else {}
         )
         registry_entry = raw_registry_entry if isinstance(raw_registry_entry, dict) else {}
+        registry_entry = registry_entry or {}
         base_registry_modals = [str(x) for x in (registry_entry.get("modals") or [])]
         base_registry_widgets = [str(x) for x in (registry_entry.get("widgets") or [])]
 
@@ -218,7 +219,7 @@ def _seed_webspace_async(
     post: Callable[[], None] | None = None,
 ) -> None:
     async def _worker() -> None:
-        ystore = AdaosSQLiteYStore(webspace_id)
+        ystore = get_ystore_for_webspace(webspace_id)
         try:
             await ensure_webspace_seeded_from_scenario(
                 ystore,
@@ -226,10 +227,8 @@ def _seed_webspace_async(
                 default_scenario_id=scenario_id or _DEFAULT_SCENARIO_ID,
             )
         finally:
-            try:
-                await ystore.stop()
-            except Exception:
-                pass
+            # YStore is process-wide singleton; do not stop it here.
+            pass
         if callable(post):
             try:
                 post()
@@ -277,6 +276,7 @@ def _rebuild_async(webspace_id: str) -> None:
 
             scenario_registry = registry_map.get("scenarios") or {}
             registry_entry = scenario_registry.get(scenario_id) if isinstance(scenario_registry, dict) else {}
+            registry_entry = registry_entry or {}
             base_registry_modals = [str(x) for x in (registry_entry.get("modals") or [])]
             base_registry_widgets = [str(x) for x in (registry_entry.get("widgets") or [])]
 
@@ -364,49 +364,45 @@ def on_skill_rolled_back(evt) -> None:
         _rebuild_async(webspace_id)
 
 
+def _apply_install_toggle(webspace_id: str, ydoc, txn, item_type: str, target_id: str) -> None:
+    data_map = ydoc.get_map("data")
+    installed = data_map.get("installed") or {}
+    if not isinstance(installed, dict):
+        installed = {}
+    apps = set(installed.get("apps") or [])
+    widgets = set(installed.get("widgets") or [])
+    if item_type == "app":
+        if target_id in apps:
+            apps.remove(target_id)
+        else:
+            apps.add(target_id)
+    else:
+        if target_id in widgets:
+            widgets.remove(target_id)
+        else:
+            widgets.add(target_id)
+    data_map.set(txn, "installed", {"apps": list(apps), "widgets": list(widgets)})
+    _log.debug(
+        "toggle install webspace=%s type=%s target=%s apps=%s widgets=%s",
+        webspace_id,
+        item_type,
+        target_id,
+        sorted(apps),
+        sorted(widgets),
+    )
+
+
 def _toggle_install(webspace_id: str, item_type: str, target_id: str) -> None:
     with get_ydoc(webspace_id) as ydoc:
-        data_map = ydoc.get_map("data")
-        installed = data_map.get("installed") or {}
-        if not isinstance(installed, dict):
-            installed = {}
-        apps = set(installed.get("apps") or [])
-        widgets = set(installed.get("widgets") or [])
-        if item_type == "app":
-            if target_id in apps:
-                apps.remove(target_id)
-            else:
-                apps.add(target_id)
-        else:
-            if target_id in widgets:
-                widgets.remove(target_id)
-            else:
-                widgets.add(target_id)
         with ydoc.begin_transaction() as txn:
-            data_map.set(txn, "installed", {"apps": list(apps), "widgets": list(widgets)})
+            _apply_install_toggle(webspace_id, ydoc, txn, item_type, target_id)
 
 
 def _toggle_install_async(webspace_id: str, item_type: str, target_id: str) -> None:
     async def _worker() -> None:
         async with async_get_ydoc(webspace_id) as ydoc:
-            data_map = ydoc.get_map("data")
-            installed = data_map.get("installed") or {}
-            if not isinstance(installed, dict):
-                installed = {}
-            apps = set(installed.get("apps") or [])
-            widgets = set(installed.get("widgets") or [])
-            if item_type == "app":
-                if target_id in apps:
-                    apps.remove(target_id)
-                else:
-                    apps.add(target_id)
-            else:
-                if target_id in widgets:
-                    widgets.remove(target_id)
-                else:
-                    widgets.add(target_id)
             with ydoc.begin_transaction() as txn:
-                data_map.set(txn, "installed", {"apps": list(apps), "widgets": list(widgets)})
+                _apply_install_toggle(webspace_id, ydoc, txn, item_type, target_id)
 
     try:
         loop = asyncio.get_running_loop()
@@ -424,6 +420,9 @@ def on_toggle_install(evt) -> None:
     target_id = payload.get("id")
     if item_type not in ("app", "widget") or not target_id:
         return
+    live_applied = mutate_live_room(webspace_id, lambda doc, txn: _apply_install_toggle(webspace_id, doc, txn, item_type, str(target_id)))
+    if not live_applied:
+        _log.debug("mutate_live_room skipped for toggle webspace=%s type=%s target=%s", webspace_id, item_type, target_id)
     _toggle_install_async(webspace_id, item_type, str(target_id))
 
 

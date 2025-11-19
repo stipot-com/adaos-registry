@@ -5,7 +5,17 @@ runtime:
   python: '3.11'
 description: ''
 dependencies: []
-events: {}
+events:
+  subscribe:
+    - 'scenarios.synced'
+    - 'skills.activated'
+    - 'skills.rolledback'
+    - 'desktop.toggleInstall'
+    - 'desktop.webspace.create'
+    - 'desktop.webspace.rename'
+    - 'desktop.webspace.delete'
+    - 'desktop.webspace.refresh'
+  publish: []
 tools: []
 exports: {}
 prototype: default
