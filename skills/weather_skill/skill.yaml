@@ -10,6 +10,7 @@ dependencies:
 events:
   subscribe:
     - 'nlp.intent.weather.get'
+    - 'weather.city_changed'
   publish:
     - 'ui.notify'
 default_tool: 'get_weather'

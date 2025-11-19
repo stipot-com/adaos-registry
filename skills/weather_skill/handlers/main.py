@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Dict, Optional, Tuple, Any
 
 import requests
@@ -19,6 +20,8 @@ from adaos.sdk.data.events import publish as publish_event
 from adaos.services.agent_context import get_ctx
 from adaos.services.eventbus import emit as bus_emit_sync
 from adaos.services.yjs.doc import async_get_ydoc, mutate_live_room
+
+_log = logging.getLogger("skills.weather_skill")
 
 DEFAULT_API_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
 _PLACE_RE = re.compile(r"(?:\bв|\bпо)\s+([A-Za-zА-Яа-яЁё\-]+)")
@@ -280,11 +283,17 @@ async def on_weather_city_changed(evt) -> None:
         "wind_ms": snapshot["wind_ms"],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    if mutate_live_room(webspace_id, lambda doc, txn: _write_weather_snapshot(doc, txn, data)):
-        return
+    # Обновляем live-ydoc для подключённых браузеров.
+    _log.debug("weather_city_changed webspace=%s city=%s payload=%s", webspace_id, city, payload)
+    live_applied = mutate_live_room(webspace_id, lambda doc, txn: _write_weather_snapshot(doc, txn, data))
+    if not live_applied:
+        _log.debug("mutate_live_room skipped (room inactive) webspace=%s", webspace_id)
+
+    # И дублируем обновление в стор для снапшотов/рестартов.
     async with async_get_ydoc(webspace_id) as ydoc:
         with ydoc.begin_transaction() as txn:
             _write_weather_snapshot(ydoc, txn, data)
+    _log.debug("weather snapshot persisted webspace=%s city=%s", webspace_id, city)
 
 
 def _write_weather_snapshot(ydoc, txn, data: dict) -> None:
