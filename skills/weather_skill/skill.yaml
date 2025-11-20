@@ -20,7 +20,6 @@ tools:
     entry: 'handlers.main:get_weather'
     input_schema:
       type: object
-      required: [city]
       properties:
         city: { type: string, minLength: 1 }
     output_schema:
@@ -31,22 +30,6 @@ tools:
         city: { type: string }
         temp: { type: number }
         description: { type: string }
-        error: { type: string }
-  - name: 'setup'
-    description: Сохраняет ключ API для погодного сервиса в секретах навыка
-    entry: 'handlers.main:setup'
-    input_schema:
-      type: object
-      properties:
-        api_key:
-          type: string
-          description: Опциональный API ключ, переданный через CLI
-    output_schema:
-      type: object
-      required: [ok]
-      properties:
-        ok: { type: boolean }
-        message: { type: string }
         error: { type: string }
 nlu:
   intents:

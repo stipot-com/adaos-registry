@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import json
 import logging
 from typing import Dict, Optional, Tuple, Any
@@ -11,7 +13,6 @@ import re
 from datetime import datetime, timezone
 
 from adaos.sdk.core.decorators import subscribe, tool
-from adaos.sdk.data import secrets as skill_secrets
 from adaos.sdk.data.bus import emit
 from adaos.sdk.data.context import get_current_skill, set_current_skill
 from adaos.sdk.data.i18n import _, I18n
@@ -23,7 +24,7 @@ from adaos.services.yjs.doc import async_get_ydoc, mutate_live_room
 
 _log = logging.getLogger("skills.weather_skill")
 
-DEFAULT_API_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
+DEFAULT_API_ENDPOINT = "https://wttr.in"
 _PLACE_RE = re.compile(r"(?:\bв|\bпо)\s+([A-Za-zА-Яа-яЁё\-]+)")
 _CANON_RE = re.compile(r"^[A-Za-z][A-Za-z\-\s]+,\s*[A-Za-z]{2}$")
 
@@ -32,15 +33,11 @@ def _output(message: str) -> None:
     print(message)
 
 
-def _load_config() -> Tuple[Optional[str], str, Optional[str]]:
-    """Load the runtime configuration from the SDK stores."""
+def _load_config() -> Tuple[str, Optional[str]]:
+    """Load runtime configuration from the SDK stores."""
 
-    api_key = skill_secrets.get("api_key")
     api_entry_point = memory_get("api_entry_point") or DEFAULT_API_ENDPOINT
     default_city = memory_get("default_city")
-
-    if api_entry_point is None:
-        api_entry_point = DEFAULT_API_ENDPOINT
 
     # Legacy support: migrate values from the local prep cache if present.
     try:
@@ -50,9 +47,6 @@ def _load_config() -> Tuple[Optional[str], str, Optional[str]]:
             if prep_file.exists():
                 data = json.loads(prep_file.read_text(encoding="utf-8"))
                 resources = data.get("resources") or {}
-                if not api_key and resources.get("api_key"):
-                    api_key = resources["api_key"]
-                    skill_secrets.set("api_key", api_key)
                 if not default_city and resources.get("default_city"):
                     default_city = resources["default_city"]
                     memory_set("default_city", default_city)
@@ -63,7 +57,7 @@ def _load_config() -> Tuple[Optional[str], str, Optional[str]]:
         # Prep artefacts are optional; swallow errors to keep runtime resilient.
         pass
 
-    return api_key, api_entry_point, default_city
+    return api_entry_point, default_city
 
 
 def _resolve_city(requested_city: Optional[str]) -> Optional[str]:
@@ -73,13 +67,11 @@ def _resolve_city(requested_city: Optional[str]) -> Optional[str]:
     return city
 
 
-def _fetch_weather(api_entry_point: str, api_key: str, city: str) -> Tuple[bool, Dict]:
+def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
     try:
-        # Determine UI language preference
-        lang = memory_get("ui_lang") or "ru"
         response = requests.get(
-            api_entry_point,
-            params={"q": city, "appid": api_key, "units": "metric", "lang": lang},
+            f"{api_entry_point.rstrip('/')}/{city}",
+            params={"format": "j1"},
             timeout=6,
         )
     except Exception as exc:  # pragma: no cover - network error surface only
@@ -93,30 +85,51 @@ def _fetch_weather(api_entry_point: str, api_key: str, city: str) -> Tuple[bool,
     except Exception:
         return False, {"error": _("runtime.weather.errors.invalid_json")}
 
-    main = payload.get("main") or {}
-    temp = main.get("temp")
-    description = (payload.get("weather") or [{}])[0].get("description", "")
+    current = (payload.get("current_condition") or [{}])[0]
+    temp = current.get("temp_C")
+    description = (current.get("weatherDesc") or [{}])[0].get("value", "")
+    try:
+        wind_kmph = float(current.get("windspeedKmph") or 0.0)
+    except Exception:
+        wind_kmph = 0.0
+    wind_ms = wind_kmph / 3.6
     if temp is None:
         return False, {"error": _("runtime.weather.errors.invalid_response")}
 
-    return True, {"city": city, "temp": temp, "description": description}
+    try:
+        temp_value = float(temp)
+    except Exception:
+        temp_value = None
+
+    if temp_value is None:
+        return False, {"error": _("runtime.weather.errors.invalid_response")}
+
+    return True, {
+        "city": city,
+        "temp": temp_value,
+        "temp_c": temp_value,
+        "description": description,
+        "wind_ms": wind_ms,
+    }
+
+
+async def _fetch_weather_async(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, functools.partial(_fetch_weather, api_entry_point, city))
 
 
 def handle(topic: str, payload: dict) -> None:
     """Local development entrypoint for the skill."""
 
     set_current_skill("weather_skill")
-    api_key, api_entry_point, default_city = _load_config()
-    if not api_key:
-        _output(_("prep.weather.missing_key"))
-        return
+    api_entry_point, default_city = _load_config()
 
     city = _resolve_city((payload or {}).get("city")) or default_city
     if not city:
         _output(_("prep.weather.api_error", city=""))
         return
 
-    ok, data = _fetch_weather(api_entry_point, api_key, city)
+    ok, data = _fetch_weather(api_entry_point, city)
     if not ok:
         _output(_("prep.weather.api_error", city=city))
         return
@@ -131,17 +144,15 @@ def handle_intent(intent: str, entities: dict) -> None:
 
 @tool("get_weather")
 def get_weather(city: Optional[str] = None) -> Dict:
-    api_key, api_entry_point, default_city = _load_config()
-    if not api_key:
-        return {"ok": False, "error": _("runtime.weather.errors.missing_api_config")}
+    api_entry_point, default_city = _load_config()
 
     target_city = city or default_city or memory_get("last_city")
     if not target_city:
         return {"ok": False, "error": _("runtime.weather.errors.missing_city")}
 
-    ok, data = _fetch_weather(api_entry_point, api_key, target_city)
+    ok, data = _fetch_weather(api_entry_point, target_city)
     if ok:
-        text = f"Погода: {data['city']['city']}: {data['temp']} C, {data['description']}"
+        text = f"Погода: {data['city']}: {data['temp']}°C, {data['description']}"
         bus_emit_sync(get_ctx().bus, "ui.notify", {"text": text}, "weather_skill")
 
     if not ok:
@@ -155,8 +166,8 @@ def get_weather(city: Optional[str] = None) -> Dict:
         text = _(
             "prep.weather.success",
             city=_city,
-            temp=data["temp"],
-            description=data["description"],
+            temp=data.get("temp") or data.get("temp_c"),
+            description=data.get("description"),
         )
         publish_event("ui.notify", {"text": text}, source="weather_skill")
     except Exception:
@@ -165,34 +176,9 @@ def get_weather(city: Optional[str] = None) -> Dict:
     return {"ok": True, **data}
 
 
-@tool("setup")
-def setup(payload: Optional[dict] = None) -> Dict:
-    payload = payload or {}
-    provided = (payload.get("api_key") or "").strip()
-    if not provided:
-        try:
-            provided = input(_("prep.ask_api_key")).strip()
-        except EOFError:
-            provided = ""
-    if not provided:
-        return {"ok": False, "error": _("runtime.weather.setup.missing")}
-
-    skill_secrets.set("api_key", provided)
-    return {"ok": True, "message": _("runtime.weather.setup.saved")}
-
-
 @subscribe("nlp.intent.weather.get")
 async def on_weather_intent(evt) -> None:
-    api_key, api_entry_point, default_city = _load_config()
-    if not api_key:
-        await emit(
-            "ui.notify",
-            {"text": _("prep.weather.missing_key")},
-            actor=evt.actor,
-            source="weather_skill",
-            trace_id=evt.trace_id,
-        )
-        return
+    api_entry_point, default_city = _load_config()
 
     city = _resolve_city((evt.payload or {}).get("city")) or default_city
     if not city:
@@ -205,7 +191,7 @@ async def on_weather_intent(evt) -> None:
         )
         return
 
-    ok, data = _fetch_weather(api_entry_point, api_key, city)
+    ok, data = await _fetch_weather_async(api_entry_point, city)
     if not ok:
         await emit(
             "ui.notify",
@@ -222,7 +208,7 @@ async def on_weather_intent(evt) -> None:
             "text": _(
                 "prep.weather.success",
                 city=data["city"],
-                temp=data["temp"],
+                temp=data.get("temp") or data.get("temp_c"),
                 description=data["description"],
             )
         },
@@ -275,25 +261,46 @@ async def on_weather_city_changed(evt) -> None:
     city = payload.get("city")
     if not city:
         return
+    api_entry_point, _ = _load_config()
+    ok, live = await _fetch_weather_async(api_entry_point, city)
     snapshot = CITY_SNAPSHOTS.get(str(city), CITY_SNAPSHOTS["Berlin"])
+    temp_value = (live.get("temp") or live.get("temp_c")) if ok else None
+    condition_value = live.get("description") if ok else ""
+    wind_value = live.get("wind_ms") if ok else None
     data = {
         "city": city,
-        "temp_c": snapshot["temp_c"],
-        "condition": snapshot["condition"],
-        "wind_ms": snapshot["wind_ms"],
+        "temp_c": temp_value if temp_value is not None else snapshot["temp_c"],
+        "condition": condition_value or snapshot["condition"],
+        "wind_ms": wind_value if wind_value is not None else snapshot["wind_ms"],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    # Обновляем live-ydoc для подключённых браузеров.
-    _log.debug("weather_city_changed webspace=%s city=%s payload=%s", webspace_id, city, payload)
+    _log.info("weather_city_changed webspace=%s city=%s payload=%s ok=%s", webspace_id, city, payload, ok)
     live_applied = mutate_live_room(webspace_id, lambda doc, txn: _write_weather_snapshot(doc, txn, data))
     if not live_applied:
-        _log.debug("mutate_live_room skipped (room inactive) webspace=%s", webspace_id)
+        _log.info("mutate_live_room skipped (room inactive) webspace=%s", webspace_id)
 
-    # И дублируем обновление в стор для снапшотов/рестартов.
     async with async_get_ydoc(webspace_id) as ydoc:
         with ydoc.begin_transaction() as txn:
             _write_weather_snapshot(ydoc, txn, data)
-    _log.debug("weather snapshot persisted webspace=%s city=%s", webspace_id, city)
+    _log.info("weather snapshot persisted webspace=%s city=%s", webspace_id, city)
+    try:
+        bus_emit_sync(
+            get_ctx().bus,
+            "weather.snapshot.updated",
+            {
+                "webspace_id": webspace_id,
+                "city": city,
+                "source": "api" if ok else "snapshot",
+                "ok": ok,
+                "temp_c": data.get("temp_c"),
+                "condition": data.get("condition"),
+                "wind_ms": data.get("wind_ms"),
+                "updated_at": data.get("updated_at"),
+            },
+            "weather_skill",
+        )
+    except Exception:
+        _log.warning("failed to emit weather.snapshot.updated webspace=%s", webspace_id, exc_info=True)
 
 
 def _write_weather_snapshot(ydoc, txn, data: dict) -> None:
