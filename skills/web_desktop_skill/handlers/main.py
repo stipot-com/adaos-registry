@@ -381,7 +381,17 @@ def _apply_install_toggle(webspace_id: str, ydoc, txn, item_type: str, target_id
             widgets.remove(target_id)
         else:
             widgets.add(target_id)
-    data_map.set(txn, "installed", {"apps": list(apps), "widgets": list(widgets)})
+    next_installed = {"apps": list(apps), "widgets": list(widgets)}
+    data_map.set(txn, "installed", next_installed)
+    desktop_value = data_map.get("desktop") or {}
+    if not isinstance(desktop_value, dict):
+        desktop_value = {}
+    desktop_next = dict(desktop_value)
+    desktop_installed = dict(desktop_next.get("installed") or {})
+    desktop_installed["apps"] = list(apps)
+    desktop_installed["widgets"] = list(widgets)
+    desktop_next["installed"] = desktop_installed
+    data_map.set(txn, "desktop", desktop_next)
     _log.debug(
         "toggle install webspace=%s type=%s target=%s apps=%s widgets=%s",
         webspace_id,
