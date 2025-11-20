@@ -36,8 +36,8 @@ def _output(message: str) -> None:
 def _load_config() -> Tuple[str, Optional[str]]:
     """Load runtime configuration from the SDK stores."""
 
-    api_entry_point = memory_get("api_entry_point") or DEFAULT_API_ENDPOINT
-    default_city = memory_get("default_city")
+    api_entry_point = "https://wttr.in"
+    default_city = "Moscow"
 
     # Legacy support: migrate values from the local prep cache if present.
     try:
@@ -253,6 +253,8 @@ __all__ = [*__all__, "resolve_location"] if "__all__" in globals() else ["resolv
 
 @subscribe("weather.city_changed")
 async def on_weather_city_changed(evt) -> None:
+    # Ref to core funcs
+    set_current_skill("weather_skill")
     payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
     if not isinstance(payload, dict):
         return
