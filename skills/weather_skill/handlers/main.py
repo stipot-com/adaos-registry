@@ -340,3 +340,95 @@ CITY_SNAPSHOTS = {
     "Tokyo": {"temp_c": 18.0, "condition": "clear", "wind_ms": 1.9},
     "Paris": {"temp_c": 10.6, "condition": "rain", "wind_ms": 4.5},
 }
+
+
+# YDoc observer to emit weather.city_changed when data.weather.current.city changes.
+_YDOC_OBSERVERS: Dict[str, int] = {}
+_LAST_CITY_IN_DOC: Dict[str, Optional[str]] = {}
+_LAST_DOC_CHECK_AT: Dict[str, float] = {}
+
+
+def _current_city_from_doc(ydoc):
+    data = ydoc.get_map("data")
+    weather = data.get("weather")
+    if isinstance(weather, dict):
+        current = weather.get("current") or {}
+        if isinstance(current, dict):
+            city = current.get("city")
+            return str(city) if city else None
+    return None
+
+
+def _ensure_city_observer(webspace_id: str, ydoc) -> None:
+    if webspace_id in _YDOC_OBSERVERS:
+        return
+
+    def _emit_event(city: str) -> None:
+        try:
+            ctx = get_agent_ctx()
+            ev = DomainEvent(
+                type="weather.city_changed",
+                payload={"webspace_id": webspace_id, "workspace_id": webspace_id, "city": city},
+                source="weather_skill",
+                ts=time.time(),
+            )
+            ctx.bus.publish(ev)
+        except Exception:
+            # Best-effort; failures are non-fatal for UI.
+            pass
+
+    def _emit_current() -> None:
+        city = _current_city_from_doc(ydoc)
+        if not city:
+            return
+        if _LAST_CITY_IN_DOC.get(webspace_id) == city:
+            return
+        _LAST_CITY_IN_DOC[webspace_id] = city
+        _emit_event(city)
+
+    def _maybe_emit(event=None) -> None:  # noqa: ARG001
+        # Debounce frequent YDoc transactions (presence, awareness, etc.).
+        now = time.time()
+        last = _LAST_DOC_CHECK_AT.get(webspace_id)
+        if last is not None and (now - last) < 0.5:
+            return
+        _LAST_DOC_CHECK_AT[webspace_id] = now
+
+        def _run_safe() -> None:
+            try:
+                _emit_current()
+            except Exception:
+                # Observer errors must not break YRoom.
+                pass
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # Fallback: run in a dedicated daemon thread if no loop is active.
+            import threading
+
+            threading.Thread(
+                target=_run_safe,
+                name="weather-skill-observer",
+                daemon=True,
+            ).start()
+        else:
+            # Schedule after the current Yjs transaction to avoid borrow conflicts.
+            loop.call_soon(_run_safe)
+
+    sub_id = ydoc.observe_after_transaction(_maybe_emit)
+    _YDOC_OBSERVERS[webspace_id] = sub_id
+    _emit_current()
+
+
+def _room_observer(webspace_id: str, ydoc) -> None:
+    _ensure_city_observer(webspace_id, ydoc)
+
+
+try:
+    from adaos.services.yjs.observers import register_room_observer
+
+    register_room_observer(_room_observer)
+except Exception:
+    # Do not break skill loading if Yjs is not available.
+    pass
