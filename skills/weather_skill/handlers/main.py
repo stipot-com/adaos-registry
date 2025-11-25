@@ -12,6 +12,7 @@ from typing import Dict, Optional, Tuple, Any
 import requests
 import re
 from datetime import datetime, timezone
+import y_py as Y
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data.bus import emit
@@ -37,7 +38,11 @@ def _output(message: str) -> None:
 def _load_config() -> Tuple[str, Optional[str]]:
     """Load runtime configuration from the SDK stores."""
 
+<<<<<<< Updated upstream
     api_entry_point = "https://wttr.in"
+=======
+    api_entry_point = DEFAULT_API_ENDPOINT
+>>>>>>> Stashed changes
     default_city = "Moscow"
 
     # Legacy support: migrate values from the local prep cache if present.
@@ -277,15 +282,25 @@ async def on_weather_city_changed(evt) -> None:
         "wind_ms": wind_value if wind_value is not None else snapshot["wind_ms"],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    _log.info("weather_city_changed webspace=%s city=%s payload=%s ok=%s", webspace_id, city, payload, ok)
+    _log.info(
+        "weather_city_changed webspace=%s city=%s ok=%s temp_c=%s source=%s",
+        webspace_id,
+        city,
+        ok,
+        data.get("temp_c"),
+        "api" if ok else "snapshot",
+    )
     live_applied = mutate_live_room(webspace_id, lambda doc, txn: _write_weather_snapshot(doc, txn, data))
     if not live_applied:
         _log.info("mutate_live_room skipped (room inactive) webspace=%s", webspace_id)
 
-    async with async_get_ydoc(webspace_id) as ydoc:
-        with ydoc.begin_transaction() as txn:
-            _write_weather_snapshot(ydoc, txn, data)
-    _log.info("weather snapshot persisted webspace=%s city=%s", webspace_id, city)
+    try:
+        async with async_get_ydoc(webspace_id) as ydoc:
+            with ydoc.begin_transaction() as txn:
+                _write_weather_snapshot(ydoc, txn, data)
+        _log.info("weather snapshot persisted webspace=%s city=%s", webspace_id, city)
+    except Exception as exc:  # keep chain alive even if persistence trips
+        _log.warning("weather snapshot persist failed webspace=%s city=%s err=%s", webspace_id, city, exc, exc_info=True)
     try:
         bus_emit_sync(
             get_ctx().bus,
@@ -308,10 +323,35 @@ async def on_weather_city_changed(evt) -> None:
 
 def _write_weather_snapshot(ydoc, txn, data: dict) -> None:
     data_map = ydoc.get_map("data")
-    current_weather = data_map.get("weather")
-    next_weather = _coerce_weather_mapping(current_weather)
-    next_weather["current"] = data
-    data_map.set(txn, "weather", next_weather)
+    weather_node = data_map.get("weather")
+    try:
+        if isinstance(weather_node, Y.YMap):
+            weather_map = weather_node
+        else:
+            weather_map = Y.YMap({})
+            for k, v in _coerce_weather_mapping(weather_node).items():
+                weather_map.set(txn, k, v)
+            data_map.set(txn, "weather", weather_map)
+
+        current_node = weather_map.get("current")
+        if isinstance(current_node, Y.YMap):
+            current_map = current_node
+        else:
+            current_map = Y.YMap({})
+            cur_snapshot = _coerce_weather_mapping(current_node)
+            for k, v in cur_snapshot.items():
+                current_map.set(txn, k, v)
+
+        for k, v in data.items():
+            current_map.set(txn, k, v)
+
+        weather_map.set(txn, "current", current_map)
+    except Exception:
+        # Fallback to plain dict to avoid breaking the transaction
+        snapshot = _coerce_weather_mapping(weather_node)
+        snapshot["current"] = dict(snapshot.get("current") or {})
+        snapshot["current"].update(data)
+        data_map.set(txn, "weather", snapshot)
 
 
 def _coerce_weather_mapping(value) -> dict:
