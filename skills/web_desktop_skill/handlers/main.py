@@ -12,6 +12,7 @@ import time
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
 from adaos.services.yjs.doc import get_ydoc, async_get_ydoc, mutate_live_room
+from adaos.services.capacity import get_local_capacity
 from adaos.apps.workspaces import index as workspace_index
 from adaos.apps.yjs.y_store import ystore_path_for_webspace, get_ystore_for_webspace
 from adaos.apps.yjs.y_bootstrap import ensure_webspace_seeded_from_scenario
@@ -182,6 +183,42 @@ def _rebuild_catalog(webspace_id: str) -> None:
             data_map.set(txn, "installed", filtered_installed)
             registry_map.set(txn, "merged", merged_registry)
 
+def _bootstrap_active_skills_from_capacity() -> None:
+    """
+    Bootstrap _ACTIVE from node.yaml capacity so that skills activated via CLI
+    (before the hub/API is running) are visible to the web desktop once the
+    runtime starts.
+    """
+    try:
+        cap = get_local_capacity()
+    except Exception:
+        return
+    skills = cap.get("skills") or []
+    if not isinstance(skills, list) or not skills:
+        return
+    try:
+        rows = workspace_index.list_workspaces()
+        targets = [row.workspace_id for row in rows] or [default_webspace_id()]
+    except Exception:
+        targets = [default_webspace_id()]
+    for rec in skills:
+        if not isinstance(rec, dict):
+            continue
+        if not rec.get("active", True):
+            continue
+        name = rec.get("name") or rec.get("id")
+        if not name:
+            continue
+        space = "dev" if rec.get("dev") else "default"
+        decl = _load_webui(str(name), space)
+        if not decl:
+            continue
+        for ws_id in targets:
+            _ACTIVE.setdefault(ws_id, {})[f"{space}:{name}"] = decl
+
+
+_bootstrap_active_skills_from_capacity()
+
 def _slugify_webspace_id(raw: str | None) -> str:
     if not raw:
         return ""
@@ -345,9 +382,15 @@ def on_skill_activated(evt) -> None:
     decl = _load_webui(str(skill), space)
     if not decl:
         return
-    _ACTIVE.setdefault(webspace_id, {})[f"{space}:{skill}"] = decl
-    _log.info("skill %s activated in webspace %s (%s)", skill, webspace_id, space)
-    _rebuild_async(webspace_id)
+    try:
+        rows = workspace_index.list_workspaces()
+        targets = [row.workspace_id for row in rows] or [webspace_id or default_webspace_id()]
+    except Exception:
+        targets = [webspace_id or default_webspace_id()]
+    for ws_id in targets:
+        _ACTIVE.setdefault(ws_id, {})[f"{space}:{skill}"] = decl
+        _log.info("skill %s activated in webspace %s (%s)", skill, ws_id, space)
+        _rebuild_async(ws_id)
 
 
 @subscribe("skills.rolledback")
@@ -358,10 +401,16 @@ def on_skill_rolled_back(evt) -> None:
         return
     space = str(payload.get("space") or "default")
     webspace_id = _webspace_id(payload)
-    active = _ACTIVE.get(webspace_id)
-    if active and active.pop(f"{space}:{skill}", None) is not None:
-        _log.info("skill %s rolled back in webspace %s (%s)", skill, webspace_id, space)
-        _rebuild_async(webspace_id)
+    try:
+        rows = workspace_index.list_workspaces()
+        targets = [row.workspace_id for row in rows] or [webspace_id or default_webspace_id()]
+    except Exception:
+        targets = [webspace_id or default_webspace_id()]
+    for ws_id in targets:
+        active = _ACTIVE.get(ws_id)
+        if active and active.pop(f"{space}:{skill}", None) is not None:
+            _log.info("skill %s rolled back in webspace %s (%s)", skill, ws_id, space)
+            _rebuild_async(ws_id)
 
 
 def _apply_install_toggle(webspace_id: str, ydoc, txn, item_type: str, target_id: str) -> None:
