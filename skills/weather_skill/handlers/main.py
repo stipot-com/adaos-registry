@@ -6,6 +6,7 @@ import asyncio
 import functools
 import json
 import logging
+import time
 from typing import Dict, Optional, Tuple, Any
 
 import requests
@@ -349,13 +350,14 @@ _LAST_DOC_CHECK_AT: Dict[str, float] = {}
 
 
 def _current_city_from_doc(ydoc):
+    """Return current city from YDoc data tree, normalizing Y structures to dicts."""
     data = ydoc.get_map("data")
     weather = data.get("weather")
-    if isinstance(weather, dict):
-        current = weather.get("current") or {}
-        if isinstance(current, dict):
-            city = current.get("city")
-            return str(city) if city else None
+    mapping = _coerce_weather_mapping(weather)
+    current = mapping.get("current") or {}
+    if isinstance(current, dict):
+        city = current.get("city")
+        return str(city) if city else None
     return None
 
 
@@ -379,6 +381,7 @@ def _ensure_city_observer(webspace_id: str, ydoc) -> None:
 
     def _emit_current() -> None:
         city = _current_city_from_doc(ydoc)
+        _log.debug("weather observer check webspace=%s city=%s", webspace_id, city)
         if not city:
             return
         if _LAST_CITY_IN_DOC.get(webspace_id) == city:
