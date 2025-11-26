@@ -18,5 +18,14 @@
   "registry": {
     "modals": ["weather_modal"],
     "widgets": ["weather"]
+  },
+  "ydoc_defaults": {
+    "data/weather/current": {
+      "city": "Berlin",
+      "temp_c": 7.5,
+      "condition": "light rain",
+      "wind_ms": 3.1,
+      "updated_at": "2025-11-11T16:00:00Z"
+    }
   }
 }

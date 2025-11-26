@@ -26,23 +26,37 @@ from adaos.services.yjs.doc import async_get_ydoc, mutate_live_room
 
 _log = logging.getLogger("skills.weather_skill")
 
-DEFAULT_API_ENDPOINT = "https://wttr.in"
+DEFAULT_API_ENDPOINT = "https://api.open-meteo.com/v1/forecast"
 _PLACE_RE = re.compile(r"(?:\bв|\bпо)\s+([A-Za-zА-Яа-яЁё\-]+)")
 _CANON_RE = re.compile(r"^[A-Za-z][A-Za-z\-\s]+,\s*[A-Za-z]{2}$")
+_CITY_CACHE: Dict[str, Tuple[float, Dict]] = {}
+_CITY_CACHE_TTL = 300.0  # seconds
 
 
 def _output(message: str) -> None:
     print(message)
 
 
+def _normalize_city_token(raw: Any | None) -> Optional[str]:
+    """
+    Accept either a plain string or a small mapping like {"city": "Moscow"}
+    and return a normalized city name, or None if it cannot be resolved.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        token = raw.get("city") or raw.get("name") or raw.get("value")
+        if not token:
+            return None
+        return str(token).strip()
+    text = str(raw).strip()
+    return text or None
+
+
 def _load_config() -> Tuple[str, Optional[str]]:
     """Load runtime configuration from the SDK stores."""
 
-<<<<<<< Updated upstream
-    api_entry_point = "https://wttr.in"
-=======
     api_entry_point = DEFAULT_API_ENDPOINT
->>>>>>> Stashed changes
     default_city = "Moscow"
 
     # Legacy support: migrate values from the local prep cache if present.
@@ -67,17 +81,48 @@ def _load_config() -> Tuple[str, Optional[str]]:
 
 
 def _resolve_city(requested_city: Optional[str]) -> Optional[str]:
-    city = requested_city or memory_get("last_city") or memory_get("default_city")
+    raw = requested_city or memory_get("last_city") or memory_get("default_city")
+    city = _normalize_city_token(raw)
     if city:
         memory_set("last_city", city)
     return city
 
 
 def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
+    # Map known cities to coordinates for Open-Meteo API.
+    city_key = _normalize_city_token(city)
+    if not city_key:
+        return False, {"error": _("runtime.weather.errors.missing_city")}
+    cache_key = city_key.lower()
+    now = time.time()
+    cached = _CITY_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _CITY_CACHE_TTL:
+        return True, dict(cached[1])
+    CITY_COORDS = {
+        "Berlin": (52.52, 13.405),
+        "Moscow": (55.75, 37.62),
+        "New York": (40.7128, -74.0060),
+        "Tokyo": (35.6895, 139.6917),
+        "Paris": (48.8566, 2.3522),
+    }
+    coords = CITY_COORDS.get(city_key) or next(
+        (v for k, v in CITY_COORDS.items() if k.lower() == city_key.lower()),
+        None,
+    )
+    if not coords:
+        return False, {"error": _("runtime.weather.errors.missing_city")}
+
+    lat, lon = coords
     try:
         response = requests.get(
-            f"{api_entry_point.rstrip('/')}/{city}",
-            params={"format": "j1"},
+            api_entry_point.rstrip("/"),
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "current": "temperature_2m,wind_speed_10m",
+                "timezone": "auto",
+                "windspeed_unit": "ms",
+            },
             timeout=6,
         )
     except Exception as exc:  # pragma: no cover - network error surface only
@@ -91,14 +136,10 @@ def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
     except Exception:
         return False, {"error": _("runtime.weather.errors.invalid_json")}
 
-    current = (payload.get("current_condition") or [{}])[0]
-    temp = current.get("temp_C")
-    description = (current.get("weatherDesc") or [{}])[0].get("value", "")
-    try:
-        wind_kmph = float(current.get("windspeedKmph") or 0.0)
-    except Exception:
-        wind_kmph = 0.0
-    wind_ms = wind_kmph / 3.6
+    current = payload.get("current") or {}
+    temp = current.get("temperature_2m")
+    wind_ms_value = current.get("wind_speed_10m")
+
     if temp is None:
         return False, {"error": _("runtime.weather.errors.invalid_response")}
 
@@ -110,13 +151,22 @@ def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
     if temp_value is None:
         return False, {"error": _("runtime.weather.errors.invalid_response")}
 
-    return True, {
+    try:
+        wind_ms = float(wind_ms_value) if wind_ms_value is not None else 0.0
+    except Exception:
+        wind_ms = 0.0
+
+    # description оставляем пустой – в on_weather_city_changed при пустой строке
+    # возьмётся условие из CITY_SNAPSHOTS.
+    data = {
         "city": city,
         "temp": temp_value,
         "temp_c": temp_value,
-        "description": description,
+        "description": "",
         "wind_ms": wind_ms,
     }
+    _CITY_CACHE[cache_key] = (now, dict(data))
+    return True, data
 
 
 async def _fetch_weather_async(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
@@ -322,53 +372,46 @@ async def on_weather_city_changed(evt) -> None:
 
 
 def _write_weather_snapshot(ydoc, txn, data: dict) -> None:
+    """
+    Update data.weather.current in the YDoc using plain JSON-compatible
+    structures only. This avoids nested Y objects and keeps the update
+    stream simple for the web client.
+    """
     data_map = ydoc.get_map("data")
     weather_node = data_map.get("weather")
-    try:
-        if isinstance(weather_node, Y.YMap):
-            weather_map = weather_node
-        else:
-            weather_map = Y.YMap({})
-            for k, v in _coerce_weather_mapping(weather_node).items():
-                weather_map.set(txn, k, v)
-            data_map.set(txn, "weather", weather_map)
-
-        current_node = weather_map.get("current")
-        if isinstance(current_node, Y.YMap):
-            current_map = current_node
-        else:
-            current_map = Y.YMap({})
-            cur_snapshot = _coerce_weather_mapping(current_node)
-            for k, v in cur_snapshot.items():
-                current_map.set(txn, k, v)
-
-        for k, v in data.items():
-            current_map.set(txn, k, v)
-
-        weather_map.set(txn, "current", current_map)
-    except Exception:
-        # Fallback to plain dict to avoid breaking the transaction
-        snapshot = _coerce_weather_mapping(weather_node)
-        snapshot["current"] = dict(snapshot.get("current") or {})
-        snapshot["current"].update(data)
-        data_map.set(txn, "weather", snapshot)
+    snapshot = _coerce_weather_mapping(weather_node)
+    current = dict(snapshot.get("current") or {})
+    current.update(data)
+    snapshot["current"] = current
+    data_map.set(txn, "weather", snapshot)
 
 
 def _coerce_weather_mapping(value) -> dict:
-    if isinstance(value, dict):
-        return dict(value)
+    def _normalize(node):
+        if isinstance(node, dict):
+            return {str(k): _normalize(v) for k, v in node.items()}
+        if isinstance(node, Y.YMap):
+            keys = list(node.keys())
+            return {str(k): _normalize(node.get(k)) for k in keys}
+        if isinstance(node, Y.YArray):
+            return [_normalize(it) for it in node]
+        if node is None:
+            return None
+        return node
+
     if value is None:
         return {}
+
     try:
-        return dict(value)
+        return _normalize(value) or {}
     except Exception:
         pass
+
     to_json = getattr(value, "to_json", None)
     if callable(to_json):
         try:
             json_value = to_json()
-            if isinstance(json_value, dict):
-                return dict(json_value)
+            return _normalize(json_value) or {}
         except Exception:
             pass
     return {}
