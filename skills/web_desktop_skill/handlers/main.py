@@ -8,15 +8,19 @@ from typing import Any, Callable, Dict, List
 import asyncio
 import re
 import secrets
-import time
+import y_py as Y
+
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
 from adaos.services.yjs.doc import get_ydoc, async_get_ydoc, mutate_live_room
 from adaos.services.capacity import get_local_capacity
+from adaos.services.agent_context import get_ctx as get_agent_ctx
+from adaos.services.eventbus import emit as bus_emit_sync
 from adaos.apps.workspaces import index as workspace_index
 from adaos.apps.yjs.y_store import ystore_path_for_webspace, get_ystore_for_webspace
 from adaos.apps.yjs.y_bootstrap import ensure_webspace_seeded_from_scenario
 from adaos.apps.yjs.webspace import default_webspace_id
+from adaos.apps.yjs.seed import SEED
 
 _log = logging.getLogger("skills.web_desktop")
 _ctx = require_ctx("skills.web_desktop_skill")
@@ -67,6 +71,7 @@ def _load_webui(skill_name: str, space: str) -> Dict[str, Any]:
     registry = raw.get("registry") or {}
     reg_modals = registry.get("modals") or []
     reg_widgets = registry.get("widgets") or []
+    ydoc_defaults = raw.get("ydoc_defaults") or {}
 
     return {
         "skill": skill_name,
@@ -77,6 +82,7 @@ def _load_webui(skill_name: str, space: str) -> Dict[str, Any]:
             "modals": [str(x) for x in reg_modals if isinstance(x, (str, int))],
             "widgets": [str(x) for x in reg_widgets if isinstance(x, (str, int))],
         },
+        "ydoc_defaults": ydoc_defaults if isinstance(ydoc_defaults, dict) else {},
     }
 
 
@@ -122,6 +128,103 @@ def _filter_installed(installed: Dict[str, List[str]], apps: List[Dict[str, Any]
     current_apps = [a for a in (installed.get("apps") or []) if a in app_ids]
     current_widgets = [w for w in (installed.get("widgets") or []) if w in widget_ids]
     return {"apps": current_apps, "widgets": current_widgets}
+
+
+def _apply_ydoc_defaults(webspace_id: str, spec: Dict[str, Any]) -> None:
+    """
+    Ensure that required YDoc paths exist for a given webspace using
+    a declarative mapping from webui.json (ydoc_defaults).
+    """
+
+    def _mutator(doc, txn) -> None:
+        for path, default in spec.items():
+            if not isinstance(path, str):
+                continue
+            segments = [s for s in path.split("/") if s]
+            if not segments:
+                continue
+            # Special-case weather snapshot path to avoid fragile Y-type juggling.
+            if path == "data/weather/current":
+                data_map = doc.get_map("data")
+                weather = data_map.get("weather")
+                if isinstance(weather, dict):
+                    current = weather.get("current")
+                else:
+                    current = None
+                if current is not None:
+                    continue
+                base_weather = dict(weather or {})
+                # Deep-copy default to detach from the original spec.
+                try:
+                    snapshot = json.loads(json.dumps(default))
+                except Exception:
+                    snapshot = dict(default or {})
+                base_weather.setdefault("current", snapshot)
+                data_map.set(txn, "weather", base_weather)
+                continue
+
+            # Fallback: support simple one-level paths like "data/foo".
+            if len(segments) == 2:
+                root_name, key = segments
+                root = doc.get_map(root_name)
+                if root.get(key) is None:
+                    try:
+                        value = json.loads(json.dumps(default))
+                    except Exception:
+                        value = default
+                    root.set(txn, key, value)
+
+    try:
+        applied = mutate_live_room(webspace_id, _mutator)
+        if applied:
+            _log.debug("ydoc_defaults applied via live room webspace=%s", webspace_id)
+            return
+        _log.debug("mutate_live_room skipped for ydoc_defaults webspace=%s; falling back to async_get_ydoc", webspace_id)
+    except Exception:
+        _log.warning("failed to apply ydoc_defaults via live room for webspace=%s", webspace_id, exc_info=True)
+
+    # Fallback: heal the persisted YDoc snapshot so that future rooms
+    # start with the correct structure.
+    try:
+        async def _worker() -> None:
+            async with async_get_ydoc(webspace_id) as ydoc:
+                with ydoc.begin_transaction() as txn:
+                    _mutator(ydoc, txn)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(_worker())
+        else:
+            loop.create_task(_worker(), name=f"web-desktop-ydoc-defaults-{webspace_id}")
+        _log.debug("ydoc_defaults async healing scheduled webspace=%s", webspace_id)
+    except Exception:
+        _log.warning("failed to apply ydoc_defaults via async_get_ydoc for webspace=%s", webspace_id, exc_info=True)
+
+
+def _preload_weather_for_space(webspace_id: str, defaults: Dict[str, Any] | None) -> None:
+    """
+    Fire a best-effort weather.city_changed event so that weather_skill
+    pre-populates a live snapshot for the given webspace.
+    """
+    city = None
+    try:
+        path_spec = (defaults or {}).get("data/weather/current")
+        if isinstance(path_spec, dict):
+            raw = path_spec.get("city")
+            if raw:
+                city = str(raw)
+    except Exception:
+        city = None
+    if not city:
+        city = "Moscow"
+    payload = {"webspace_id": webspace_id, "workspace_id": webspace_id, "city": city}
+    try:
+        ctx = get_agent_ctx()
+        bus_emit_sync(ctx.bus, "weather.city_changed", payload, "web_desktop_skill")
+        _log.info("preloaded weather snapshot webspace=%s city=%s", webspace_id, city)
+    except Exception:
+        _log.warning("failed to preload weather snapshot webspace=%s city=%s", webspace_id, city, exc_info=True)
 
 
 def _rebuild_catalog(webspace_id: str) -> None:
@@ -183,6 +286,35 @@ def _rebuild_catalog(webspace_id: str) -> None:
             data_map.set(txn, "installed", filtered_installed)
             registry_map.set(txn, "merged", merged_registry)
 
+
+def _ensure_weather_seed(webspace_id: str) -> None:
+    """
+    Ensure that data.weather has at least a default snapshot for the given webspace.
+
+    This is used as a best-effort bootstrap so that the weather widget has
+    something to render immediately after activation of weather_skill.
+    """
+    seed_data = (SEED.get("data") or {}).get("weather")
+    if not isinstance(seed_data, dict):
+        return
+
+    def _mutator(doc, txn) -> None:
+        data_map = doc.get_map("data")
+        existing = data_map.get("weather")
+        if existing:
+            return
+        data_map.set(txn, "weather", seed_data)
+
+    try:
+        applied = mutate_live_room(webspace_id, _mutator)
+        if applied:
+            _log.info("seeded default weather snapshot for webspace %s", webspace_id)
+        else:
+            _log.info("weather seed skipped (room inactive) webspace=%s", webspace_id)
+    except Exception:
+        _log.warning("failed to seed default weather snapshot for webspace=%s", webspace_id, exc_info=True)
+
+
 def _bootstrap_active_skills_from_capacity() -> None:
     """
     Bootstrap _ACTIVE from node.yaml capacity so that skills activated via CLI
@@ -191,9 +323,9 @@ def _bootstrap_active_skills_from_capacity() -> None:
     """
     try:
         cap = get_local_capacity()
+        skills = cap.get("skills") or []
     except Exception:
-        return
-    skills = cap.get("skills") or []
+        skills = []
     if not isinstance(skills, list) or not skills:
         return
     try:
@@ -213,11 +345,17 @@ def _bootstrap_active_skills_from_capacity() -> None:
         decl = _load_webui(str(name), space)
         if not decl:
             continue
+        defaults = decl.get("ydoc_defaults") or {}
         for ws_id in targets:
             _ACTIVE.setdefault(ws_id, {})[f"{space}:{name}"] = decl
+            if isinstance(defaults, dict) and defaults:
+                _apply_ydoc_defaults(ws_id, defaults)
+                if str(name) == "weather_skill":
+                    _preload_weather_for_space(ws_id, defaults)
 
 
 _bootstrap_active_skills_from_capacity()
+
 
 def _slugify_webspace_id(raw: str | None) -> str:
     if not raw:
@@ -369,6 +507,29 @@ def on_scenario_synced(evt) -> None:
     _log.info("scenario synced for webspace %s", webspace_id)
     _rebuild_async(webspace_id)
     _sync_webspace_listing_async()
+    # After a scenario is projected into a webspace, ensure that all
+    # active skills have their YDoc defaults applied and weather
+    # snapshots are preloaded, so widgets/modals have data on first load.
+    try:
+        cap = get_local_capacity()
+        skills = cap.get("skills") or []
+    except Exception:
+        skills = []
+    for rec in skills:
+        if not isinstance(rec, dict) or not rec.get("active", True):
+            continue
+        name = rec.get("name") or rec.get("id")
+        if not name:
+            continue
+        space = "dev" if rec.get("dev") else "default"
+        decl = _load_webui(str(name), space)
+        if not decl:
+            continue
+        defaults = decl.get("ydoc_defaults") or {}
+        if isinstance(defaults, dict) and defaults:
+            _apply_ydoc_defaults(webspace_id, defaults)
+            if str(name) == "weather_skill":
+                _preload_weather_for_space(webspace_id, defaults)
 
 
 @subscribe("skills.activated")
@@ -382,6 +543,7 @@ def on_skill_activated(evt) -> None:
     decl = _load_webui(str(skill), space)
     if not decl:
         return
+    defaults = decl.get("ydoc_defaults") or {}
     try:
         rows = workspace_index.list_workspaces()
         targets = [row.workspace_id for row in rows] or [webspace_id or default_webspace_id()]
@@ -391,6 +553,10 @@ def on_skill_activated(evt) -> None:
         _ACTIVE.setdefault(ws_id, {})[f"{space}:{skill}"] = decl
         _log.info("skill %s activated in webspace %s (%s)", skill, ws_id, space)
         _rebuild_async(ws_id)
+        if isinstance(defaults, dict) and defaults:
+            _apply_ydoc_defaults(ws_id, defaults)
+            if str(skill) == "weather_skill":
+                _preload_weather_for_space(ws_id, defaults)
 
 
 @subscribe("skills.rolledback")
@@ -528,8 +694,10 @@ def on_webspace_delete(evt) -> None:
     _ACTIVE.pop(webspace_id, None)
     try:
         from adaos.apps.yjs.y_gateway import y_server  # pylint: disable=import-outside-toplevel
+        from adaos.apps.yjs.y_store import reset_ystore_for_webspace  # pylint: disable=import-outside-toplevel
 
         y_server.rooms.pop(webspace_id, None)
+        reset_ystore_for_webspace(webspace_id)
     except Exception:
         pass
     _sync_webspace_listing_async()
