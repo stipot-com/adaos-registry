@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 import asyncio
+import os
 import re
 import secrets
 import y_py as Y
@@ -40,12 +41,23 @@ def _payload(evt: Any) -> Dict[str, Any]:
 
 
 def _webspace_id(payload: Dict[str, Any]) -> str:
-    meta = payload.get("_meta") if isinstance(payload, dict) else None
-    if isinstance(meta, dict):
-        token = meta.get("webspace_id")
-        if token:
-            return str(token)
-    return str(payload.get("webspace_id") or payload.get("workspace_id") or "default")
+    """
+    Resolve target webspace id for an event payload.
+
+    Explicit fields on the payload (webspace_id/workspace_id) take
+    precedence over metadata injected by the transport (_meta), so
+    that callers can override the default/connection webspace.
+    """
+    if isinstance(payload, dict):
+        direct = payload.get("webspace_id") or payload.get("workspace_id")
+        if direct:
+            return str(direct)
+        meta = payload.get("_meta")
+        if isinstance(meta, dict):
+            token = meta.get("webspace_id") or meta.get("workspace_id")
+            if token:
+                return str(token)
+    return "default"
 
 
 def _webui_path(skill_name: str, space: str) -> Path:
@@ -87,8 +99,24 @@ def _load_webui(skill_name: str, space: str) -> Dict[str, Any]:
 
 
 def _mark_entry(entry: Dict[str, Any], *, source: str, dev: bool) -> Dict[str, Any]:
+    """
+    Attach provenance / dev flag to a catalog entry without
+    overwriting its semantic "source" (which may already contain
+    a YDoc path like "y:data/...").
+
+    - If entry["source"] already exists, it is preserved and the
+      provenance is stored in "origin".
+    - If there is no "source", we keep backward‑compatible behaviour
+      and expose the provenance via "source".
+    """
     data = dict(entry)
-    data["source"] = source
+    if "source" in data and data["source"]:
+        # Preserve existing source (e.g. "y:data/weather/current") so
+        # that frontend widgets can treat it as a data path. Keep
+        # provenance separately for debugging/inspection.
+        data["origin"] = source
+    else:
+        data["source"] = source
     data["dev"] = dev
     return data
 
@@ -401,6 +429,9 @@ def _seed_webspace_async(
                 webspace_id=webspace_id,
                 default_scenario_id=scenario_id or _DEFAULT_SCENARIO_ID,
             )
+            # Ensure core data namespaces like data.weather are present
+            # even if the scenario does not define them explicitly.
+            _ensure_weather_seed(webspace_id)
         finally:
             # YStore is process-wide singleton; do not stop it here.
             pass
@@ -443,6 +474,17 @@ def _rebuild_async(webspace_id: str) -> None:
             data_map = ydoc.get_map("data")
             registry_map = ydoc.get_map("registry")
             scenario_id = ui_map.get("current_scenario") or "web_desktop"
+            scenarios_ui = ui_map.get("scenarios") or {}
+            scenario_ui_entry = (
+                scenarios_ui.get(scenario_id) if isinstance(scenarios_ui, dict) else {}
+            )
+            scenario_app_ui = (
+                scenario_ui_entry.get("application")
+                if isinstance(scenario_ui_entry, dict)
+                else {}
+            )
+            if not isinstance(scenario_app_ui, dict):
+                scenario_app_ui = {}
             scenarios_data = data_map.get("scenarios") or {}
             scenario_entry = scenarios_data.get(scenario_id) if isinstance(scenarios_data, dict) else {}
             base_catalog = scenario_entry.get("catalog") if isinstance(scenario_entry, dict) else {}
@@ -455,7 +497,33 @@ def _rebuild_async(webspace_id: str) -> None:
             base_registry_modals = [str(x) for x in (registry_entry.get("modals") or [])]
             base_registry_widgets = [str(x) for x in (registry_entry.get("widgets") or [])]
 
-            skill_decls = list((_ACTIVE.get(webspace_id) or {}).values())
+            debug_mode = os.getenv("ADAOS_LOG_LEVEL", "").upper() == "DEBUG"
+            skill_decls: List[Dict[str, Any]]
+            if debug_mode:
+                # In DEBUG mode, bypass the in-memory _ACTIVE cache and
+                # reload webui.json for each active skill from disk so
+                # changes are reflected without restarting the hub.
+                try:
+                    cap = get_local_capacity()
+                    skills = cap.get("skills") or []
+                except Exception:
+                    skills = []
+                skill_decls = []
+                for rec in skills:
+                    if not isinstance(rec, dict) or not rec.get("active", True):
+                        continue
+                    name = rec.get("name") or rec.get("id")
+                    if not name:
+                        continue
+                    space = "dev" if rec.get("dev") else "default"
+                    decl = _load_webui(str(name), space)
+                    if decl:
+                        skill_decls.append(decl)
+                _log.debug("rebuild webspace=%s using %d fresh skill declarations (DEBUG mode)", webspace_id, len(skill_decls))
+            else:
+                # Default: use cached declarations initialised at startup
+                # and updated via skills.activated/skills.rolledback.
+                skill_decls = list((_ACTIVE.get(webspace_id) or {}).values())
             skill_apps: List[Dict[str, Any]] = []
             skill_widgets: List[Dict[str, Any]] = []
             skill_registry_modals: List[List[str]] = []
@@ -487,7 +555,30 @@ def _rebuild_async(webspace_id: str) -> None:
                 installed_current = {}
             filtered_installed = _filter_installed(installed_current, merged_apps, merged_widgets)
 
+            # Debug trace: compare scenario desktop.topbar with current ui.application
+            try:
+                current_app = ui_map.get("application") or {}
+                scenario_topbar = (scenario_app_ui.get("desktop") or {}).get("topbar")
+                current_topbar = (
+                    (current_app.get("desktop") or {}).get("topbar")
+                    if isinstance(current_app, dict)
+                    else None
+                )
+                _log.debug(
+                    "rebuild webspace=%s scenarioTopbar=%s ui.application.desktop.topbar(before)=%s",
+                    webspace_id,
+                    scenario_topbar,
+                    current_topbar,
+                )
+            except Exception:
+                pass
+
             with ydoc.begin_transaction() as txn:
+                # Keep ui.application in sync with the current scenario's
+                # application section so that changes in scenario.json
+                # (e.g. desktop.topbar) are reflected in the live UI
+                # after a scenario sync or YJS reload/reset.
+                ui_map.set(txn, "application", scenario_app_ui)
                 data_map.set(txn, "catalog", {"apps": merged_apps, "widgets": merged_widgets})
                 data_map.set(txn, "installed", filtered_installed)
                 registry_map.set(txn, "merged", merged_registry)
@@ -705,4 +796,68 @@ def on_webspace_delete(evt) -> None:
 
 @subscribe("desktop.webspace.refresh")
 def on_webspace_refresh(evt) -> None:  # noqa: ARG001
+    _sync_webspace_listing_async()
+
+
+@subscribe("desktop.webspace.reload")
+def on_webspace_reload(evt) -> None:
+    """
+    Re-seed the current webspace from its scenario, effectively
+    rebuilding ui/data/registry for debugging or recovery.
+    """
+    payload = _payload(evt)
+    webspace_id = _webspace_id(payload)
+    scenario_id = str(payload.get("scenario_id") or _DEFAULT_SCENARIO_ID)
+    if not webspace_id:
+        return
+    _log.info("reloading webspace %s from scenario %s", webspace_id, scenario_id)
+    try:
+        from adaos.apps.yjs.y_gateway import y_server  # pylint: disable=import-outside-toplevel
+        from adaos.apps.yjs.y_store import reset_ystore_for_webspace  # pylint: disable=import-outside-toplevel
+
+        try:
+            y_server.rooms.pop(webspace_id, None)
+        except Exception:
+            pass
+        try:
+            reset_ystore_for_webspace(webspace_id)
+        except Exception:
+            pass
+    except Exception:
+        _log.warning("failed to reset ystore for webspace=%s", webspace_id, exc_info=True)
+
+    _seed_webspace_async(webspace_id, scenario_id=scenario_id, post=lambda: _rebuild_async(webspace_id))
+    _sync_webspace_listing_async()
+
+
+@subscribe("desktop.webspace.reset")
+def on_webspace_reset(evt) -> None:
+    """
+    Hard reset of the current webspace from its scenario. For now this
+    mirrors desktop.webspace.reload behaviour; it is introduced as a
+    separate event so that future versions can differentiate between
+    soft reload (updatable-only) and full reset.
+    """
+    payload = _payload(evt)
+    webspace_id = _webspace_id(payload)
+    scenario_id = str(payload.get("scenario_id") or _DEFAULT_SCENARIO_ID)
+    if not webspace_id:
+        return
+    _log.info("resetting webspace %s from scenario %s", webspace_id, scenario_id)
+    try:
+        from adaos.apps.yjs.y_gateway import y_server  # pylint: disable=import-outside-toplevel
+        from adaos.apps.yjs.y_store import reset_ystore_for_webspace  # pylint: disable=import-outside-toplevel
+
+        try:
+            y_server.rooms.pop(webspace_id, None)
+        except Exception:
+            pass
+        try:
+            reset_ystore_for_webspace(webspace_id)
+        except Exception:
+            pass
+    except Exception:
+        _log.warning("failed to reset ystore for webspace=%s", webspace_id, exc_info=True)
+
+    _seed_webspace_async(webspace_id, scenario_id=scenario_id, post=lambda: _rebuild_async(webspace_id))
     _sync_webspace_listing_async()
