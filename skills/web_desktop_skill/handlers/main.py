@@ -24,7 +24,14 @@ from adaos.apps.yjs.webspace import default_webspace_id
 from adaos.apps.yjs.seed import SEED
 
 _log = logging.getLogger("skills.web_desktop")
-_ctx = require_ctx("skills.web_desktop_skill")
+
+# During static validation, handlers are imported in a lightweight subprocess
+# without a full AdaOS runtime. In that case, avoid requiring AgentContext
+# at import time to let validation introspect decorators safely.
+if os.environ.get("ADAOS_VALIDATE") == "1":
+    _ctx = None  # type: ignore[assignment]
+else:
+    _ctx = require_ctx("skills.web_desktop_skill")
 _ACTIVE: Dict[str, Dict[str, Dict[str, Any]]] = {}
 _DEFAULT_SCENARIO_ID = "web_desktop"
 _WS_ID_RE = re.compile(r"[^a-z0-9-_]+")
@@ -81,8 +88,8 @@ def _load_webui(skill_name: str, space: str) -> Dict[str, Any]:
     apps = raw.get("apps") or catalog.get("apps") or []
     widgets = raw.get("widgets") or catalog.get("widgets") or []
     registry = raw.get("registry") or {}
-    reg_modals = registry.get("modals") or []
-    reg_widgets = registry.get("widgets") or []
+    reg_modals_raw = registry.get("modals") or {}
+    reg_widgets_raw = registry.get("widgets") or {}
     ydoc_defaults = raw.get("ydoc_defaults") or {}
 
     return {
@@ -91,8 +98,18 @@ def _load_webui(skill_name: str, space: str) -> Dict[str, Any]:
         "apps": [it for it in apps if isinstance(it, dict)],
         "widgets": [it for it in widgets if isinstance(it, dict)],
         "registry": {
-            "modals": [str(x) for x in reg_modals if isinstance(x, (str, int))],
-            "widgets": [str(x) for x in reg_widgets if isinstance(x, (str, int))],
+            # Allow both dict-based modality declarations (id -> schema)
+            # and legacy list-of-id registries for compatibility.
+            "modals": (
+                {str(k): v for k, v in reg_modals_raw.items()}
+                if isinstance(reg_modals_raw, dict)
+                else [str(x) for x in reg_modals_raw if isinstance(x, (str, int))]
+            ),
+            "widgets": (
+                {str(k): v for k, v in reg_widgets_raw.items()}
+                if isinstance(reg_widgets_raw, dict)
+                else [str(x) for x in reg_widgets_raw if isinstance(x, (str, int))]
+            ),
         },
         "ydoc_defaults": ydoc_defaults if isinstance(ydoc_defaults, dict) else {},
     }
@@ -294,11 +311,25 @@ def _rebuild_catalog(webspace_id: str) -> None:
                 if isinstance(widget, dict):
                     skill_widgets.append(_mark_entry(widget, source=source, dev=dev_flag))
             reg = decl.get("registry") or {}
-            skill_registry_modals.append([str(x) for x in (reg.get("modals") or [])])
-            skill_registry_widgets.append([str(x) for x in (reg.get("widgets") or [])])
+            mod_spec = reg.get("modals") or {}
+            if isinstance(mod_spec, dict):
+                skill_registry_modals.append([str(k) for k in mod_spec.keys()])
+            else:
+                skill_registry_modals.append([str(x) for x in mod_spec])
+            wid_spec = reg.get("widgets") or {}
+            if isinstance(wid_spec, dict):
+                skill_registry_widgets.append([str(k) for k in wid_spec.keys()])
+            else:
+                skill_registry_widgets.append([str(x) for x in wid_spec])
 
-        merged_apps = _merge_by_id([_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_apps] + skill_apps)
-        merged_widgets = _merge_by_id([_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_widgets] + skill_widgets)
+        merged_apps = _merge_by_id(
+            [_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_apps]
+            + skill_apps
+        )
+        merged_widgets = _merge_by_id(
+            [_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_widgets]
+            + skill_widgets
+        )
         merged_registry = {
             "modals": _merge_registry_lists(base_registry_modals, skill_registry_modals),
             "widgets": _merge_registry_lists(base_registry_widgets, skill_registry_widgets),
@@ -540,8 +571,16 @@ def _rebuild_async(webspace_id: str) -> None:
                     if isinstance(widget, dict):
                         skill_widgets.append(_mark_entry(widget, source=source, dev=dev_flag))
                 reg = decl.get("registry") or {}
-                skill_registry_modals.append([str(x) for x in (reg.get("modals") or [])])
-                skill_registry_widgets.append([str(x) for x in (reg.get("widgets") or [])])
+                mod_spec = reg.get("modals") or {}
+                if isinstance(mod_spec, dict):
+                    skill_registry_modals.append([str(k) for k in mod_spec.keys()])
+                else:
+                    skill_registry_modals.append([str(x) for x in mod_spec])
+                wid_spec = reg.get("widgets") or {}
+                if isinstance(wid_spec, dict):
+                    skill_registry_widgets.append([str(k) for k in wid_spec.keys()])
+                else:
+                    skill_registry_widgets.append([str(x) for x in wid_spec])
 
             merged_apps = _merge_by_id([_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_apps] + skill_apps)
             merged_widgets = _merge_by_id([_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_widgets] + skill_widgets)
@@ -573,12 +612,37 @@ def _rebuild_async(webspace_id: str) -> None:
             except Exception:
                 pass
 
+            # Merge scenario-defined modals with skill-provided modal schemas.
+            merged_modals_map: Dict[str, Any] = {}
+            base_modals_map = {}
+            try:
+                raw = scenario_app_ui.get("modals") if isinstance(scenario_app_ui, dict) else None
+                if isinstance(raw, dict):
+                    base_modals_map = raw
+            except Exception:
+                base_modals_map = {}
+            for key, value in (base_modals_map or {}).items():
+                merged_modals_map[str(key)] = value
+            for decl in skill_decls:
+                reg = decl.get("registry") or {}
+                mod_spec = reg.get("modals") or {}
+                if not isinstance(mod_spec, dict):
+                    continue
+                for key, value in mod_spec.items():
+                    token = str(key)
+                    if token and token not in merged_modals_map:
+                        merged_modals_map[token] = value
+            # Build final application section with merged modals.
+            app_with_modals: Dict[str, Any] = dict(scenario_app_ui)
+            if merged_modals_map:
+                app_with_modals["modals"] = merged_modals_map
+
             with ydoc.begin_transaction() as txn:
                 # Keep ui.application in sync with the current scenario's
-                # application section so that changes in scenario.json
-                # (e.g. desktop.topbar) are reflected in the live UI
-                # after a scenario sync or YJS reload/reset.
-                ui_map.set(txn, "application", scenario_app_ui)
+                # application section and enrich it with skill-provided
+                # modal schemas so that changes in scenario.json and
+                # webui.json are reflected in the live UI.
+                ui_map.set(txn, "application", app_with_modals)
                 data_map.set(txn, "catalog", {"apps": merged_apps, "widgets": merged_widgets})
                 data_map.set(txn, "installed", filtered_installed)
                 registry_map.set(txn, "merged", merged_registry)
