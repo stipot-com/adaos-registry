@@ -1,9 +1,74 @@
 {
-  "apps": [],
-  "widgets": [],
+  "apps": [
+    {
+      "id": "weather_app",
+      "title": "Погода",
+      "icon": "cloud-outline",
+      "launchModal": "weather_modal"
+    }
+  ],
+  "widgets": [
+    {
+      "id": "weather",
+      "title": "Погода",
+      "type": "visual.metricTile",
+      "source": "y:data/weather/current"
+    }
+  ],
   "registry": {
-    "modals": [],
-    "widgets": []
+    "modals": {
+      "weather_modal": {
+        "title": "Погода",
+        "schema": {
+          "id": "weather_modal",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "weather-summary",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Погода",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/weather/current"
+              }
+            },
+            {
+              "id": "weather-city-selector",
+              "type": "input.selector",
+              "area": "main",
+              "title": "Город",
+              "inputs": {
+                "options": ["Berlin", "Moscow", "New York"]
+              },
+              "dataSource": {
+                "kind": "y",
+                "path": "data/weather/current"
+              },
+              "actions": [
+                {
+                  "on": "change",
+                  "type": "callHost",
+                  "target": "weather.city_changed",
+                  "params": {
+                    "city": "$event.value"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "widgets": {}
   },
   "ydoc_defaults": {
     "data/weather/current": {
