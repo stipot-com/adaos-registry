@@ -91,6 +91,8 @@ def _load_webui(skill_name: str, space: str) -> Dict[str, Any]:
     reg_modals_raw = registry.get("modals") or {}
     reg_widgets_raw = registry.get("widgets") or {}
     ydoc_defaults = raw.get("ydoc_defaults") or {}
+    raw_contrib = raw.get("contributions") or []
+    contributions = [c for c in raw_contrib if isinstance(c, dict)]
 
     return {
         "skill": skill_name,
@@ -112,6 +114,7 @@ def _load_webui(skill_name: str, space: str) -> Dict[str, Any]:
             ),
         },
         "ydoc_defaults": ydoc_defaults if isinstance(ydoc_defaults, dict) else {},
+        "contributions": contributions,
     }
 
 
@@ -299,6 +302,8 @@ def _rebuild_catalog(webspace_id: str) -> None:
         skill_widgets: List[Dict[str, Any]] = []
         skill_registry_modals: List[List[str]] = []
         skill_registry_widgets: List[List[str]] = []
+        auto_widget_ids: set[str] = set()
+        auto_app_ids: set[str] = set()
         for decl in skill_decls:
             skill_name = decl.get("skill") or ""
             space = decl.get("space") or "default"
@@ -321,6 +326,19 @@ def _rebuild_catalog(webspace_id: str) -> None:
                 skill_registry_widgets.append([str(k) for k in wid_spec.keys()])
             else:
                 skill_registry_widgets.append([str(x) for x in wid_spec])
+            for contrib in decl.get("contributions") or []:
+                if not isinstance(contrib, dict):
+                    continue
+                ep = str(contrib.get("extensionPoint") or "")
+                ctype = str(contrib.get("type") or "")
+                cid = str(contrib.get("id") or "")
+                auto = bool(contrib.get("autoInstall"))
+                if not cid or not auto:
+                    continue
+                if ep == "desktop.widgets" and ctype == "widget":
+                    auto_widget_ids.add(cid)
+                if ep == "desktop.apps" and ctype == "app":
+                    auto_app_ids.add(cid)
 
         merged_apps = _merge_by_id(
             [_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_apps]
@@ -338,7 +356,12 @@ def _rebuild_catalog(webspace_id: str) -> None:
         installed_current = data_map.get("installed") or {}
         if not isinstance(installed_current, dict):
             installed_current = {}
-        filtered_installed = _filter_installed(installed_current, merged_apps, merged_widgets)
+        apps_set = set(installed_current.get("apps") or [])
+        widgets_set = set(installed_current.get("widgets") or [])
+        apps_set |= auto_app_ids
+        widgets_set |= auto_widget_ids
+        installed_with_auto = {"apps": list(apps_set), "widgets": list(widgets_set)}
+        filtered_installed = _filter_installed(installed_with_auto, merged_apps, merged_widgets)
 
         with ydoc.begin_transaction() as txn:
             data_map.set(txn, "catalog", {"apps": merged_apps, "widgets": merged_widgets})
@@ -385,13 +408,14 @@ def _bootstrap_active_skills_from_capacity() -> None:
         skills = cap.get("skills") or []
     except Exception:
         skills = []
-    if not isinstance(skills, list) or not skills:
-        return
+    if not isinstance(skills, list):
+        skills = []
     try:
         rows = workspace_index.list_workspaces()
         targets = [row.workspace_id for row in rows] or [default_webspace_id()]
     except Exception:
         targets = [default_webspace_id()]
+    # Load webui.json for skills explicitly listed in capacity.
     for rec in skills:
         if not isinstance(rec, dict):
             continue
@@ -411,6 +435,19 @@ def _bootstrap_active_skills_from_capacity() -> None:
                 _apply_ydoc_defaults(ws_id, defaults)
                 if str(name) == "weather_skill":
                     _preload_weather_for_space(ws_id, defaults)
+    # Always load the desktop skill's own webui.json so that core
+    # desktop modals (apps/widgets catalogs) are available even if
+    # web_desktop_skill is not explicitly listed in capacity.
+    try:
+        desktop_decl = _load_webui("web_desktop_skill", "default")
+    except Exception:
+        desktop_decl = {}
+    if isinstance(desktop_decl, dict) and desktop_decl:
+        defaults = desktop_decl.get("ydoc_defaults") or {}
+        for ws_id in targets:
+            _ACTIVE.setdefault(ws_id, {})["default:web_desktop_skill"] = desktop_decl
+            if isinstance(defaults, dict) and defaults:
+                _apply_ydoc_defaults(ws_id, defaults)
 
 
 _bootstrap_active_skills_from_capacity()
@@ -539,6 +576,8 @@ def _rebuild_async(webspace_id: str) -> None:
                     skills = cap.get("skills") or []
                 except Exception:
                     skills = []
+                if not isinstance(skills, list):
+                    skills = []
                 skill_decls = []
                 for rec in skills:
                     if not isinstance(rec, dict) or not rec.get("active", True):
@@ -550,6 +589,14 @@ def _rebuild_async(webspace_id: str) -> None:
                     decl = _load_webui(str(name), space)
                     if decl:
                         skill_decls.append(decl)
+                # Always load the desktop skill's own webui.json so that
+                # core desktop modals are available in DEBUG mode as well.
+                try:
+                    desktop_decl = _load_webui("web_desktop_skill", "default")
+                except Exception:
+                    desktop_decl = {}
+                if isinstance(desktop_decl, dict) and desktop_decl:
+                    skill_decls.append(desktop_decl)
                 _log.debug("rebuild webspace=%s using %d fresh skill declarations (DEBUG mode)", webspace_id, len(skill_decls))
             else:
                 # Default: use cached declarations initialised at startup
@@ -559,6 +606,8 @@ def _rebuild_async(webspace_id: str) -> None:
             skill_widgets: List[Dict[str, Any]] = []
             skill_registry_modals: List[List[str]] = []
             skill_registry_widgets: List[List[str]] = []
+            auto_widget_ids: set[str] = set()
+            auto_app_ids: set[str] = set()
             for decl in skill_decls:
                 skill_name = decl.get("skill") or ""
                 space = decl.get("space") or "default"
@@ -581,6 +630,19 @@ def _rebuild_async(webspace_id: str) -> None:
                     skill_registry_widgets.append([str(k) for k in wid_spec.keys()])
                 else:
                     skill_registry_widgets.append([str(x) for x in wid_spec])
+                for contrib in decl.get("contributions") or []:
+                    if not isinstance(contrib, dict):
+                        continue
+                    ep = str(contrib.get("extensionPoint") or "")
+                    ctype = str(contrib.get("type") or "")
+                    cid = str(contrib.get("id") or "")
+                    auto = bool(contrib.get("autoInstall"))
+                    if not cid or not auto:
+                        continue
+                    if ep == "desktop.widgets" and ctype == "widget":
+                        auto_widget_ids.add(cid)
+                    if ep == "desktop.apps" and ctype == "app":
+                        auto_app_ids.add(cid)
 
             merged_apps = _merge_by_id([_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_apps] + skill_apps)
             merged_widgets = _merge_by_id([_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_widgets] + skill_widgets)
@@ -592,7 +654,12 @@ def _rebuild_async(webspace_id: str) -> None:
             installed_current = data_map.get("installed") or {}
             if not isinstance(installed_current, dict):
                 installed_current = {}
-            filtered_installed = _filter_installed(installed_current, merged_apps, merged_widgets)
+            apps_set = set(installed_current.get("apps") or [])
+            widgets_set = set(installed_current.get("widgets") or [])
+            apps_set |= auto_app_ids
+            widgets_set |= auto_widget_ids
+            installed_with_auto = {"apps": list(apps_set), "widgets": list(widgets_set)}
+            filtered_installed = _filter_installed(installed_with_auto, merged_apps, merged_widgets)
 
             # Debug trace: compare scenario desktop.topbar with current ui.application
             try:

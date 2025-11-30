@@ -1,4 +1,8 @@
-"""Weather skill handlers for the runtime reference implementation."""
+"""Weather skill handlers for the runtime reference implementation.
+
+TODO: в будущей итерации перевести работу с состоянием погоды на ctx,
+а Yjs использовать только на уровне сценариев / runtime webspace.
+"""
 
 from __future__ import annotations
 

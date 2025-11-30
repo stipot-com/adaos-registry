@@ -1,0 +1,87 @@
+{
+  "apps": [],
+  "widgets": [],
+  "registry": {
+    "modals": {
+      "apps_catalog": {
+        "title": "Available Apps",
+        "schema": {
+          "id": "apps_catalog",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "apps-list",
+              "type": "collection.grid",
+              "area": "main",
+              "title": "Apps",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/catalog/apps"
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "callHost",
+                  "target": "desktop.toggleInstall",
+                  "params": {
+                    "type": "app",
+                    "id": "$event.id"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "widgets_catalog": {
+        "title": "Available Widgets",
+        "schema": {
+          "id": "widgets_catalog",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "widgets-list",
+              "type": "collection.grid",
+              "area": "main",
+              "title": "Widgets",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/catalog/widgets"
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "callHost",
+                  "target": "desktop.toggleInstall",
+                  "params": {
+                    "type": "widget",
+                    "id": "$event.id"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "widgets": {}
+  },
+  "ydoc_defaults": {}
+}
+

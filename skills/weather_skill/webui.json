@@ -78,5 +78,13 @@
       "wind_ms": 3.1,
       "updated_at": "2025-11-11T16:00:00Z"
     }
-  }
+  },
+  "contributions": [
+    {
+      "extensionPoint": "desktop.widgets",
+      "type": "widget",
+      "id": "weather",
+      "autoInstall": true
+    }
+  ]
 }
