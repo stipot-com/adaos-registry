@@ -15,13 +15,10 @@ from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
 from adaos.services.yjs.doc import get_ydoc, async_get_ydoc, mutate_live_room
 from adaos.services.capacity import get_local_capacity
-from adaos.services.agent_context import get_ctx as get_agent_ctx
-from adaos.services.eventbus import emit as bus_emit_sync
 from adaos.apps.workspaces import index as workspace_index
 from adaos.apps.yjs.y_store import ystore_path_for_webspace, get_ystore_for_webspace
 from adaos.apps.yjs.y_bootstrap import ensure_webspace_seeded_from_scenario
 from adaos.apps.yjs.webspace import default_webspace_id
-from adaos.apps.yjs.seed import SEED
 
 _log = logging.getLogger("skills.web_desktop")
 
@@ -191,27 +188,7 @@ def _apply_ydoc_defaults(webspace_id: str, spec: Dict[str, Any]) -> None:
             segments = [s for s in path.split("/") if s]
             if not segments:
                 continue
-            # Special-case weather snapshot path to avoid fragile Y-type juggling.
-            if path == "data/weather/current":
-                data_map = doc.get_map("data")
-                weather = data_map.get("weather")
-                if isinstance(weather, dict):
-                    current = weather.get("current")
-                else:
-                    current = None
-                if current is not None:
-                    continue
-                base_weather = dict(weather or {})
-                # Deep-copy default to detach from the original spec.
-                try:
-                    snapshot = json.loads(json.dumps(default))
-                except Exception:
-                    snapshot = dict(default or {})
-                base_weather.setdefault("current", snapshot)
-                data_map.set(txn, "weather", base_weather)
-                continue
-
-            # Fallback: support simple one-level paths like "data/foo".
+            # Simple helper: support one-level paths like "data/foo".
             if len(segments) == 2:
                 root_name, key = segments
                 root = doc.get_map(root_name)
@@ -248,31 +225,6 @@ def _apply_ydoc_defaults(webspace_id: str, spec: Dict[str, Any]) -> None:
         _log.debug("ydoc_defaults async healing scheduled webspace=%s", webspace_id)
     except Exception:
         _log.warning("failed to apply ydoc_defaults via async_get_ydoc for webspace=%s", webspace_id, exc_info=True)
-
-
-def _preload_weather_for_space(webspace_id: str, defaults: Dict[str, Any] | None) -> None:
-    """
-    Fire a best-effort weather.city_changed event so that weather_skill
-    pre-populates a live snapshot for the given webspace.
-    """
-    city = None
-    try:
-        path_spec = (defaults or {}).get("data/weather/current")
-        if isinstance(path_spec, dict):
-            raw = path_spec.get("city")
-            if raw:
-                city = str(raw)
-    except Exception:
-        city = None
-    if not city:
-        city = "Moscow"
-    payload = {"webspace_id": webspace_id, "workspace_id": webspace_id, "city": city}
-    try:
-        ctx = get_agent_ctx()
-        bus_emit_sync(ctx.bus, "weather.city_changed", payload, "web_desktop_skill")
-        _log.info("preloaded weather snapshot webspace=%s city=%s", webspace_id, city)
-    except Exception:
-        _log.warning("failed to preload weather snapshot webspace=%s city=%s", webspace_id, city, exc_info=True)
 
 
 def _rebuild_catalog(webspace_id: str) -> None:
@@ -371,30 +323,10 @@ def _rebuild_catalog(webspace_id: str) -> None:
 
 def _ensure_weather_seed(webspace_id: str) -> None:
     """
-    Ensure that data.weather has at least a default snapshot for the given webspace.
-
-    This is used as a best-effort bootstrap so that the weather widget has
-    something to render immediately after activation of weather_skill.
+    Legacy helper for seeding data.weather. It is now a no-op so that
+    web_desktop_skill stays agnostic of any particular domain widgets.
     """
-    seed_data = (SEED.get("data") or {}).get("weather")
-    if not isinstance(seed_data, dict):
-        return
-
-    def _mutator(doc, txn) -> None:
-        data_map = doc.get_map("data")
-        existing = data_map.get("weather")
-        if existing:
-            return
-        data_map.set(txn, "weather", seed_data)
-
-    try:
-        applied = mutate_live_room(webspace_id, _mutator)
-        if applied:
-            _log.info("seeded default weather snapshot for webspace %s", webspace_id)
-        else:
-            _log.info("weather seed skipped (room inactive) webspace=%s", webspace_id)
-    except Exception:
-        _log.warning("failed to seed default weather snapshot for webspace=%s", webspace_id, exc_info=True)
+    return
 
 
 def _bootstrap_active_skills_from_capacity() -> None:
@@ -433,8 +365,6 @@ def _bootstrap_active_skills_from_capacity() -> None:
             _ACTIVE.setdefault(ws_id, {})[f"{space}:{name}"] = decl
             if isinstance(defaults, dict) and defaults:
                 _apply_ydoc_defaults(ws_id, defaults)
-                if str(name) == "weather_skill":
-                    _preload_weather_for_space(ws_id, defaults)
     # Always load the desktop skill's own webui.json so that core
     # desktop modals (apps/widgets catalogs) are available even if
     # web_desktop_skill is not explicitly listed in capacity.
@@ -497,9 +427,6 @@ def _seed_webspace_async(
                 webspace_id=webspace_id,
                 default_scenario_id=scenario_id or _DEFAULT_SCENARIO_ID,
             )
-            # Ensure core data namespaces like data.weather are present
-            # even if the scenario does not define them explicitly.
-            _ensure_weather_seed(webspace_id)
         finally:
             # YStore is process-wide singleton; do not stop it here.
             pass
@@ -568,36 +495,32 @@ def _rebuild_async(webspace_id: str) -> None:
             debug_mode = os.getenv("ADAOS_LOG_LEVEL", "").upper() == "DEBUG"
             skill_decls: List[Dict[str, Any]]
             if debug_mode:
-                # In DEBUG mode, bypass the in-memory _ACTIVE cache and
-                # reload webui.json for each active skill from disk so
-                # changes are reflected without restarting the hub.
-                try:
-                    cap = get_local_capacity()
-                    skills = cap.get("skills") or []
-                except Exception:
-                    skills = []
-                if not isinstance(skills, list):
-                    skills = []
+                # In DEBUG mode, reload webui.json for each *active*
+                # skill from disk so that changes are reflected without
+                # restarting the hub, but still respect the _ACTIVE map
+                # (skills.activated / skills.rolledback).
+                active_for_ws = _ACTIVE.get(webspace_id) or {}
                 skill_decls = []
-                for rec in skills:
-                    if not isinstance(rec, dict) or not rec.get("active", True):
+                for key in active_for_ws.keys():
+                    try:
+                        if ":" in key:
+                            space, name = key.split(":", 1)
+                        else:
+                            space, name = "default", key
+                        space = str(space or "default")
+                        name = str(name or "").strip()
+                    except Exception:
                         continue
-                    name = rec.get("name") or rec.get("id")
                     if not name:
                         continue
-                    space = "dev" if rec.get("dev") else "default"
-                    decl = _load_webui(str(name), space)
+                    decl = _load_webui(name, space)
                     if decl:
                         skill_decls.append(decl)
-                # Always load the desktop skill's own webui.json so that
-                # core desktop modals are available in DEBUG mode as well.
-                try:
-                    desktop_decl = _load_webui("web_desktop_skill", "default")
-                except Exception:
-                    desktop_decl = {}
-                if isinstance(desktop_decl, dict) and desktop_decl:
-                    skill_decls.append(desktop_decl)
-                _log.debug("rebuild webspace=%s using %d fresh skill declarations (DEBUG mode)", webspace_id, len(skill_decls))
+                _log.debug(
+                    "rebuild webspace=%s using %d active skill declarations (DEBUG mode)",
+                    webspace_id,
+                    len(skill_decls),
+                )
             else:
                 # Default: use cached declarations initialised at startup
                 # and updated via skills.activated/skills.rolledback.
@@ -750,8 +673,6 @@ def on_scenario_synced(evt) -> None:
         defaults = decl.get("ydoc_defaults") or {}
         if isinstance(defaults, dict) and defaults:
             _apply_ydoc_defaults(webspace_id, defaults)
-            if str(name) == "weather_skill":
-                _preload_weather_for_space(webspace_id, defaults)
 
 
 @subscribe("skills.activated")
@@ -777,8 +698,6 @@ def on_skill_activated(evt) -> None:
         _rebuild_async(ws_id)
         if isinstance(defaults, dict) and defaults:
             _apply_ydoc_defaults(ws_id, defaults)
-            if str(skill) == "weather_skill":
-                _preload_weather_for_space(ws_id, defaults)
 
 
 @subscribe("skills.rolledback")
@@ -794,9 +713,23 @@ def on_skill_rolled_back(evt) -> None:
         targets = [row.workspace_id for row in rows] or [webspace_id or default_webspace_id()]
     except Exception:
         targets = [webspace_id or default_webspace_id()]
+    suffix = f":{skill}"
     for ws_id in targets:
         active = _ACTIVE.get(ws_id)
-        if active and active.pop(f"{space}:{skill}", None) is not None:
+        if not active:
+            continue
+        removed = False
+        # Remove both explicit space-qualified key and any matching suffix
+        # to stay resilient to mismatched space hints.
+        if active.pop(f"{space}:{skill}", None) is not None:
+            removed = True
+        else:
+            # Try any entry that ends with :<skill>
+            for key in list(active.keys()):
+                if key.endswith(suffix):
+                    active.pop(key, None)
+                    removed = True
+        if removed:
             _log.info("skill %s rolled back in webspace %s (%s)", skill, ws_id, space)
             _rebuild_async(ws_id)
 
