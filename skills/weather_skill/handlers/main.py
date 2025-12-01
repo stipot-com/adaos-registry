@@ -16,17 +16,15 @@ from typing import Dict, Optional, Tuple, Any
 import requests
 import re
 from datetime import datetime, timezone
-import y_py as Y
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data.bus import emit
 from adaos.sdk.data.context import get_current_skill, set_current_skill
+from adaos.sdk.data import ctx_subnet
 from adaos.sdk.data.i18n import _, I18n
 from adaos.sdk.data.skill_memory import get as memory_get, set as memory_set
 from adaos.sdk.data.events import publish as publish_event
 from adaos.services.agent_context import get_ctx
-from adaos.services.eventbus import emit as bus_emit_sync
-from adaos.services.yjs.doc import async_get_ydoc, mutate_live_room
 
 _log = logging.getLogger("skills.weather_skill")
 
@@ -313,13 +311,21 @@ __all__ = [*__all__, "resolve_location"] if "__all__" in globals() else ["resolv
 
 @subscribe("weather.city_changed")
 async def on_weather_city_changed(evt) -> None:
-    # Ref to core funcs
+    """
+    Handle city changes by fetching a fresh snapshot and projecting it
+    via ctx.subnet into configured targets (Yjs / storage).
+    """
     set_current_skill("weather_skill")
     payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
     if not isinstance(payload, dict):
         return
     meta = payload.get("_meta") if isinstance(payload, dict) else None
-    webspace_id = str((meta or {}).get("webspace_id") or payload.get("webspace_id") or payload.get("workspace_id") or "default")
+    webspace_id = str(
+        (meta or {}).get("webspace_id")
+        or payload.get("webspace_id")
+        or payload.get("workspace_id")
+        or "default"
+    )
     city = payload.get("city")
     if not city:
         return
@@ -344,81 +350,13 @@ async def on_weather_city_changed(evt) -> None:
         data.get("temp_c"),
         "api" if ok else "snapshot",
     )
-    live_applied = mutate_live_room(webspace_id, lambda doc, txn: _write_weather_snapshot(doc, txn, data))
-    if not live_applied:
-        _log.info("mutate_live_room skipped (room inactive) webspace=%s", webspace_id)
-
+    # Route snapshot via ProjectionRegistry: subnet/weather.snapshot
     try:
-        async with async_get_ydoc(webspace_id) as ydoc:
-            with ydoc.begin_transaction() as txn:
-                _write_weather_snapshot(ydoc, txn, data)
-        _log.info("weather snapshot persisted webspace=%s city=%s", webspace_id, city)
-    except Exception as exc:  # keep chain alive even if persistence trips
-        _log.warning("weather snapshot persist failed webspace=%s city=%s err=%s", webspace_id, city, exc, exc_info=True)
-    try:
-        bus_emit_sync(
-            get_ctx().bus,
-            "weather.snapshot.updated",
-            {
-                "webspace_id": webspace_id,
-                "city": city,
-                "source": "api" if ok else "snapshot",
-                "ok": ok,
-                "temp_c": data.get("temp_c"),
-                "condition": data.get("condition"),
-                "wind_ms": data.get("wind_ms"),
-                "updated_at": data.get("updated_at"),
-            },
-            "weather_skill",
-        )
+        # Wrap into {"current": ...} so that data.weather.current is
+        # available for widgets reading data/weather/current.
+        ctx_subnet.set("weather.snapshot", {"current": data}, webspace_id=webspace_id)
     except Exception:
-        _log.warning("failed to emit weather.snapshot.updated webspace=%s", webspace_id, exc_info=True)
-
-
-def _write_weather_snapshot(ydoc, txn, data: dict) -> None:
-    """
-    Update data.weather.current in the YDoc using plain JSON-compatible
-    structures only. This avoids nested Y objects and keeps the update
-    stream simple for the web client.
-    """
-    data_map = ydoc.get_map("data")
-    weather_node = data_map.get("weather")
-    snapshot = _coerce_weather_mapping(weather_node)
-    current = dict(snapshot.get("current") or {})
-    current.update(data)
-    snapshot["current"] = current
-    data_map.set(txn, "weather", snapshot)
-
-
-def _coerce_weather_mapping(value) -> dict:
-    def _normalize(node):
-        if isinstance(node, dict):
-            return {str(k): _normalize(v) for k, v in node.items()}
-        if isinstance(node, Y.YMap):
-            keys = list(node.keys())
-            return {str(k): _normalize(node.get(k)) for k in keys}
-        if isinstance(node, Y.YArray):
-            return [_normalize(it) for it in node]
-        if node is None:
-            return None
-        return node
-
-    if value is None:
-        return {}
-
-    try:
-        return _normalize(value) or {}
-    except Exception:
-        pass
-
-    to_json = getattr(value, "to_json", None)
-    if callable(to_json):
-        try:
-            json_value = to_json()
-            return _normalize(json_value) or {}
-        except Exception:
-            pass
-    return {}
+        _log.warning("failed to project weather.snapshot via ctx_subnet", exc_info=True)
 
 
 CITY_SNAPSHOTS = {

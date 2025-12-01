@@ -14,10 +14,7 @@ import y_py as Y
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
 from adaos.services.yjs.doc import get_ydoc, async_get_ydoc, mutate_live_room
-from adaos.services.capacity import get_local_capacity
 from adaos.apps.workspaces import index as workspace_index
-from adaos.apps.yjs.y_store import ystore_path_for_webspace, get_ystore_for_webspace
-from adaos.apps.yjs.y_bootstrap import ensure_webspace_seeded_from_scenario
 from adaos.apps.yjs.webspace import default_webspace_id
 
 _log = logging.getLogger("skills.web_desktop")
@@ -29,7 +26,6 @@ if os.environ.get("ADAOS_VALIDATE") == "1":
     _ctx = None  # type: ignore[assignment]
 else:
     _ctx = require_ctx("skills.web_desktop_skill")
-_ACTIVE: Dict[str, Dict[str, Dict[str, Any]]] = {}
 _DEFAULT_SCENARIO_ID = "web_desktop"
 _WS_ID_RE = re.compile(r"[^a-z0-9-_]+")
 
@@ -228,97 +224,12 @@ def _apply_ydoc_defaults(webspace_id: str, spec: Dict[str, Any]) -> None:
 
 
 def _rebuild_catalog(webspace_id: str) -> None:
-    with get_ydoc(webspace_id) as ydoc:
-        ui_map = ydoc.get_map("ui")
-        data_map = ydoc.get_map("data")
-        registry_map = ydoc.get_map("registry")
-
-        scenario_id = ui_map.get("current_scenario") or "web_desktop"
-        scenarios_data = data_map.get("scenarios") or {}
-        scenario_entry = scenarios_data.get(scenario_id) if isinstance(scenarios_data, dict) else {}
-        base_catalog = scenario_entry.get("catalog") if isinstance(scenario_entry, dict) else {}
-        scenario_apps = [it for it in (base_catalog.get("apps") or []) if isinstance(it, dict)]
-        scenario_widgets = [it for it in (base_catalog.get("widgets") or []) if isinstance(it, dict)]
-
-        scenario_registry = registry_map.get("scenarios") or {}
-        raw_registry_entry = (
-            scenario_registry.get(scenario_id) if isinstance(scenario_registry, dict) else {}
-        )
-        registry_entry = raw_registry_entry if isinstance(raw_registry_entry, dict) else {}
-        registry_entry = registry_entry or {}
-        base_registry_modals = [str(x) for x in (registry_entry.get("modals") or [])]
-        base_registry_widgets = [str(x) for x in (registry_entry.get("widgets") or [])]
-
-        skill_decls = list((_ACTIVE.get(webspace_id) or {}).values())
-        skill_apps: List[Dict[str, Any]] = []
-        skill_widgets: List[Dict[str, Any]] = []
-        skill_registry_modals: List[List[str]] = []
-        skill_registry_widgets: List[List[str]] = []
-        auto_widget_ids: set[str] = set()
-        auto_app_ids: set[str] = set()
-        for decl in skill_decls:
-            skill_name = decl.get("skill") or ""
-            space = decl.get("space") or "default"
-            source = f"skill:{skill_name}"
-            dev_flag = space == "dev"
-            for app in decl.get("apps") or []:
-                if isinstance(app, dict):
-                    skill_apps.append(_mark_entry(app, source=source, dev=dev_flag))
-            for widget in decl.get("widgets") or []:
-                if isinstance(widget, dict):
-                    skill_widgets.append(_mark_entry(widget, source=source, dev=dev_flag))
-            reg = decl.get("registry") or {}
-            mod_spec = reg.get("modals") or {}
-            if isinstance(mod_spec, dict):
-                skill_registry_modals.append([str(k) for k in mod_spec.keys()])
-            else:
-                skill_registry_modals.append([str(x) for x in mod_spec])
-            wid_spec = reg.get("widgets") or {}
-            if isinstance(wid_spec, dict):
-                skill_registry_widgets.append([str(k) for k in wid_spec.keys()])
-            else:
-                skill_registry_widgets.append([str(x) for x in wid_spec])
-            for contrib in decl.get("contributions") or []:
-                if not isinstance(contrib, dict):
-                    continue
-                ep = str(contrib.get("extensionPoint") or "")
-                ctype = str(contrib.get("type") or "")
-                cid = str(contrib.get("id") or "")
-                auto = bool(contrib.get("autoInstall"))
-                if not cid or not auto:
-                    continue
-                if ep == "desktop.widgets" and ctype == "widget":
-                    auto_widget_ids.add(cid)
-                if ep == "desktop.apps" and ctype == "app":
-                    auto_app_ids.add(cid)
-
-        merged_apps = _merge_by_id(
-            [_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_apps]
-            + skill_apps
-        )
-        merged_widgets = _merge_by_id(
-            [_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_widgets]
-            + skill_widgets
-        )
-        merged_registry = {
-            "modals": _merge_registry_lists(base_registry_modals, skill_registry_modals),
-            "widgets": _merge_registry_lists(base_registry_widgets, skill_registry_widgets),
-        }
-
-        installed_current = data_map.get("installed") or {}
-        if not isinstance(installed_current, dict):
-            installed_current = {}
-        apps_set = set(installed_current.get("apps") or [])
-        widgets_set = set(installed_current.get("widgets") or [])
-        apps_set |= auto_app_ids
-        widgets_set |= auto_widget_ids
-        installed_with_auto = {"apps": list(apps_set), "widgets": list(widgets_set)}
-        filtered_installed = _filter_installed(installed_with_auto, merged_apps, merged_widgets)
-
-        with ydoc.begin_transaction() as txn:
-            data_map.set(txn, "catalog", {"apps": merged_apps, "widgets": merged_widgets})
-            data_map.set(txn, "installed", filtered_installed)
-            registry_map.set(txn, "merged", merged_registry)
+    """
+    Deprecated: catalog/registry merging is now handled by the core
+    WebspaceScenarioRuntime service. This helper is kept as a no-op to
+    avoid accidental calls from legacy code during the MVP migration.
+    """
+    _log.debug("rebuild_catalog is deprecated; handled by core runtime (webspace=%s)", webspace_id)
 
 
 def _ensure_weather_seed(webspace_id: str) -> None:
@@ -331,56 +242,11 @@ def _ensure_weather_seed(webspace_id: str) -> None:
 
 def _bootstrap_active_skills_from_capacity() -> None:
     """
-    Bootstrap _ACTIVE from node.yaml capacity so that skills activated via CLI
-    (before the hub/API is running) are visible to the web desktop once the
-    runtime starts.
+    Deprecated no-op placeholder kept only to avoid import errors in
+    legacy tooling. Active skills for UI are now managed by the core
+    WebspaceScenarioRuntime based on capacity and skill events.
     """
-    try:
-        cap = get_local_capacity()
-        skills = cap.get("skills") or []
-    except Exception:
-        skills = []
-    if not isinstance(skills, list):
-        skills = []
-    try:
-        rows = workspace_index.list_workspaces()
-        targets = [row.workspace_id for row in rows] or [default_webspace_id()]
-    except Exception:
-        targets = [default_webspace_id()]
-    # Load webui.json for skills explicitly listed in capacity.
-    for rec in skills:
-        if not isinstance(rec, dict):
-            continue
-        if not rec.get("active", True):
-            continue
-        name = rec.get("name") or rec.get("id")
-        if not name:
-            continue
-        space = "dev" if rec.get("dev") else "default"
-        decl = _load_webui(str(name), space)
-        if not decl:
-            continue
-        defaults = decl.get("ydoc_defaults") or {}
-        for ws_id in targets:
-            _ACTIVE.setdefault(ws_id, {})[f"{space}:{name}"] = decl
-            if isinstance(defaults, dict) and defaults:
-                _apply_ydoc_defaults(ws_id, defaults)
-    # Always load the desktop skill's own webui.json so that core
-    # desktop modals (apps/widgets catalogs) are available even if
-    # web_desktop_skill is not explicitly listed in capacity.
-    try:
-        desktop_decl = _load_webui("web_desktop_skill", "default")
-    except Exception:
-        desktop_decl = {}
-    if isinstance(desktop_decl, dict) and desktop_decl:
-        defaults = desktop_decl.get("ydoc_defaults") or {}
-        for ws_id in targets:
-            _ACTIVE.setdefault(ws_id, {})["default:web_desktop_skill"] = desktop_decl
-            if isinstance(defaults, dict) and defaults:
-                _apply_ydoc_defaults(ws_id, defaults)
-
-
-_bootstrap_active_skills_from_capacity()
+    return
 
 
 def _slugify_webspace_id(raw: str | None) -> str:
@@ -414,36 +280,6 @@ def _webspace_listing() -> List[Dict[str, Any]]:
     ]
 
 
-def _seed_webspace_async(
-    webspace_id: str,
-    scenario_id: str | None = None,
-    post: Callable[[], None] | None = None,
-) -> None:
-    async def _worker() -> None:
-        ystore = get_ystore_for_webspace(webspace_id)
-        try:
-            await ensure_webspace_seeded_from_scenario(
-                ystore,
-                webspace_id=webspace_id,
-                default_scenario_id=scenario_id or _DEFAULT_SCENARIO_ID,
-            )
-        finally:
-            # YStore is process-wide singleton; do not stop it here.
-            pass
-        if callable(post):
-            try:
-                post()
-            except Exception:
-                _log.exception("post-seed hook failed for webspace %s", webspace_id)
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.run(_worker())
-    else:
-        loop.create_task(_worker(), name=f"webspace-seed-{webspace_id}")
-
-
 def _sync_webspace_listing_async() -> None:
     async def _worker() -> None:
         listing = _webspace_listing()
@@ -462,276 +298,34 @@ def _sync_webspace_listing_async() -> None:
         loop.create_task(_worker(), name="webspace-listing-sync")
 
 
-def _rebuild_async(webspace_id: str) -> None:
-    async def _worker() -> None:
-        async with async_get_ydoc(webspace_id) as ydoc:
-            ui_map = ydoc.get_map("ui")
-            data_map = ydoc.get_map("data")
-            registry_map = ydoc.get_map("registry")
-            scenario_id = ui_map.get("current_scenario") or "web_desktop"
-            scenarios_ui = ui_map.get("scenarios") or {}
-            scenario_ui_entry = (
-                scenarios_ui.get(scenario_id) if isinstance(scenarios_ui, dict) else {}
-            )
-            scenario_app_ui = (
-                scenario_ui_entry.get("application")
-                if isinstance(scenario_ui_entry, dict)
-                else {}
-            )
-            if not isinstance(scenario_app_ui, dict):
-                scenario_app_ui = {}
-            scenarios_data = data_map.get("scenarios") or {}
-            scenario_entry = scenarios_data.get(scenario_id) if isinstance(scenarios_data, dict) else {}
-            base_catalog = scenario_entry.get("catalog") if isinstance(scenario_entry, dict) else {}
-            scenario_apps = [it for it in (base_catalog.get("apps") or []) if isinstance(it, dict)]
-            scenario_widgets = [it for it in (base_catalog.get("widgets") or []) if isinstance(it, dict)]
-
-            scenario_registry = registry_map.get("scenarios") or {}
-            registry_entry = scenario_registry.get(scenario_id) if isinstance(scenario_registry, dict) else {}
-            registry_entry = registry_entry or {}
-            base_registry_modals = [str(x) for x in (registry_entry.get("modals") or [])]
-            base_registry_widgets = [str(x) for x in (registry_entry.get("widgets") or [])]
-
-            debug_mode = os.getenv("ADAOS_LOG_LEVEL", "").upper() == "DEBUG"
-            skill_decls: List[Dict[str, Any]]
-            if debug_mode:
-                # In DEBUG mode, reload webui.json for each *active*
-                # skill from disk so that changes are reflected without
-                # restarting the hub, but still respect the _ACTIVE map
-                # (skills.activated / skills.rolledback).
-                active_for_ws = _ACTIVE.get(webspace_id) or {}
-                skill_decls = []
-                for key in active_for_ws.keys():
-                    try:
-                        if ":" in key:
-                            space, name = key.split(":", 1)
-                        else:
-                            space, name = "default", key
-                        space = str(space or "default")
-                        name = str(name or "").strip()
-                    except Exception:
-                        continue
-                    if not name:
-                        continue
-                    decl = _load_webui(name, space)
-                    if decl:
-                        skill_decls.append(decl)
-                _log.debug(
-                    "rebuild webspace=%s using %d active skill declarations (DEBUG mode)",
-                    webspace_id,
-                    len(skill_decls),
-                )
-            else:
-                # Default: use cached declarations initialised at startup
-                # and updated via skills.activated/skills.rolledback.
-                skill_decls = list((_ACTIVE.get(webspace_id) or {}).values())
-            skill_apps: List[Dict[str, Any]] = []
-            skill_widgets: List[Dict[str, Any]] = []
-            skill_registry_modals: List[List[str]] = []
-            skill_registry_widgets: List[List[str]] = []
-            auto_widget_ids: set[str] = set()
-            auto_app_ids: set[str] = set()
-            for decl in skill_decls:
-                skill_name = decl.get("skill") or ""
-                space = decl.get("space") or "default"
-                source = f"skill:{skill_name}"
-                dev_flag = space == "dev"
-                for app in decl.get("apps") or []:
-                    if isinstance(app, dict):
-                        skill_apps.append(_mark_entry(app, source=source, dev=dev_flag))
-                for widget in decl.get("widgets") or []:
-                    if isinstance(widget, dict):
-                        skill_widgets.append(_mark_entry(widget, source=source, dev=dev_flag))
-                reg = decl.get("registry") or {}
-                mod_spec = reg.get("modals") or {}
-                if isinstance(mod_spec, dict):
-                    skill_registry_modals.append([str(k) for k in mod_spec.keys()])
-                else:
-                    skill_registry_modals.append([str(x) for x in mod_spec])
-                wid_spec = reg.get("widgets") or {}
-                if isinstance(wid_spec, dict):
-                    skill_registry_widgets.append([str(k) for k in wid_spec.keys()])
-                else:
-                    skill_registry_widgets.append([str(x) for x in wid_spec])
-                for contrib in decl.get("contributions") or []:
-                    if not isinstance(contrib, dict):
-                        continue
-                    ep = str(contrib.get("extensionPoint") or "")
-                    ctype = str(contrib.get("type") or "")
-                    cid = str(contrib.get("id") or "")
-                    auto = bool(contrib.get("autoInstall"))
-                    if not cid or not auto:
-                        continue
-                    if ep == "desktop.widgets" and ctype == "widget":
-                        auto_widget_ids.add(cid)
-                    if ep == "desktop.apps" and ctype == "app":
-                        auto_app_ids.add(cid)
-
-            merged_apps = _merge_by_id([_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_apps] + skill_apps)
-            merged_widgets = _merge_by_id([_mark_entry(it, source=f"scenario:{scenario_id}", dev=False) for it in scenario_widgets] + skill_widgets)
-            merged_registry = {
-                "modals": _merge_registry_lists(base_registry_modals, skill_registry_modals),
-                "widgets": _merge_registry_lists(base_registry_widgets, skill_registry_widgets),
-            }
-
-            installed_current = data_map.get("installed") or {}
-            if not isinstance(installed_current, dict):
-                installed_current = {}
-            apps_set = set(installed_current.get("apps") or [])
-            widgets_set = set(installed_current.get("widgets") or [])
-            apps_set |= auto_app_ids
-            widgets_set |= auto_widget_ids
-            installed_with_auto = {"apps": list(apps_set), "widgets": list(widgets_set)}
-            filtered_installed = _filter_installed(installed_with_auto, merged_apps, merged_widgets)
-
-            # Debug trace: compare scenario desktop.topbar with current ui.application
-            try:
-                current_app = ui_map.get("application") or {}
-                scenario_topbar = (scenario_app_ui.get("desktop") or {}).get("topbar")
-                current_topbar = (
-                    (current_app.get("desktop") or {}).get("topbar")
-                    if isinstance(current_app, dict)
-                    else None
-                )
-                _log.debug(
-                    "rebuild webspace=%s scenarioTopbar=%s ui.application.desktop.topbar(before)=%s",
-                    webspace_id,
-                    scenario_topbar,
-                    current_topbar,
-                )
-            except Exception:
-                pass
-
-            # Merge scenario-defined modals with skill-provided modal schemas.
-            merged_modals_map: Dict[str, Any] = {}
-            base_modals_map = {}
-            try:
-                raw = scenario_app_ui.get("modals") if isinstance(scenario_app_ui, dict) else None
-                if isinstance(raw, dict):
-                    base_modals_map = raw
-            except Exception:
-                base_modals_map = {}
-            for key, value in (base_modals_map or {}).items():
-                merged_modals_map[str(key)] = value
-            for decl in skill_decls:
-                reg = decl.get("registry") or {}
-                mod_spec = reg.get("modals") or {}
-                if not isinstance(mod_spec, dict):
-                    continue
-                for key, value in mod_spec.items():
-                    token = str(key)
-                    if token and token not in merged_modals_map:
-                        merged_modals_map[token] = value
-            # Build final application section with merged modals.
-            app_with_modals: Dict[str, Any] = dict(scenario_app_ui)
-            if merged_modals_map:
-                app_with_modals["modals"] = merged_modals_map
-
-            with ydoc.begin_transaction() as txn:
-                # Keep ui.application in sync with the current scenario's
-                # application section and enrich it with skill-provided
-                # modal schemas so that changes in scenario.json and
-                # webui.json are reflected in the live UI.
-                ui_map.set(txn, "application", app_with_modals)
-                data_map.set(txn, "catalog", {"apps": merged_apps, "widgets": merged_widgets})
-                data_map.set(txn, "installed", filtered_installed)
-                registry_map.set(txn, "merged", merged_registry)
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.run(_worker())
-    else:
-        loop.create_task(_worker(), name=f"web-desktop-catalog-{webspace_id}")
 
 
 @subscribe("scenarios.synced")
 def on_scenario_synced(evt) -> None:
-    payload = _payload(evt)
-    webspace_id = _webspace_id(payload)
-    _log.info("scenario synced for webspace %s", webspace_id)
-    _rebuild_async(webspace_id)
+    """
+    Deprecated: catalog/registry rebuild is handled by the core
+    WebspaceScenarioRuntime. We keep this handler only to refresh
+    webspace listings in data.webspaces.
+    """
     _sync_webspace_listing_async()
-    # After a scenario is projected into a webspace, ensure that all
-    # active skills have their YDoc defaults applied and weather
-    # snapshots are preloaded, so widgets/modals have data on first load.
-    try:
-        cap = get_local_capacity()
-        skills = cap.get("skills") or []
-    except Exception:
-        skills = []
-    for rec in skills:
-        if not isinstance(rec, dict) or not rec.get("active", True):
-            continue
-        name = rec.get("name") or rec.get("id")
-        if not name:
-            continue
-        space = "dev" if rec.get("dev") else "default"
-        decl = _load_webui(str(name), space)
-        if not decl:
-            continue
-        defaults = decl.get("ydoc_defaults") or {}
-        if isinstance(defaults, dict) and defaults:
-            _apply_ydoc_defaults(webspace_id, defaults)
 
 
 @subscribe("skills.activated")
 def on_skill_activated(evt) -> None:
-    payload = _payload(evt)
-    skill = payload.get("skill_name")
-    if not skill:
-        return
-    space = str(payload.get("space") or "default")
-    webspace_id = _webspace_id(payload)
-    decl = _load_webui(str(skill), space)
-    if not decl:
-        return
-    defaults = decl.get("ydoc_defaults") or {}
-    try:
-        rows = workspace_index.list_workspaces()
-        targets = [row.workspace_id for row in rows] or [webspace_id or default_webspace_id()]
-    except Exception:
-        targets = [webspace_id or default_webspace_id()]
-    for ws_id in targets:
-        _ACTIVE.setdefault(ws_id, {})[f"{space}:{skill}"] = decl
-        _log.info("skill %s activated in webspace %s (%s)", skill, ws_id, space)
-        _rebuild_async(ws_id)
-        if isinstance(defaults, dict) and defaults:
-            _apply_ydoc_defaults(ws_id, defaults)
+    """
+    Deprecated: skill UI merge is now done in core runtime. Kept as a
+    no-op to avoid duplicate work during MVP migration.
+    """
+    return
 
 
 @subscribe("skills.rolledback")
 def on_skill_rolled_back(evt) -> None:
-    payload = _payload(evt)
-    skill = payload.get("skill_name")
-    if not skill:
-        return
-    space = str(payload.get("space") or "default")
-    webspace_id = _webspace_id(payload)
-    try:
-        rows = workspace_index.list_workspaces()
-        targets = [row.workspace_id for row in rows] or [webspace_id or default_webspace_id()]
-    except Exception:
-        targets = [webspace_id or default_webspace_id()]
-    suffix = f":{skill}"
-    for ws_id in targets:
-        active = _ACTIVE.get(ws_id)
-        if not active:
-            continue
-        removed = False
-        # Remove both explicit space-qualified key and any matching suffix
-        # to stay resilient to mismatched space hints.
-        if active.pop(f"{space}:{skill}", None) is not None:
-            removed = True
-        else:
-            # Try any entry that ends with :<skill>
-            for key in list(active.keys()):
-                if key.endswith(suffix):
-                    active.pop(key, None)
-                    removed = True
-        if removed:
-            _log.info("skill %s rolled back in webspace %s (%s)", skill, ws_id, space)
-            _rebuild_async(ws_id)
+    """
+    Deprecated: skill UI merge is now done in core runtime. Kept as a
+    no-op to avoid duplicate work during MVP migration.
+    """
+    return
 
 
 def _apply_install_toggle(webspace_id: str, ydoc, txn, item_type: str, target_id: str) -> None:
@@ -808,59 +402,35 @@ def on_toggle_install(evt) -> None:
 
 @subscribe("desktop.webspace.create")
 def on_webspace_create(evt) -> None:
-    payload = _payload(evt)
-    requested = payload.get("id") or payload.get("webspace_id")
-    display_name = payload.get("title")
-    scenario_id = payload.get("scenario_id") or _DEFAULT_SCENARIO_ID
-    webspace_id = _allocate_webspace_id(requested)
-    _log.info("creating webspace %s (requested=%s)", webspace_id, requested)
-    workspace_index.ensure_workspace(webspace_id)
-    workspace_index.set_display_name(webspace_id, display_name or webspace_id)
-    _seed_webspace_async(webspace_id, scenario_id=scenario_id, post=lambda: _rebuild_async(webspace_id))
-    _sync_webspace_listing_async()
+    """
+    Deprecated: webspace creation is now handled by core runtime
+    (see WebspaceScenarioRuntime desktop.webspace.create handler).
+    """
+    return
 
 
 @subscribe("desktop.webspace.rename")
 def on_webspace_rename(evt) -> None:
-    payload = _payload(evt)
-    webspace_id = str(payload.get("id") or "")
-    title = str(payload.get("title") or "").strip()
-    if not webspace_id or not title:
-        return
-    if not workspace_index.get_workspace(webspace_id):
-        _log.warning("cannot rename missing webspace %s", webspace_id)
-        return
-    workspace_index.set_display_name(webspace_id, title)
-    _sync_webspace_listing_async()
+    """
+    Deprecated: webspace rename is now handled by core runtime.
+    """
+    return
 
 
 @subscribe("desktop.webspace.delete")
 def on_webspace_delete(evt) -> None:
-    payload = _payload(evt)
-    webspace_id = str(payload.get("id") or "")
-    if not webspace_id or webspace_id == default_webspace_id():
-        return
-    _log.info("deleting webspace %s", webspace_id)
-    try:
-        workspace_index.delete_workspace(webspace_id)
-    except Exception as exc:
-        _log.warning("failed to delete webspace %s: %s", webspace_id, exc)
-        return
-    _ACTIVE.pop(webspace_id, None)
-    try:
-        from adaos.apps.yjs.y_gateway import y_server  # pylint: disable=import-outside-toplevel
-        from adaos.apps.yjs.y_store import reset_ystore_for_webspace  # pylint: disable=import-outside-toplevel
-
-        y_server.rooms.pop(webspace_id, None)
-        reset_ystore_for_webspace(webspace_id)
-    except Exception:
-        pass
-    _sync_webspace_listing_async()
+    """
+    Deprecated: webspace delete is now handled by core runtime.
+    """
+    return
 
 
 @subscribe("desktop.webspace.refresh")
 def on_webspace_refresh(evt) -> None:  # noqa: ARG001
-    _sync_webspace_listing_async()
+    """
+    Deprecated: webspace listing refresh is now handled by core runtime.
+    """
+    return
 
 
 @subscribe("desktop.webspace.reload")
@@ -869,29 +439,10 @@ def on_webspace_reload(evt) -> None:
     Re-seed the current webspace from its scenario, effectively
     rebuilding ui/data/registry for debugging or recovery.
     """
-    payload = _payload(evt)
-    webspace_id = _webspace_id(payload)
-    scenario_id = str(payload.get("scenario_id") or _DEFAULT_SCENARIO_ID)
-    if not webspace_id:
-        return
-    _log.info("reloading webspace %s from scenario %s", webspace_id, scenario_id)
-    try:
-        from adaos.apps.yjs.y_gateway import y_server  # pylint: disable=import-outside-toplevel
-        from adaos.apps.yjs.y_store import reset_ystore_for_webspace  # pylint: disable=import-outside-toplevel
-
-        try:
-            y_server.rooms.pop(webspace_id, None)
-        except Exception:
-            pass
-        try:
-            reset_ystore_for_webspace(webspace_id)
-        except Exception:
-            pass
-    except Exception:
-        _log.warning("failed to reset ystore for webspace=%s", webspace_id, exc_info=True)
-
-    _seed_webspace_async(webspace_id, scenario_id=scenario_id, post=lambda: _rebuild_async(webspace_id))
-    _sync_webspace_listing_async()
+    """
+    Deprecated: webspace reload is now handled by core runtime.
+    """
+    return
 
 
 @subscribe("desktop.webspace.reset")
@@ -902,26 +453,7 @@ def on_webspace_reset(evt) -> None:
     separate event so that future versions can differentiate between
     soft reload (updatable-only) and full reset.
     """
-    payload = _payload(evt)
-    webspace_id = _webspace_id(payload)
-    scenario_id = str(payload.get("scenario_id") or _DEFAULT_SCENARIO_ID)
-    if not webspace_id:
-        return
-    _log.info("resetting webspace %s from scenario %s", webspace_id, scenario_id)
-    try:
-        from adaos.apps.yjs.y_gateway import y_server  # pylint: disable=import-outside-toplevel
-        from adaos.apps.yjs.y_store import reset_ystore_for_webspace  # pylint: disable=import-outside-toplevel
-
-        try:
-            y_server.rooms.pop(webspace_id, None)
-        except Exception:
-            pass
-        try:
-            reset_ystore_for_webspace(webspace_id)
-        except Exception:
-            pass
-    except Exception:
-        _log.warning("failed to reset ystore for webspace=%s", webspace_id, exc_info=True)
-
-    _seed_webspace_async(webspace_id, scenario_id=scenario_id, post=lambda: _rebuild_async(webspace_id))
-    _sync_webspace_listing_async()
+    """
+    Deprecated: webspace reset is now handled by core runtime.
+    """
+    return
