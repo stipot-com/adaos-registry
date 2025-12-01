@@ -2,6 +2,19 @@ name: web_desktop
 version: 0.0.1
 title: Web Desktop
 description: Scenario that defines the desktop UI, registry and base catalog.
+type: desktop
 depends:
 - web_desktop_skill
 updated_at: '2025-11-14T18:14:36+00:00'
+data_projections:
+- scope: current_user
+  slot: profile.settings
+  targets:
+  - backend: kv
+  - backend: yjs
+    path: data/skills/profile/{user_id}/settings
+- scope: subnet
+  slot: weather.snapshot
+  targets:
+  - backend: yjs
+    path: data/weather

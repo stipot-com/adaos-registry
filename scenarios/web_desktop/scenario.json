@@ -162,6 +162,10 @@
     "widgets": [],
     "modals": []
   },
+  "catalog": {
+    "apps": [],
+    "widgets": []
+  },
   "id": "web_desktop",
   "version": "0.0.1",
   "data": {
