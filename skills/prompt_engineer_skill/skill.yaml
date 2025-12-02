@@ -102,17 +102,17 @@ tools:
       type: object
       properties: {}
     output_schema:
+      type: array
+      items:
+        type: object
+  - name: 'prompt_list_dev_objects'
+    description: 'List root DEV objects (scenarios and skills)'
+    entry: 'handlers.main:prompt_list_dev_objects'
+    input_schema:
       type: object
-      required: ['ok', 'tree', 'skills', 'scenarios']
-      properties:
-        ok: { type: boolean }
-        tree:
-          type: array
-          items: { type: object }
-        skills:
-          type: array
-          items: { type: string }
-        scenarios:
-          type: array
-          items: { type: string }
+      properties: {}
+    output_schema:
+      type: array
+      items:
+        type: object
 exports: {}

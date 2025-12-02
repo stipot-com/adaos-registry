@@ -304,91 +304,86 @@ def _list_dirs(root: Path) -> List[str]:
 
 
 @tool("prompt_list_dev_projects")
-def prompt_list_dev_projects() -> Dict[str, Any]:
+def prompt_list_dev_projects(payload: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
-    List available skills and scenarios in the DEV space for the current
-    subnet. This is used by Prompt IDE to populate the project tree.
+    List available skills and scenarios in the DEV space.
+
+    If ``payload`` contains ``object_type``/``object_id`` (skill|scenario),
+    return only the three stage entries (TZ/Prepare/Generate) for that
+    object. Otherwise return a flat list for all dev projects.
     """
     ctx = _require_ctx()
     dev_skills = _list_dirs(ctx.paths.dev_skills_dir())
     dev_scenarios = _list_dirs(ctx.paths.dev_scenarios_dir())
 
-    def _scenario_node(name: str) -> Dict[str, Any]:
-        base_id = f"scenario:{name}"
-        return {
-            "id": base_id,
-            "label": f"Scenario: {name}",
-            "children": [
-                {
-                    "id": f"{base_id}:tz",
-                    "label": "Stage: TZ",
-                    "object_type": "scenario",
-                    "object_id": name,
-                    "stage": "tz",
-                },
-                {
-                    "id": f"{base_id}:prepare",
-                    "label": "Stage: Prepare",
-                    "object_type": "scenario",
-                    "object_id": name,
-                    "stage": "prepare",
-                },
-                {
-                    "id": f"{base_id}:generate",
-                    "label": "Stage: Generate",
-                    "object_type": "scenario",
-                    "object_id": name,
-                    "stage": "generate",
-                },
-            ],
-        }
+    def _stages_for(kind: str, name: str) -> List[Dict[str, Any]]:
+        base = f"{'Scenario' if kind == 'scenario' else 'Skill'}: {name}"
+        prefix = f"{kind}:{name}"
+        return [
+            {
+                "id": f"{prefix}:tz",
+                "label": f"{base} / TZ",
+                "object_type": kind,
+                "object_id": name,
+                "stage": "tz",
+            },
+            {
+                "id": f"{prefix}:prepare",
+                "label": f"{base} / Prepare",
+                "object_type": kind,
+                "object_id": name,
+                "stage": "prepare",
+            },
+            {
+                "id": f"{prefix}:generate",
+                "label": f"{base} / Generate",
+                "object_type": kind,
+                "object_id": name,
+                "stage": "generate",
+            },
+        ]
 
-    def _skill_node(name: str) -> Dict[str, Any]:
-        base_id = f"skill:{name}"
-        return {
-            "id": base_id,
-            "label": f"Skill: {name}",
-            "children": [
-                {
-                    "id": f"{base_id}:tz",
-                    "label": "Stage: TZ",
-                    "object_type": "skill",
-                    "object_id": name,
-                    "stage": "tz",
-                },
-                {
-                    "id": f"{base_id}:prepare",
-                    "label": "Stage: Prepare",
-                    "object_type": "skill",
-                    "object_id": name,
-                    "stage": "prepare",
-                },
-                {
-                    "id": f"{base_id}:generate",
-                    "label": "Stage: Generate",
-                    "object_type": "skill",
-                    "object_id": name,
-                    "stage": "generate",
-                },
-            ],
-        }
+    obj_type = (payload or {}).get("object_type")
+    obj_id = (payload or {}).get("object_id")
+    if obj_type in ("skill", "scenario") and isinstance(obj_id, str) and obj_id:
+        return _stages_for(str(obj_type), obj_id)
 
-    tree: List[Dict[str, Any]] = [
-        {
-            "id": "project_scenarios",
-            "label": "Scenarios",
-            "children": [_scenario_node(name) for name in dev_scenarios],
-        },
-        {
-            "id": "project_skills",
-            "label": "Skills",
-            "children": [_skill_node(name) for name in dev_skills],
-        },
-    ]
+    items: List[Dict[str, Any]] = []
+    for name in dev_scenarios:
+        items.extend(_stages_for("scenario", name))
+    for name in dev_skills:
+        items.extend(_stages_for("skill", name))
+    return items
 
-    return {
-        "ok": True,
-        "tree": tree,
-        "skills": dev_skills,
-        "scenarios": dev_scenarios,
-    }
+
+@tool("prompt_list_dev_objects")
+def prompt_list_dev_objects(payload: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:  # noqa: ARG001
+    """
+    List root DEV objects (skills and scenarios) without stages for
+    project selection modals.
+    """
+    ctx = _require_ctx()
+    dev_skills = _list_dirs(ctx.paths.dev_skills_dir())
+    dev_scenarios = _list_dirs(ctx.paths.dev_scenarios_dir())
+    items: List[Dict[str, Any]] = []
+    for name in dev_scenarios:
+        items.append(
+            {
+                "id": f"scenario:{name}",
+                "label": f"Scenario: {name}",
+                "object_type": "scenario",
+                "object_id": name,
+            }
+        )
+    for name in dev_skills:
+        items.append(
+            {
+                "id": f"skill:{name}",
+                "label": f"Skill: {name}",
+                "object_type": "skill",
+                "object_id": name,
+            }
+        )
+    return items
+
+
