@@ -1,0 +1,223 @@
+{
+  "id": "prompt_engineer_scenario",
+  "version": "0.1.0",
+  "name": "Prompt IDE Workspace",
+  "type": "desktop",
+  "title": "Prompt IDE",
+  "description": "Prompt engineering IDE workspace (draft layout).",
+  "depends": [
+    "prompt_engineer_skill"
+  ],
+  "ui": {
+    "application": {
+      "version": "0.1",
+      "desktop": {
+        "pageSchema": {
+          "id": "prompt_ide",
+          "title": "Prompt IDE",
+          "layout": {
+            "type": "split",
+            "areas": [
+              {
+                "id": "sidebar",
+                "role": "sidebar"
+              },
+              {
+                "id": "main",
+                "role": "main"
+              },
+              {
+                "id": "right",
+                "role": "aux"
+              },
+              {
+                "id": "bottom",
+                "role": "footer"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "project-current",
+              "type": "input.commandBar",
+              "area": "sidebar",
+              "title": "Current project",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "select-project",
+                    "label": "Select project"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:select-project",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "project_selector"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "project-tree",
+              "type": "collection.tree",
+              "area": "sidebar",
+              "title": "Project",
+              "dataSource": {
+                "kind": "skill",
+                "name": "prompt_engineer_skill.prompt_list_dev_projects",
+                "params": {
+                  "object_type": "$state.currentObjectType",
+                  "object_id": "$state.currentObjectId"
+                }
+              },
+              "inputs": {
+                "labelField": "label",
+                "columns": 1
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "currentObjectType": "$event.object_type",
+                    "currentObjectId": "$event.object_id",
+                    "currentStage": "$event.stage"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "tz-editor",
+              "type": "item.textEditor",
+              "area": "main",
+              "title": "Technical Specification",
+              "dataSource": {
+                "kind": "skill",
+                "name": "prompt_engineer_skill.prompt_get_tz_state",
+                "params": {
+                  "object_type": "$state.currentObjectType",
+                  "object_id": "$state.currentObjectId"
+                }
+              },
+              "inputs": {
+                "mode": "markdown",
+                "bindField": "base_tz"
+              },
+              "actions": [
+                {
+                  "on": "save",
+                  "type": "callSkill",
+                  "target": "prompt_engineer_skill.prompt_save_base_tz",
+                  "params": {
+                    "object_type": "$state.currentObjectType",
+                    "object_id": "$state.currentObjectId",
+                    "text": "$event.content"
+                  }
+                }
+              ],
+              "visibleIf": "$state.currentStage === 'tz'"
+            },
+            {
+              "id": "tz-addenda",
+              "type": "item.details",
+              "area": "main",
+              "title": "TZ Addenda",
+              "dataSource": {
+                "kind": "skill",
+                "name": "prompt_engineer_skill.prompt_get_tz_state",
+                "params": {
+                  "object_type": "$state.currentObjectType",
+                  "object_id": "$state.currentObjectId"
+                }
+              },
+              "inputs": {
+                "bindField": "tz_addenda"
+              },
+              "visibleIf": "$state.currentStage === 'tz'"
+            },
+            {
+              "id": "llm-artifacts",
+              "type": "item.details",
+              "area": "right",
+              "title": "LLM Artifacts (draft)",
+              "dataSource": {
+                "kind": "static",
+                "value": {
+                  "items": []
+                }
+              }
+            },
+            {
+              "id": "status-bar",
+              "type": "feedback.statusBar",
+              "area": "bottom",
+              "title": "Status",
+              "dataSource": {
+                "kind": "static",
+                "value": {
+                  "message": "Prompt IDE draft workspace ready"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "modals": {
+        "project_selector": {
+          "title": "Select project",
+          "schema": {
+            "id": "project_selector",
+            "layout": {
+              "type": "single",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "widgets": [
+              {
+                "id": "project-select-list",
+                "type": "collection.grid",
+                "area": "main",
+                "title": "DEV projects",
+                "inputs": {
+                  "labelField": "label",
+                  "columns": 1
+                },
+                "dataSource": {
+                  "kind": "skill",
+                  "name": "prompt_engineer_skill.prompt_list_dev_objects"
+                },
+                "actions": [
+                  {
+                    "on": "select",
+                    "type": "updateState",
+                    "params": {
+                      "currentObjectType": "$event.object_type",
+                      "currentObjectId": "$event.object_id",
+                      "currentStage": "tz"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "registry": {
+    "widgets": [],
+    "modals": []
+  },
+  "catalog": {
+    "apps": [],
+    "widgets": []
+  },
+  "data": {}
+}
