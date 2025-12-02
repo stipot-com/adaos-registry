@@ -1,0 +1,56 @@
+{
+  "apps": [
+    {
+      "id": "scenario:prompt_engineer_scenario",
+      "title": "Prompt IDE",
+      "icon": "code-slash-outline",
+      "launchModal": "scenario_switcher",
+      "scenario_id": "prompt_engineer_scenario"
+    }
+  ],
+  "widgets": [],
+  "registry": {
+    "modals": {
+      "prompt_ide_modal": {
+        "title": "Prompt IDE",
+        "schema": {
+          "id": "prompt_ide_workspace",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "prompt-ide-status",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Prompt IDE (TZ backend ready)",
+              "dataSource": {
+                "kind": "static",
+                "value": {
+                  "value": "Prompt IDE v0.1",
+                  "label": "Base TZ + addenda API"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "widgets": {}
+  },
+  "ydoc_defaults": {},
+  "contributions": [
+    {
+      "extensionPoint": "desktop.apps",
+      "type": "app",
+      "id": "scenario:prompt_engineer_scenario",
+      "autoInstall": true
+    }
+  ]
+}

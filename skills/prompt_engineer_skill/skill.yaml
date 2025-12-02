@@ -1,0 +1,118 @@
+name: prompt_engineer_skill
+version: 0.1.0
+entry: handlers/main.py
+runtime:
+  python: '3.11'
+description: ''
+dependencies: []
+events: {}
+tools:
+  - name: 'prompt_load_state'
+    description: 'Load or initialize PromptProjectState for a skill or scenario'
+    entry: 'handlers.main:prompt_load_state'
+    input_schema:
+      type: object
+      required: ['object_type', 'object_id']
+      properties:
+        object_type:
+          type: string
+          enum: ['skill', 'scenario']
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      required: ['ok', 'state']
+      properties:
+        ok: { type: boolean }
+        state: { type: object }
+  - name: 'prompt_save_base_tz'
+    description: 'Update base TZ text for a prompt project'
+    entry: 'handlers.main:prompt_save_base_tz'
+    input_schema:
+      type: object
+      required: ['object_type', 'object_id', 'text']
+      properties:
+        object_type:
+          type: string
+          enum: ['skill', 'scenario']
+        object_id:
+          type: string
+          minLength: 1
+        text:
+          type: string
+    output_schema:
+      type: object
+      required: ['ok', 'state']
+      properties:
+        ok: { type: boolean }
+        state: { type: object }
+  - name: 'prompt_append_tz_addendum'
+    description: 'Append a new TZ addendum block (append-only)'
+    entry: 'handlers.main:prompt_append_tz_addendum'
+    input_schema:
+      type: object
+      required: ['object_type', 'object_id', 'text']
+      properties:
+        object_type:
+          type: string
+          enum: ['skill', 'scenario']
+        object_id:
+          type: string
+          minLength: 1
+        text:
+          type: string
+        iteration_ref:
+          type: ['string', 'null']
+    output_schema:
+      type: object
+      required: ['ok', 'state']
+      properties:
+        ok: { type: boolean }
+        state: { type: object }
+  - name: 'prompt_get_tz_state'
+    description: 'Return base TZ and addenda for Prompt IDE'
+    entry: 'handlers.main:prompt_get_tz_state'
+    input_schema:
+      type: object
+      required: ['object_type', 'object_id']
+      properties:
+        object_type:
+          type: string
+          enum: ['skill', 'scenario']
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      required: ['ok', 'base_tz', 'tz_addenda']
+      properties:
+        ok: { type: boolean }
+        object_type: { type: string }
+        object_id: { type: string }
+        base_tz: { type: string }
+        tz_addenda:
+          type: array
+          items:
+            type: object
+  - name: 'prompt_list_dev_projects'
+    description: 'List skills and scenarios in DEV space'
+    entry: 'handlers.main:prompt_list_dev_projects'
+    input_schema:
+      type: object
+      properties: {}
+    output_schema:
+      type: object
+      required: ['ok', 'tree', 'skills', 'scenarios']
+      properties:
+        ok: { type: boolean }
+        tree:
+          type: array
+          items: { type: object }
+        skills:
+          type: array
+          items: { type: string }
+        scenarios:
+          type: array
+          items: { type: string }
+exports: {}
