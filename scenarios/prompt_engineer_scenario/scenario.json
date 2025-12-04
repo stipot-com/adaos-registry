@@ -8,6 +8,43 @@
   "depends": [
     "prompt_engineer_skill"
   ],
+  "workflow": {
+    "initial_state": "tz",
+    "states": {
+      "tz": {
+        "label": "Stage: TZ",
+        "context": {
+          "edit": ["base_tz"],
+          "readonly": []
+        },
+        "actions": [
+          {
+            "id": "tz.execute",
+            "label": "Execute",
+            "trigger": "button",
+            "tool": "prompt_engineer_skill.tz_execute",
+            "next_state": "tz_add"
+          }
+        ]
+      },
+      "tz_add": {
+        "label": "Stage: TZ addenda",
+        "context": {
+          "edit": ["tz_addenda"],
+          "readonly": ["base_tz"]
+        },
+        "actions": [
+          {
+            "id": "tz_add.reset",
+            "label": "Reset",
+            "trigger": "button",
+            "tool": "prompt_engineer_skill.tz_add_reset",
+            "next_state": "tz"
+          }
+        ]
+      }
+    }
+  },
   "ui": {
     "application": {
       "version": "0.1",
@@ -67,7 +104,46 @@
               "title": "Project",
               "dataSource": {
                 "kind": "skill",
-                "name": "prompt_engineer_skill.prompt_list_dev_projects",
+                "name": "prompt_engineer_skill.prompt_list_project_objects",
+                "params": {
+                  "project_type": "$state.currentProjectType",
+                  "project_id": "$state.currentProjectId"
+                }
+              },
+              "inputs": {
+                "labelField": "label",
+                "columns": 1,
+                "selectedStateKey": "currentObjectId"
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "callHost",
+                  "target": "scenario.workflow.set_state",
+                  "params": {
+                    "scenario_id": "prompt_engineer_scenario",
+                    "state": "$event.workflow_state"
+                  }
+                },
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "currentObjectType": "$event.object_type",
+                    "currentObjectId": "$event.object_id",
+                    "currentStage": "$event.workflow_state"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "project-files",
+              "type": "collection.grid",
+              "area": "sidebar",
+              "title": "Files",
+              "dataSource": {
+                "kind": "skill",
+                "name": "prompt_engineer_skill.prompt_list_project_files",
                 "params": {
                   "object_type": "$state.currentObjectType",
                   "object_id": "$state.currentObjectId"
@@ -75,7 +151,8 @@
               },
               "inputs": {
                 "labelField": "label",
-                "columns": 1
+                "columns": 1,
+                "selectedStateKey": "currentFilePath"
               },
               "actions": [
                 {
@@ -84,7 +161,34 @@
                   "params": {
                     "currentObjectType": "$event.object_type",
                     "currentObjectId": "$event.object_id",
-                    "currentStage": "$event.stage"
+                    "currentStage": "file",
+                  "currentFilePath": "$event.path"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "project-files-tools",
+              "type": "input.commandBar",
+              "area": "sidebar",
+              "title": "Files tools",
+              "inputs": {
+                "size": "small",
+                "buttons": [
+                  {
+                    "id": "snapshot",
+                    "label": "Snapshot"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:snapshot",
+                  "type": "callSkill",
+                  "target": "prompt_engineer_skill.prompt_snapshot_project",
+                  "params": {
+                    "object_type": "$state.currentObjectType",
+                    "object_id": "$state.currentObjectId"
                   }
                 }
               ]
@@ -130,13 +234,58 @@
                 "name": "prompt_engineer_skill.prompt_get_tz_state",
                 "params": {
                   "object_type": "$state.currentObjectType",
-                  "object_id": "$state.currentObjectId"
+                  "object_id": "$state.currentObjectId",
+                  "refresh_token": "$state.tzAddendaRefresh"
                 }
               },
               "inputs": {
                 "bindField": "tz_addenda"
               },
-              "visibleIf": "$state.currentStage === 'tz'"
+              "visibleIf": "$state.currentStage === 'tz' || $state.currentStage === 'tz_add'"
+            },
+            {
+              "id": "tz-addenda-controls",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "TZ tools",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "add-addendum",
+                    "label": "Add addendum"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:add-addendum",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "tz_addendum_modal"
+                  }
+                }
+              ],
+              "visibleIf": "$state.currentStage === 'tz' || $state.currentStage === 'tz_add'"
+            },
+            {
+              "id": "code-viewer",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Source file",
+              "dataSource": {
+                "kind": "skill",
+                "name": "prompt_engineer_skill.prompt_read_project_file",
+                "params": {
+                  "object_type": "$state.currentObjectType",
+                  "object_id": "$state.currentObjectId",
+                  "path": "$state.currentFilePath"
+                }
+              },
+              "inputs": {
+                "bindField": "content",
+                "languageField": "language"
+              },
+              "visibleIf": "$state.currentStage === 'file'"
             },
             {
               "id": "llm-artifacts",
@@ -151,16 +300,89 @@
               }
             },
             {
-              "id": "status-bar",
-              "type": "feedback.statusBar",
-              "area": "bottom",
-              "title": "Status",
+              "id": "workflow-actions",
+              "type": "input.commandBar",
+              "area": "right",
+              "title": "Workflow",
               "dataSource": {
-                "kind": "static",
-                "value": {
-                  "message": "Prompt IDE draft workspace ready"
+                "kind": "y",
+                "path": "data/prompt/workflow/next_actions"
+              },
+              "inputs": {
+                "labelField": "label",
+                "columns": 1
+              },
+              "actions": [
+                {
+                  "on": "click",
+                  "type": "callHost",
+                  "target": "scenario.workflow.action",
+                  "params": {
+                    "scenario_id": "prompt_engineer_scenario",
+                    "action_id": "$event.id"
+                  }
+                },
+                {
+                  "on": "click",
+                  "type": "callSkill",
+                  "target": "prompt_engineer_skill.prompt_set_workflow_state",
+                  "params": {
+                    "object_type": "$state.currentObjectType",
+                    "object_id": "$state.currentObjectId",
+                    "state": "$event.next_state"
+                  }
+                },
+                {
+                  "on": "click",
+                  "type": "updateState",
+                  "params": {
+                    "currentStage": "$event.next_state"
+                  }
                 }
-              }
+              ]
+            },
+            {
+              "id": "status-toolbar",
+              "type": "input.commandBar",
+              "area": "bottom",
+              "inputs": {
+                "size": "small",
+                "buttons": [
+                  {
+                    "id": "dev-webspace",
+                    "label": "dev webspace: default"
+                  },
+                  {
+                    "id": "target-node",
+                    "label": "target: local"
+                  },
+                  {
+                    "id": "llm-profile",
+                    "label": "LLM profile: openai:gpt-4.1-mini"
+                  },
+                  {
+                    "id": "llm-status",
+                    "label": "LLM: idle"
+                  },
+                  {
+                    "id": "git-status",
+                    "label": "git: clean"
+                  },
+                  {
+                    "id": "current-object",
+                    "label": "$state.currentObjectId"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:current-object",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "project_meta_modal"
+                  }
+                }
+              ]
             }
           ]
         }
@@ -184,7 +406,7 @@
                 "id": "project-select-list",
                 "type": "collection.grid",
                 "area": "main",
-                "title": "DEV projects",
+                "title": "Dev projects",
                 "inputs": {
                   "labelField": "label",
                   "columns": 1
@@ -193,14 +415,301 @@
                   "kind": "skill",
                   "name": "prompt_engineer_skill.prompt_list_dev_objects"
                 },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "callHost",
+                  "target": "scenario.workflow.set_state",
+                  "params": {
+                    "scenario_id": "prompt_engineer_scenario",
+                    "state": "$event.workflow_state"
+                  }
+                },
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "currentProjectType": "$event.object_type",
+                    "currentProjectId": "$event.object_id",
+                    "currentObjectType": "$event.object_type",
+                    "currentObjectId": "$event.object_id",
+                    "currentStage": "$event.workflow_state"
+                  }
+                }
+              ]
+              },
+              {
+                "id": "project-create-kind",
+                "type": "input.selector",
+                "area": "main",
+                "title": "Create: type",
+                "inputs": {
+                  "options": [
+                    "scenario",
+                    "skill"
+                  ]
+                },
                 "actions": [
                   {
-                    "on": "select",
+                    "on": "change",
                     "type": "updateState",
                     "params": {
-                      "currentObjectType": "$event.object_type",
-                      "currentObjectId": "$event.object_id",
+                      "createObjectType": "$event.value"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "project-create-name",
+                "type": "input.text",
+                "area": "main",
+                "title": "Create: name",
+                "inputs": {
+                  "placeholder": "my_new_project"
+                },
+                "actions": [
+                  {
+                    "on": "change",
+                    "type": "updateState",
+                    "params": {
+                      "createObjectName": "$event.value"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "project-create-template",
+                "type": "input.selector",
+                "area": "main",
+                "title": "Create: template",
+                "dataSource": {
+                  "kind": "skill",
+                  "name": "prompt_engineer_skill.prompt_list_templates",
+                  "params": {
+                    "object_type": "$state.createObjectType"
+                  }
+                },
+                "inputs": {
+                  "label": "Template"
+                },
+                "actions": [
+                  {
+                    "on": "change",
+                    "type": "updateState",
+                    "params": {
+                      "createTemplateName": "$event.value"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "project-create-actions",
+                "type": "input.commandBar",
+                "area": "main",
+                "inputs": {
+                  "buttons": [
+                    {
+                      "id": "create",
+                      "label": "Create"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "on": "click:create",
+                    "type": "callSkill",
+                    "target": "prompt_engineer_skill.prompt_create_dev_project",
+                    "params": {
+                      "object_type": "$state.createObjectType",
+                      "name": "$state.createObjectName",
+                      "template": "$state.createTemplateName"
+                    }
+                  },
+                  {
+                    "on": "click:create",
+                    "type": "updateState",
+                    "params": {
+                      "currentObjectType": "$state.createObjectType",
+                      "currentObjectId": "$state.createObjectName",
                       "currentStage": "tz"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "project_meta_modal": {
+          "title": "Project details",
+          "schema": {
+            "id": "project_meta_modal",
+            "layout": {
+              "type": "single",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "widgets": [
+              {
+                "id": "project-meta-view",
+                "type": "item.details",
+                "area": "main",
+                "title": "Current metadata",
+                "dataSource": {
+                  "kind": "skill",
+                  "name": "prompt_engineer_skill.prompt_get_project_meta",
+                  "params": {
+                    "object_type": "$state.currentProjectType",
+                    "object_id": "$state.currentProjectId"
+                  }
+                }
+              },
+              {
+                "id": "project-meta-title",
+                "type": "input.text",
+                "area": "main",
+                "title": "Title",
+                "dataSource": {
+                  "kind": "skill",
+                  "name": "prompt_engineer_skill.prompt_get_project_meta",
+                  "params": {
+                    "object_type": "$state.currentProjectType",
+                    "object_id": "$state.currentProjectId"
+                  }
+                },
+                "inputs": {
+                  "placeholder": "Title",
+                  "bindField": "title"
+                },
+                "actions": [
+                  {
+                    "on": "change",
+                    "type": "updateState",
+                    "params": {
+                      "editProjectTitle": "$event.value"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "project-meta-description",
+                "type": "item.textEditor",
+                "area": "main",
+                "title": "Description",
+                "dataSource": {
+                  "kind": "skill",
+                  "name": "prompt_engineer_skill.prompt_get_project_meta",
+                  "params": {
+                    "object_type": "$state.currentProjectType",
+                    "object_id": "$state.currentProjectId"
+                  }
+                },
+                "inputs": {
+                  "mode": "markdown",
+                  "bindField": "description"
+                },
+                "actions": []
+              },
+              {
+                "id": "project-meta-type",
+                "type": "input.selector",
+                "area": "main",
+                "title": "Type",
+                "inputs": {
+                  "options": [
+                    "desktop",
+                    "chat",
+                    "voice"
+                  ]
+                },
+                "actions": [
+                  {
+                    "on": "change",
+                    "type": "updateState",
+                    "params": {
+                      "editProjectType": "$event.value"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "project-meta-actions",
+                "type": "input.commandBar",
+                "area": "main",
+                "inputs": {
+                  "buttons": [
+                    {
+                      "id": "save",
+                      "label": "Save"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "on": "click:save",
+                    "type": "callSkill",
+                    "target": "prompt_engineer_skill.prompt_update_project_meta",
+                    "params": {
+                      "object_type": "$state.currentProjectType",
+                      "object_id": "$state.currentProjectId",
+                      "title": "$state.editProjectTitle",
+                      "description": "$state.editProjectDescription",
+                      "type": "$state.editProjectType"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "tz_addendum_modal": {
+          "title": "Add TZ addendum",
+          "schema": {
+            "id": "tz_addendum_modal",
+            "layout": {
+              "type": "single",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "widgets": [
+              {
+                "id": "tz-addendum-editor",
+                "type": "item.textEditor",
+                "area": "main",
+                "title": "Add TZ addendum",
+                "dataSource": {
+                  "kind": "static",
+                  "value": {
+                    "content": ""
+                  }
+                },
+                "inputs": {
+                  "mode": "markdown",
+                  "bindField": "content"
+                },
+                "actions": [
+                  {
+                    "on": "save",
+                    "type": "callSkill",
+                    "target": "prompt_engineer_skill.prompt_append_tz_addendum",
+                    "params": {
+                      "object_type": "$state.currentObjectType",
+                      "object_id": "$state.currentObjectId",
+                      "text": "$event.content"
+                    }
+                  },
+                  {
+                    "on": "save",
+                    "type": "updateState",
+                    "params": {
+                      "tzAddendaRefresh": "$event.ts"
                     }
                   }
                 ]
