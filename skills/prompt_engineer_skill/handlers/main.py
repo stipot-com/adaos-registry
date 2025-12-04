@@ -7,8 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import tool
+from adaos.services.root.service import RootDeveloperService, TemplateResolutionError, RootServiceError
 
 _log = logging.getLogger("skills.prompt_engineer")
 
@@ -47,10 +50,12 @@ def _project_root(object_type: str, object_id: str) -> Path:
     """
     ctx = _require_ctx()
     kind = (object_type or "").strip().lower()
+    # For Prompt IDE we operate on DEV artifacts so that code edits and
+    # prompts are always applied to the active dev workspace.
     if kind == "skill":
-        base = ctx.paths.skills_dir()
+        base = ctx.paths.dev_skills_dir()
     elif kind == "scenario":
-        base = ctx.paths.scenarios_dir()
+        base = ctx.paths.dev_scenarios_dir()
     else:
         raise ValueError("object_type must be 'skill' or 'scenario'")
     root = (base / object_id).resolve()
@@ -90,6 +95,7 @@ def _default_state(object_type: str, object_id: str) -> Dict[str, Any]:
         },
         "llm_profile_id": None,
         "target_node_id": None,
+        "workflow_state": "tz",
     }
 
 
@@ -161,6 +167,7 @@ def _normalize_state(raw: Any, object_type: str, object_id: str, root: Path) -> 
 
     raw.setdefault("llm_profile_id", None)
     raw.setdefault("target_node_id", None)
+    raw.setdefault("workflow_state", "tz")
 
     return raw
 
@@ -270,12 +277,28 @@ __all__ = [
 
 
 @tool("prompt_get_tz_state")
-def prompt_get_tz_state(object_type: str, object_id: str) -> Dict[str, Any]:
+def prompt_get_tz_state(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Lightweight helper for Prompt IDE UI: return only the TZ-related
     portion of PromptProjectState for the given object.
+
+    When called with an empty payload (e.g. before the user selects a
+    project in the Prompt IDE), this returns an empty but well-formed
+    structure instead of raising an error so that the UI can render.
     """
-    state = _load_state(object_type, object_id)
+    payload = payload or {}
+    object_type = payload.get("object_type")
+    object_id = payload.get("object_id")
+    if not object_type or not object_id:
+        return {
+            "ok": False,
+            "object_type": object_type or "",
+            "object_id": object_id or "",
+            "base_tz": "",
+            "tz_addenda": [],
+        }
+
+    state = _load_state(str(object_type), str(object_id))
     return {
         "ok": True,
         "object_type": state.get("object_type"),
@@ -361,29 +384,630 @@ def prompt_list_dev_objects(payload: Optional[Dict[str, Any]] = None) -> List[Di
     """
     List root DEV objects (skills and scenarios) without stages for
     project selection modals.
+
+    Each item carries minimal metadata resolved from the dev manifest
+    (scenario.yaml / skill.yaml) when available so that the UI can show
+    name, version and description.
     """
     ctx = _require_ctx()
-    dev_skills = _list_dirs(ctx.paths.dev_skills_dir())
-    dev_scenarios = _list_dirs(ctx.paths.dev_scenarios_dir())
+    dev_skills_root = ctx.paths.dev_skills_dir()
+    dev_scenarios_root = ctx.paths.dev_scenarios_dir()
+
+    def _scenario_meta(name: str) -> Dict[str, Any]:
+        path = (dev_scenarios_root / name / "scenario.yaml").resolve()
+        data: Dict[str, Any] = {}
+        if path.exists():
+            try:
+                raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                if isinstance(raw, dict):
+                    data = raw
+            except Exception:  # pragma: no cover - best-effort
+                _log.warning("failed to read scenario manifest for %s", name, exc_info=True)
+        # Per-project workflow state (if any) from PromptProjectState.
+        wf_state = "tz"
+        try:
+            wf_state = _load_state("scenario", name).get("workflow_state") or "tz"
+        except Exception:  # pragma: no cover - best-effort
+            wf_state = "tz"
+
+        return {
+            "name": name,
+            "type": data.get("type") or "scenario",
+            "title": data.get("title") or name,
+            "description": data.get("description") or "",
+            "version": data.get("version") or "",
+            "updated_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+            if path.exists()
+            else None,
+            "workflow_state": wf_state,
+        }
+
+    def _skill_meta(name: str) -> Dict[str, Any]:
+        # Reuse the same search logic as SkillManager._load_manifest where possible.
+        root = (dev_skills_root / name).resolve()
+        candidates = ["skill.yaml", "manifest.yaml", "resolved.manifest.json", "manifest.json", "skill.json"]
+        data: Dict[str, Any] = {}
+        manifest_path: Optional[Path] = None
+        for fname in candidates:
+            path = root / fname
+            if not path.exists():
+                continue
+            manifest_path = path
+            try:
+                if path.suffix in {".yaml", ".yml"}:
+                    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                else:
+                    raw = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    data = raw
+                break
+            except Exception:  # pragma: no cover - best-effort
+                _log.warning("failed to read skill manifest for %s", name, exc_info=True)
+                break
+        updated_at: Optional[str] = None
+        if manifest_path and manifest_path.exists():
+            try:
+                updated_at = datetime.fromtimestamp(
+                    manifest_path.stat().st_mtime, tz=timezone.utc
+                ).isoformat()
+            except Exception:
+                updated_at = None
+        wf_state = "tz"
+        try:
+            wf_state = _load_state("skill", name).get("workflow_state") or "tz"
+        except Exception:  # pragma: no cover - best-effort
+            wf_state = "tz"
+
+        return {
+            "name": name,
+            "type": data.get("type") or "skill",
+            "title": data.get("title") or name,
+            "description": data.get("description") or "",
+            "version": data.get("version") or "",
+            "updated_at": updated_at,
+            "workflow_state": wf_state,
+        }
+
     items: List[Dict[str, Any]] = []
-    for name in dev_scenarios:
+
+    for name in _list_dirs(dev_scenarios_root):
+        meta = _scenario_meta(name)
         items.append(
             {
                 "id": f"scenario:{name}",
-                "label": f"Scenario: {name}",
+                "label": f"Scenario: {meta['title']}",
                 "object_type": "scenario",
                 "object_id": name,
+                "name": meta["name"],
+                "type": meta["type"],
+                "title": meta["title"],
+                "description": meta["description"],
+                "version": meta["version"],
+                "updated_at": meta["updated_at"],
+                "workflow_state": meta["workflow_state"],
             }
         )
-    for name in dev_skills:
+
+    for name in _list_dirs(dev_skills_root):
+        meta = _skill_meta(name)
         items.append(
             {
                 "id": f"skill:{name}",
-                "label": f"Skill: {name}",
+                "label": f"Skill: {meta['title']}",
                 "object_type": "skill",
                 "object_id": name,
+                "name": meta["name"],
+                "type": meta["type"],
+                "title": meta["title"],
+                "description": meta["description"],
+                "version": meta["version"],
+                "updated_at": meta["updated_at"],
+                "workflow_state": meta["workflow_state"],
+            }
+        )
+
+    return items
+
+
+@tool("prompt_list_project_objects")
+def prompt_list_project_objects(payload: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """
+    List constituent objects for a Prompt IDE project.
+
+    Projects are defined as:
+      - skill project   -> a single skill object;
+      - scenario project -> the scenario itself + its ``depends`` skills.
+    """
+    payload = payload or {}
+    project_type = (payload.get("project_type") or payload.get("object_type") or "").strip().lower()
+    project_id = (payload.get("project_id") or payload.get("object_id") or "").strip()
+    if not project_type or not project_id:
+        return []
+
+    ctx = _require_ctx()
+    items: List[Dict[str, Any]] = []
+
+    def _project_item(kind: str, name: str) -> Dict[str, Any]:
+        # Reuse metadata helper via prompt_list_dev_objects-style logic.
+        meta: Dict[str, Any]
+        if kind == "scenario":
+            root = ctx.paths.dev_scenarios_dir()
+            path = (root / name / "scenario.yaml").resolve()
+            raw: Dict[str, Any] = {}
+            if path.exists():
+                try:
+                    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                    if isinstance(data, dict):
+                        raw = data
+                except Exception:  # pragma: no cover - best-effort
+                    _log.warning("failed to read scenario manifest for %s", name, exc_info=True)
+            updated_at = None
+            if path.exists():
+                try:
+                    updated_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+                except Exception:
+                    updated_at = None
+            meta = {
+                "name": name,
+                "type": raw.get("type") or "scenario",
+                "title": raw.get("title") or name,
+                "description": raw.get("description") or "",
+                "version": raw.get("version") or "",
+                "updated_at": updated_at,
+            }
+        else:
+            root = ctx.paths.dev_skills_dir()
+            skill_dir = (root / name).resolve()
+            candidates = ["skill.yaml", "manifest.yaml", "resolved.manifest.json", "manifest.json", "skill.json"]
+            raw: Dict[str, Any] = {}
+            manifest_path: Optional[Path] = None
+            for fname in candidates:
+                path = skill_dir / fname
+                if not path.exists():
+                    continue
+                manifest_path = path
+                try:
+                    if path.suffix in {".yaml", ".yml"}:
+                        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                    else:
+                        data = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        raw = data
+                    break
+                except Exception:  # pragma: no cover - best-effort
+                    _log.warning("failed to read skill manifest for %s", name, exc_info=True)
+                    break
+            updated_at = None
+            if manifest_path and manifest_path.exists():
+                try:
+                    updated_at = datetime.fromtimestamp(
+                        manifest_path.stat().st_mtime, tz=timezone.utc
+                    ).isoformat()
+                except Exception:
+                    updated_at = None
+            meta = {
+                "name": name,
+                "type": raw.get("type") or "skill",
+                "title": raw.get("title") or name,
+                "description": raw.get("description") or "",
+                "version": raw.get("version") or "",
+                "updated_at": updated_at,
+            }
+
+        # Per-project workflow state (if any) from PromptProjectState.
+        wf_state = "tz"
+        try:
+            wf_state = _load_state(kind, name).get("workflow_state") or "tz"
+        except Exception:  # pragma: no cover - best-effort
+            wf_state = "tz"
+
+        label_prefix = "Scenario" if kind == "scenario" else "Skill"
+        return {
+            "id": f"{kind}:{name}",
+            "label": f"{label_prefix}: {meta['title']}",
+            "object_type": kind,
+            "object_id": name,
+            "name": meta["name"],
+            "type": meta["type"],
+            "title": meta["title"],
+            "description": meta["description"],
+            "version": meta["version"],
+            "updated_at": meta["updated_at"],
+            "workflow_state": wf_state,
+        }
+
+    if project_type == "skill":
+        items.append(_project_item("skill", project_id))
+        return items
+
+    # Scenario project: scenario itself + depends skills (if present).
+    items.append(_project_item("scenario", project_id))
+
+    scen_root = ctx.paths.dev_scenarios_dir()
+    scen_yaml = (scen_root / project_id / "scenario.yaml").resolve()
+    depends: List[str] = []
+    if scen_yaml.exists():
+        try:
+            raw = yaml.safe_load(scen_yaml.read_text(encoding="utf-8")) or {}
+            if isinstance(raw, dict):
+                depends_raw = raw.get("depends") or []
+                if isinstance(depends_raw, list):
+                    depends = [str(x) for x in depends_raw if isinstance(x, (str, bytes))]
+        except Exception:  # pragma: no cover - best-effort
+            _log.warning("failed to read scenario depends for %s", project_id, exc_info=True)
+
+    for dep in depends:
+        try:
+            items.append(_project_item("skill", dep))
+        except Exception:
+            # Missing skill in dev space – skip but keep scenario project usable.
+            _log.debug("dependency skill '%s' not present in dev space", dep, exc_info=True)
+
+    return items
+
+
+def _detect_language_from_suffix(path: Path) -> str:
+    """
+    Map a file suffix to a lightweight "language" label for syntax
+    highlighting in the web UI. This is intentionally small and
+    implementation-agnostic – the frontend is free to treat these
+    labels as CSS classes or editor modes.
+    """
+    suffix = path.suffix.lower()
+    if suffix == ".py":
+        return "python"
+    if suffix in (".yml", ".yaml"):
+        return "yaml"
+    if suffix == ".json":
+        return "json"
+    if suffix in (".md", ".markdown"):
+        return "markdown"
+    return "text"
+
+
+@tool("prompt_list_project_files")
+def prompt_list_project_files(payload: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """
+    List relevant source files for a prompt project.
+
+    For v0.1 we expose a flat list of *.py, *.json, *.yaml, *.yml files
+    under the project root (skills/scenarios in the stable workspace).
+
+    Workspace fallback passes a single JSON payload dict, so we accept
+    ``payload`` instead of positional arguments.
+    """
+    payload = payload or {}
+    object_type = payload.get("object_type")
+    object_id = payload.get("object_id")
+    if not object_type or not object_id:
+        return []
+    root = _project_root(object_type, object_id)
+    exts = {".py", ".json", ".yml", ".yaml"}
+    items: List[Dict[str, Any]] = []
+
+    if not root.exists():
+        return items
+
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in exts:
+            continue
+        rel = path.relative_to(root).as_posix()
+        items.append(
+            {
+                "id": rel,
+                "label": rel,
+                "path": rel,
+                "object_type": object_type,
+                "object_id": object_id,
+                "language": _detect_language_from_suffix(path),
             }
         )
     return items
 
 
+@tool("prompt_read_project_file")
+def prompt_read_project_file(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Read a single project file for code viewer.
+
+    ``payload`` should contain ``object_type``, ``object_id`` and
+    project-relative ``path`` as returned by
+    ``prompt_list_project_files``.
+    """
+    payload = payload or {}
+    object_type = payload.get("object_type")
+    object_id = payload.get("object_id")
+    path = payload.get("path")
+    if not object_type or not object_id or not path:
+        raise ValueError("object_type, object_id and path are required")
+
+    root = _project_root(object_type, object_id)
+    rel_path = Path(path)
+    full = (root / rel_path).resolve()
+
+    # Basic safety: ensure we do not escape the project root.
+    try:
+        full.relative_to(root)
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise ValueError("path is outside project root") from exc
+
+    language = _detect_language_from_suffix(full)
+    content = _read_text(full)
+    return {
+        "ok": True,
+        "object_type": object_type,
+        "object_id": object_id,
+        "path": rel_path.as_posix(),
+        "language": language,
+        "content": content,
+    }
+
+
+@tool("prompt_list_templates")
+def prompt_list_templates(payload: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """
+    List available templates for skills or scenarios, mirroring
+    ``adaos dev skill|scenario create --template``.
+
+    Workspace fallback executes tools with a single ``payload`` dict,
+    so we accept a dict here instead of individual arguments.
+    """
+    payload = payload or {}
+    raw_type = payload.get("object_type")
+    kind = (raw_type or "scenario").strip().lower()
+    if kind not in ("skill", "scenario"):
+        raise ValueError("object_type must be 'skill' or 'scenario'")
+
+    svc = RootDeveloperService()
+    # RootDeveloperService uses pluralized kind identifiers internally.
+    dev_kind = "skills" if kind == "skill" else "scenarios"
+
+    # Leverage the same resolution helpers the CLI uses.
+    workspace_dir = svc._workspace_templates_dir(dev_kind)  # type: ignore[attr-defined]
+    builtin_dir = svc._builtin_templates_dir(dev_kind)  # type: ignore[attr-defined]
+    default_name = svc._default_template_name(dev_kind)  # type: ignore[attr-defined]
+    collect = svc._collect_templates  # type: ignore[attr-defined]
+
+    def _filter(names: List[str]) -> List[str]:
+        return [n for n in names if not n.startswith((".", "_"))]
+
+    user_templates = _filter(collect(workspace_dir))
+    builtin_templates = _filter(collect(builtin_dir))
+
+    items: List[Dict[str, Any]] = []
+
+    # Default entry first (points at the builtin default template).
+    items.append(
+        {
+            "id": default_name,
+            "label": "Default",
+            "source": "builtin",
+            "object_type": kind,
+        }
+    )
+
+    for name in user_templates:
+        items.append(
+            {
+                "id": name,
+                "label": f"{name} (workspace)",
+                "source": "workspace",
+                "object_type": kind,
+            }
+        )
+
+    for name in builtin_templates:
+        if name == default_name:
+            continue
+        items.append(
+            {
+                "id": name,
+                "label": f"{name} (builtin)",
+                "source": "builtin",
+                "object_type": kind,
+            }
+        )
+
+    return items
+
+
+@tool("prompt_create_dev_project")
+def prompt_create_dev_project(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Create a DEV skill or scenario using the same RootDeveloperService
+    workflow as ``adaos dev skill|scenario create``.
+
+    The workspace bridge passes a single JSON payload dict, so we
+    resolve fields manually instead of relying on positional args.
+    """
+    payload = payload or {}
+    object_type = payload.get("object_type")
+    name = payload.get("name")
+    template = payload.get("template")
+
+    kind = (object_type or "").strip().lower() or "scenario"
+    if kind not in ("skill", "scenario"):
+        raise ValueError("object_type must be 'skill' or 'scenario'")
+
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("name must not be empty")
+
+    if isinstance(template, str):
+        template = template.strip() or None
+
+    svc = RootDeveloperService()
+
+    try:
+        if kind == "skill":
+            result = svc.create_skill(name, template=template)
+        else:
+            result = svc.create_scenario(name, template=template)
+    except TemplateResolutionError as exc:
+        _log.error("template resolution failed for %s '%s': %s", kind, name, exc)
+        return {"ok": False, "error": str(exc)}
+    except RootServiceError as exc:
+        _log.error("dev %s create failed for '%s': %s", kind, name, exc)
+        return {"ok": False, "error": str(exc)}
+
+    return {
+        "ok": True,
+        "object_type": kind,
+        "name": result.name,
+        "path": str(result.path),
+        "template": template or "default",
+    }
+
+
+@tool("prompt_snapshot_project")
+def prompt_snapshot_project(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Persist the current PromptProjectState for a dev project to disk.
+
+    For v0.1 this is effectively a no-op snapshot: we reload the state
+    (which already merges file-backed TZ/addenda/general prompts) and
+    re-write ``prompt_state.json`` under the project root. This gives
+    us an explicit, debuggable checkpoint that the web IDE can trigger
+    from the Files section.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    root = _project_root(object_type, object_id)
+    state = _load_state(object_type, object_id)
+    _write_state(root, state)
+    return {"ok": True, "object_type": object_type, "object_id": object_id}
+
+
+@tool("prompt_set_workflow_state")
+def prompt_set_workflow_state(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Persist workflow_state for a project in PromptProjectState.
+
+    Called from the Prompt IDE workflow panel so that per-project last
+    stage can be restored when the user switches between projects.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    state_id = (payload.get("state") or "").strip()
+    if not object_type or not object_id or not state_id:
+        raise ValueError("object_type, object_id and state are required")
+
+    root = _project_root(object_type, object_id)
+    state = _load_state(object_type, object_id)
+    state["workflow_state"] = state_id
+    _write_state(root, state)
+    return {"ok": True, "object_type": object_type, "object_id": object_id, "workflow_state": state_id}
+
+
+@tool("prompt_get_project_meta")
+def prompt_get_project_meta(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Return basic metadata (title, description, type, version, updated_at)
+    for a dev scenario or skill.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    ctx = _require_ctx()
+    if object_type == "scenario":
+        root = ctx.paths.dev_scenarios_dir()
+        root = root() if callable(root) else root
+        yaml_path = (Path(root) / object_id / "scenario.yaml").resolve()
+    elif object_type == "skill":
+        root = ctx.paths.dev_skills_dir()
+        root = root() if callable(root) else root
+        yaml_path = (Path(root) / object_id / "skill.yaml").resolve()
+    else:
+        raise ValueError("object_type must be 'skill' or 'scenario'")
+
+    data: Dict[str, Any] = {}
+    if yaml_path.exists():
+        try:
+            raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            if isinstance(raw, dict):
+                data = raw
+        except Exception:  # pragma: no cover - best-effort
+            _log.warning("prompt_get_project_meta failed to read %s", yaml_path, exc_info=True)
+
+    updated_at = None
+    if yaml_path.exists():
+        try:
+            updated_at = datetime.fromtimestamp(yaml_path.stat().st_mtime, tz=timezone.utc).isoformat()
+        except Exception:
+            updated_at = None
+
+    return {
+        "ok": True,
+        "object_type": object_type,
+        "object_id": object_id,
+        "name": data.get("name") or object_id,
+        "type": data.get("type") or object_type,
+        "title": data.get("title") or object_id,
+        "description": data.get("description") or "",
+        "version": data.get("version") or "",
+        "updated_at": updated_at,
+    }
+
+
+@tool("prompt_update_project_meta")
+def prompt_update_project_meta(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Update editable project metadata (title, description, type) in the
+    dev scenario.yaml / skill.yaml.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    title = (payload.get("title") or "").strip()
+    description = (payload.get("description") or "").strip()
+    proj_type = (payload.get("type") or "").strip() or None
+
+    ctx = _require_ctx()
+    if object_type == "scenario":
+        root = ctx.paths.dev_scenarios_dir()
+        root = root() if callable(root) else root
+        yaml_path = (Path(root) / object_id / "scenario.yaml").resolve()
+    elif object_type == "skill":
+        root = ctx.paths.dev_skills_dir()
+        root = root() if callable(root) else root
+        yaml_path = (Path(root) / object_id / "skill.yaml").resolve()
+    else:
+        raise ValueError("object_type must be 'skill' or 'scenario'")
+
+    data: Dict[str, Any] = {}
+    if yaml_path.exists():
+        try:
+            raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            if isinstance(raw, dict):
+                data = raw
+        except Exception:  # pragma: no cover - best-effort
+            _log.warning("prompt_update_project_meta failed to read %s", yaml_path, exc_info=True)
+
+    if title:
+        data["title"] = title
+    if description or "description" in data:
+        data["description"] = description
+    if proj_type:
+        data["type"] = proj_type
+
+    try:
+        yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        yaml_path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - best-effort
+        _log.warning("prompt_update_project_meta failed to write %s: %s", yaml_path, exc, exc_info=True)
+        return {"ok": False, "error": str(exc)}
+
+    return prompt_get_project_meta({"object_type": object_type, "object_id": object_id})
