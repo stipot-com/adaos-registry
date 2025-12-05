@@ -54,14 +54,6 @@ def _webspace_id(payload: Dict[str, Any]) -> str:
     return "default"
 
 
-def _apply_ydoc_defaults(webspace_id: str, spec: Dict[str, Any]) -> None:
-    """
-    Deprecated helper; YDoc defaults are now applied by the core
-    WebspaceScenarioRuntime. Kept as a no-op for backwards compatibility.
-    """
-    return
-
-
 def _apply_install_toggle(webspace_id: str, ydoc, txn, item_type: str, target_id: str) -> None:
     data_map = ydoc.get_map("data")
     installed = data_map.get("installed") or {}
