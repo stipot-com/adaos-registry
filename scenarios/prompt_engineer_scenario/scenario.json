@@ -376,6 +376,13 @@
               },
               "actions": [
                 {
+                  "on": "click:git-status",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "project_git_modal"
+                  }
+                },
+                {
                   "on": "click:current-object",
                   "type": "openModal",
                   "params": {
@@ -535,6 +542,124 @@
                     }
                   }
                 ]
+              }
+            ]
+          }
+        },
+        "project_git_modal": {
+          "title": "Project git",
+          "schema": {
+            "id": "project_git_modal",
+            "layout": {
+              "type": "single",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "widgets": [
+              {
+                "id": "project-git-info",
+                "type": "item.details",
+                "area": "main",
+                "title": "Current object",
+                "dataSource": {
+                  "kind": "skill",
+                  "name": "prompt_engineer_skill.prompt_get_project_meta",
+                  "params": {
+                    "object_type": "$state.currentObjectType",
+                    "object_id": "$state.currentObjectId"
+                  }
+                }
+              },
+              {
+                "id": "project-git-actions",
+                "type": "input.commandBar",
+                "area": "main",
+                "title": "Git",
+                "inputs": {
+                  "buttons": [
+                    {
+                      "id": "push",
+                      "label": "Push"
+                    },
+                    {
+                      "id": "update",
+                      "label": "Update"
+                    },
+                    {
+                      "id": "publish",
+                      "label": "Publish"
+                    },
+                    {
+                      "id": "delete",
+                      "label": "Delete",
+                      "kind": "danger"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "on": "click:push",
+                    "type": "callSkill",
+                    "target": "prompt_engineer_skill.prompt_git_push",
+                    "params": {
+                      "object_type": "$state.currentObjectType",
+                      "object_id": "$state.currentObjectId"
+                    }
+                  },
+                  {
+                    "on": "click:update",
+                    "type": "callSkill",
+                    "target": "prompt_engineer_skill.prompt_git_update",
+                    "params": {
+                      "object_type": "$state.currentObjectType",
+                      "object_id": "$state.currentObjectId"
+                    }
+                  },
+                  {
+                    "on": "click:publish",
+                    "type": "callSkill",
+                    "target": "prompt_engineer_skill.prompt_git_publish",
+                    "params": {
+                      "object_type": "$state.currentObjectType",
+                      "object_id": "$state.currentObjectId"
+                    }
+                  },
+                  {
+                    "on": "click:delete",
+                    "type": "callSkill",
+                    "target": "prompt_engineer_skill.prompt_git_delete",
+                    "params": {
+                      "object_type": "$state.currentObjectType",
+                      "object_id": "$state.currentObjectId"
+                    }
+                  },
+                  {
+                    "on": "click",
+                    "type": "updateState",
+                    "params": {
+                      "gitLogRefresh": "$event.ts"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "project-git-log",
+                "type": "item.details",
+                "area": "main",
+                "title": "Git log",
+                "dataSource": {
+                  "kind": "skill",
+                  "name": "prompt_engineer_skill.prompt_get_git_log",
+                  "params": {
+                    "object_type": "$state.currentObjectType",
+                    "object_id": "$state.currentObjectId",
+                    "refresh_token": "$state.gitLogRefresh"
+                  }
+                }
               }
             ]
           }
