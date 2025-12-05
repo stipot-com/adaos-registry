@@ -312,56 +312,6 @@ tools:
         type: string
       object_id:
         type: string
-- name: prompt_set_workflow_state
-  description: Persist per-project workflow_state in PromptProjectState
-  entry: handlers.main:prompt_set_workflow_state
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    - state
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-      state:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties: {}
-- name: prompt_get_project_meta
-  description: Auto-generated from handlers.main:prompt_get_project_meta
-  entry: handlers.main:prompt_get_project_meta
-  input_schema:
-    type: object
-    properties: {}
-  output_schema:
-    type: object
-    properties: {}
-- name: prompt_update_project_meta
-  description: Auto-generated from handlers.main:prompt_update_project_meta
-  entry: handlers.main:prompt_update_project_meta
-  input_schema:
-    type: object
-    properties: {}
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      workflow_state:
-        type: string
 - name: prompt_get_project_meta
   description: Return metadata for a dev scenario or skill
   entry: handlers.main:prompt_get_project_meta
@@ -444,4 +394,171 @@ tools:
         type: string
       updated_at:
         type: string
+- name: prompt_git_push
+  description: Placeholder git push for current project
+  entry: handlers.main:prompt_git_push
+  input_schema:
+    type: object
+    required:
+    - object_type
+    - object_id
+    properties:
+      object_type:
+        type: string
+        enum:
+        - skill
+        - scenario
+      object_id:
+        type: string
+        minLength: 1
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      object_type:
+        type: string
+      object_id:
+        type: string
+      action:
+        type: string
+- name: prompt_git_update
+  description: Placeholder git update/pull for current project
+  entry: handlers.main:prompt_git_update
+  input_schema:
+    type: object
+    required:
+    - object_type
+    - object_id
+    properties:
+      object_type:
+        type: string
+        enum:
+        - skill
+        - scenario
+      object_id:
+        type: string
+        minLength: 1
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      object_type:
+        type: string
+      object_id:
+        type: string
+      action:
+        type: string
+- name: prompt_git_publish
+  description: Publish DEV skill or scenario (and dependent skills) to the registry
+  entry: handlers.main:prompt_git_publish
+  input_schema:
+    type: object
+    required:
+    - object_type
+    - object_id
+    properties:
+      object_type:
+        type: string
+        enum:
+        - skill
+        - scenario
+      object_id:
+        type: string
+        minLength: 1
+      bump:
+        type: string
+      force:
+        type: boolean
+      dry_run:
+        type: boolean
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      object_type:
+        type: string
+      object_id:
+        type: string
+      action:
+        type: string
+      bump:
+        type: string
+      items:
+        type: array
+        items:
+          type: object
+- name: prompt_git_delete
+  description: Delete DEV skill or scenario from drafts and registry
+  entry: handlers.main:prompt_git_delete
+  input_schema:
+    type: object
+    required:
+    - object_type
+    - object_id
+    properties:
+      object_type:
+        type: string
+        enum:
+        - skill
+        - scenario
+      object_id:
+        type: string
+        minLength: 1
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      object_type:
+        type: string
+      object_id:
+        type: string
+      action:
+        type: string
+      items:
+        type: array
+        items:
+          type: object
+- name: prompt_get_git_log
+  description: Return recent git operations for a project
+  entry: handlers.git_log_tool:prompt_get_git_log
+  input_schema:
+    type: object
+    required:
+    - object_type
+    - object_id
+    properties:
+      object_type:
+        type: string
+        enum:
+        - skill
+        - scenario
+      object_id:
+        type: string
+        minLength: 1
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      object_type:
+        type: string
+      object_id:
+        type: string
+      items:
+        type: array
+        items:
+          type: object
+- name: prompt_set_workflow_state
+  description: Auto-generated from handlers.main:prompt_set_workflow_state
+  entry: handlers.main:prompt_set_workflow_state
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    properties: {}
 exports: {}

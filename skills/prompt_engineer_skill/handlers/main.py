@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -97,6 +98,34 @@ def _default_state(object_type: str, object_id: str) -> Dict[str, Any]:
         "target_node_id": None,
         "workflow_state": "tz",
     }
+
+
+def _git_log_path(root: Path) -> Path:
+    return root / "git" / "log.json"
+
+
+def _append_git_log(object_type: str, object_id: str, result: Dict[str, Any]) -> None:
+    root = _project_root(object_type, object_id)
+    log_path = _git_log_path(root)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    existing: List[Dict[str, Any]] = []
+    if log_path.exists():
+        try:
+            raw = json.loads(log_path.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                existing = [e for e in raw if isinstance(e, dict)]
+        except Exception:
+            existing = []
+    entry = {
+        "ts": _now_utc_iso(),
+        "object_type": object_type,
+        "object_id": object_id,
+        "result": result,
+    }
+    existing.append(entry)
+    # keep only last 50 entries
+    existing = existing[-50:]
+    log_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _load_state_from_fs(object_type: str, object_id: str, root: Path) -> Dict[str, Any]:
@@ -1011,3 +1040,370 @@ def prompt_update_project_meta(payload: Optional[Dict[str, Any]] = None) -> Dict
         return {"ok": False, "error": str(exc)}
 
     return prompt_get_project_meta({"object_type": object_type, "object_id": object_id})
+
+
+@tool("prompt_git_push")
+def prompt_git_push(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Push DEV skill/scenario drafts via RootDeveloperService.
+
+    For scenarios, also pushes all dependent skills from dev_scenarios/<name>/scenario.yaml.depends.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    ctx = _require_ctx()
+    svc = RootDeveloperService()
+    pushed: list[Dict[str, Any]] = []
+
+    def _push_skill(name: str) -> None:
+        try:
+            res = svc.push_skill(name)
+            pushed.append(
+                {
+                    "kind": "skill",
+                    "name": res.name,
+                    "version": res.version,
+                    "updated_at": res.updated_at,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            pushed.append(
+                {
+                    "kind": "skill",
+                    "name": name,
+                    "error": str(exc),
+                }
+            )
+
+    def _push_scenario(name: str) -> None:
+        try:
+            res = svc.push_scenario(name)
+            pushed.append(
+                {
+                    "kind": "scenario",
+                    "name": res.name,
+                    "version": res.version,
+                    "updated_at": res.updated_at,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            pushed.append(
+                {
+                    "kind": "scenario",
+                    "name": name,
+                    "error": str(exc),
+                }
+            )
+
+    if object_type == "skill":
+        _push_skill(object_id)
+    elif object_type == "scenario":
+        _push_scenario(object_id)
+        # Push dependent skills from scenario manifest (if any).
+        scen_root = ctx.paths.dev_scenarios_dir()
+        scen_root = scen_root() if callable(scen_root) else scen_root
+        scen_yaml = (Path(scen_root) / object_id / "scenario.yaml").resolve()
+        if scen_yaml.exists():
+            try:
+                raw = yaml.safe_load(scen_yaml.read_text(encoding="utf-8")) or {}
+                depends = raw.get("depends") or []
+                if isinstance(depends, list):
+                    for dep in depends:
+                        if isinstance(dep, str) and dep.strip():
+                            _push_skill(dep.strip())
+            except Exception:  # pragma: no cover - best-effort
+                _log.warning("prompt_git_push: failed to read depends for scenario %s", object_id, exc_info=True)
+    else:
+        raise ValueError("object_type must be 'skill' or 'scenario'")
+
+    ok = not any(isinstance(it, dict) and it.get("error") for it in pushed)
+    result = {
+        "ok": ok,
+        "object_type": object_type,
+        "object_id": object_id,
+        "action": "push",
+        "items": pushed,
+    }
+    _append_git_log(object_type, object_id, result)
+    return result
+
+
+@tool("prompt_git_update")
+def prompt_git_update(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Update DEV skill/scenario drafts from Root Forge (pull latest).
+
+    For scenarios, also updates all dependent skills from scenario.yaml.depends.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    ctx = _require_ctx()
+    svc = RootDeveloperService()
+    updated: list[Dict[str, Any]] = []
+
+    def _update_skill(name: str) -> None:
+        try:
+            res = svc.update_skill(name)
+            updated.append(
+                {
+                    "kind": "skill",
+                    "name": res.name,
+                    "version": res.version,
+                    "updated_at": res.updated_at,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            updated.append(
+                {
+                    "kind": "skill",
+                    "name": name,
+                    "error": str(exc),
+                }
+            )
+
+    def _update_scenario(name: str) -> None:
+        try:
+            res = svc.update_scenario(name)
+            updated.append(
+                {
+                    "kind": "scenario",
+                    "name": res.name,
+                    "version": res.version,
+                    "updated_at": res.updated_at,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            updated.append(
+                {
+                    "kind": "scenario",
+                    "name": name,
+                    "error": str(exc),
+                }
+            )
+
+    if object_type == "skill":
+        _update_skill(object_id)
+    elif object_type == "scenario":
+        _update_scenario(object_id)
+        scen_root = ctx.paths.dev_scenarios_dir()
+        scen_root = scen_root() if callable(scen_root) else scen_root
+        scen_yaml = (Path(scen_root) / object_id / "scenario.yaml").resolve()
+        if scen_yaml.exists():
+            try:
+                raw = yaml.safe_load(scen_yaml.read_text(encoding="utf-8")) or {}
+                depends = raw.get("depends") or []
+                if isinstance(depends, list):
+                    for dep in depends:
+                        if isinstance(dep, str) and dep.strip():
+                            _update_skill(dep.strip())
+            except Exception:  # pragma: no cover - best-effort
+                _log.warning("prompt_git_update: failed to read depends for scenario %s", object_id, exc_info=True)
+    else:
+        raise ValueError("object_type must be 'skill' or 'scenario'")
+
+    ok = not any(isinstance(it, dict) and it.get("error") for it in updated)
+    result = {
+        "ok": ok,
+        "object_type": object_type,
+        "object_id": object_id,
+        "action": "update",
+        "items": updated,
+    }
+    _append_git_log(object_type, object_id, result)
+    return result
+
+
+@tool("prompt_git_publish")
+def prompt_git_publish(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Publish DEV skill or scenario to the registry via RootDeveloperService.
+
+    For scenarios, also publishes dependent skills listed in scenario.yaml.depends.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    bump = (payload.get("bump") or "patch").strip().lower() or "patch"
+    force = bool(payload.get("force") or False)
+    dry_run = bool(payload.get("dry_run") or False)
+
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+    if bump not in {"patch", "minor", "major"}:
+        raise ValueError("bump must be one of patch, minor, major")
+
+    ctx = _require_ctx()
+    svc = RootDeveloperService()
+    published: list[Dict[str, Any]] = []
+
+    def _publish_skill(name: str) -> None:
+        try:
+            res = svc.publish_skill(name, bump=bump, force=force, dry_run=dry_run)
+            published.append(
+                {
+                    "kind": "skill",
+                    "name": res.name,
+                    "version": res.version,
+                    "previous_version": res.previous_version,
+                    "updated_at": res.updated_at,
+                    "dry_run": res.dry_run,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            published.append(
+                {
+                    "kind": "skill",
+                    "name": name,
+                    "error": str(exc),
+                }
+            )
+
+    def _publish_scenario(name: str) -> None:
+        try:
+            res = svc.publish_scenario(name, bump=bump, force=force, dry_run=dry_run)
+            published.append(
+                {
+                    "kind": "scenario",
+                    "name": res.name,
+                    "version": res.version,
+                    "previous_version": res.previous_version,
+                    "updated_at": res.updated_at,
+                    "dry_run": res.dry_run,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            published.append(
+                {
+                    "kind": "scenario",
+                    "name": name,
+                    "error": str(exc),
+                }
+            )
+
+    if object_type == "skill":
+        _publish_skill(object_id)
+    elif object_type == "scenario":
+        _publish_scenario(object_id)
+        scen_root = ctx.paths.dev_scenarios_dir()
+        scen_root = scen_root() if callable(scen_root) else scen_root
+        scen_yaml = (Path(scen_root) / object_id / "scenario.yaml").resolve()
+        if scen_yaml.exists():
+            try:
+                raw = yaml.safe_load(scen_yaml.read_text(encoding="utf-8")) or {}
+                depends = raw.get("depends") or []
+                if isinstance(depends, list):
+                    for dep in depends:
+                        if isinstance(dep, str) and dep.strip():
+                            _publish_skill(dep.strip())
+            except Exception:  # pragma: no cover - best-effort
+                _log.warning("prompt_git_publish: failed to read depends for scenario %s", object_id, exc_info=True)
+    else:
+        raise ValueError("object_type must be 'skill' or 'scenario'")
+
+    ok = not any(isinstance(it, dict) and it.get("error") for it in published)
+    result = {
+        "ok": ok,
+        "object_type": object_type,
+        "object_id": object_id,
+        "action": "publish",
+        "bump": bump,
+        "items": published,
+    }
+    _append_git_log(object_type, object_id, result)
+    return result
+
+
+@tool("prompt_git_delete")
+def prompt_git_delete(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Delete DEV skill/scenario drafts and registry artifacts via RootDeveloperService.
+
+    For scenarios, only the scenario is deleted; dependent skills are kept.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    svc = RootDeveloperService()
+    deleted: list[Dict[str, Any]] = []
+
+    def _delete_skill(name: str) -> None:
+        try:
+            res = svc.delete_skill(name)
+            deleted.append(
+                {
+                    "kind": "skill",
+                    "name": res.name,
+                    "version": res.version,
+                    "updated_at": res.updated_at,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            deleted.append(
+                {
+                    "kind": "skill",
+                    "name": name,
+                    "error": str(exc),
+                }
+            )
+
+    def _delete_scenario(name: str) -> None:
+        try:
+            res = svc.delete_scenario(name)
+            deleted.append(
+                {
+                    "kind": "scenario",
+                    "name": res.name,
+                    "version": res.version,
+                    "updated_at": res.updated_at,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - best-effort
+            deleted.append(
+                {
+                    "kind": "scenario",
+                    "name": name,
+                    "error": str(exc),
+                }
+            )
+
+    ctx = _require_ctx()
+    if object_type == "skill":
+        _delete_skill(object_id)
+        # Also remove DEV skill folder.
+        dev_root = ctx.paths.dev_skills_dir()
+        dev_root = dev_root() if callable(dev_root) else dev_root
+        skill_path = Path(dev_root) / object_id
+        if skill_path.exists():
+            shutil.rmtree(skill_path, ignore_errors=True)
+    elif object_type == "scenario":
+        _delete_scenario(object_id)
+        # Also remove DEV scenario folder (dependent skills are kept).
+        dev_root = ctx.paths.dev_scenarios_dir()
+        dev_root = dev_root() if callable(dev_root) else dev_root
+        scen_path = Path(dev_root) / object_id
+        if scen_path.exists():
+            shutil.rmtree(scen_path, ignore_errors=True)
+    else:
+        raise ValueError("object_type must be 'skill' or 'scenario'")
+
+    ok = not any(isinstance(it, dict) and it.get("error") for it in deleted)
+    result = {
+        "ok": ok,
+        "object_type": object_type,
+        "object_id": object_id,
+        "action": "delete",
+        "items": deleted,
+    }
+    _append_git_log(object_type, object_id, result)
+    return result
