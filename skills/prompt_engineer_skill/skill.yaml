@@ -4,7 +4,8 @@ entry: handlers/main.py
 runtime:
   python: '3.11'
 description: ''
-dependencies: []
+dependencies:
+  - requests>=2.31.0
 events: {}
 tools:
 - name: prompt_load_state
@@ -422,6 +423,80 @@ tools:
         type: string
       action:
         type: string
+<<<<<<< Updated upstream
+=======
+- name: tz_execute
+  description: Run TS → detailed implementation brief generation via LLM for current project
+  entry: handlers.main:tz_execute
+  input_schema:
+    type: object
+    required:
+      - object_type
+      - object_id
+    properties:
+      object_type:
+        type: string
+        enum: ["skill", "scenario"]
+      object_id:
+        type: string
+        minLength: 1
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      object_type:
+        type: string
+      object_id:
+        type: string
+      output_path:
+        type: string
+- name: prompt_llm_list_models
+  description: List available LLM models from the Root LLM proxy
+  entry: handlers.main:prompt_llm_list_models
+  input_schema:
+    type: object
+    properties:
+      timeout:
+        type:
+          - number
+          - 'null'
+  output_schema:
+    type: object
+    required:
+      - ok
+    properties:
+      ok:
+        type: boolean
+      data:
+        type:
+          - object
+          - 'null'
+- name: tz_add_reset
+  description: Reset TZ addenda for current project
+  entry: handlers.main:tz_add_reset
+  input_schema:
+    type: object
+    required:
+      - object_type
+      - object_id
+    properties:
+      object_type:
+        type: string
+        enum: ["skill", "scenario"]
+      object_id:
+        type: string
+        minLength: 1
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      object_type:
+        type: string
+      object_id:
+        type: string
+>>>>>>> Stashed changes
 - name: prompt_git_update
   description: Placeholder git update/pull for current project
   entry: handlers.main:prompt_git_update
