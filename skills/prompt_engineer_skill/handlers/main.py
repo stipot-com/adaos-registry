@@ -1,3 +1,4 @@
+# Main handler!
 from __future__ import annotations
 
 import json
@@ -13,6 +14,7 @@ import yaml
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import tool
 from adaos.services.root.service import RootDeveloperService, TemplateResolutionError, RootServiceError
+from adaos.sdk.llm.llm_client import request_ts_draft, list_llm_models
 
 _log = logging.getLogger("skills.prompt_engineer")
 
@@ -62,6 +64,13 @@ def _project_root(object_type: str, object_id: str) -> Path:
     root = (base / object_id).resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _ts_artifact_path(root: Path) -> Path:
+    """
+    Location for the TS draft artifact used by Prompt IDE (LLM Artifacts panel).
+    """
+    return root / "artifacts" / "llm_artifacts" / "ts_draft.md"
 
 
 def _state_path(root: Path) -> Path:
@@ -234,6 +243,23 @@ def _write_state(root: Path, state: Dict[str, Any]) -> None:
     _write_text(path, payload)
 
 
+def _build_ts_text(state: Dict[str, Any]) -> str:
+    """
+    Combine base_tz and tz_addenda into a single Technical Specification text.
+    """
+    base = str(state.get("base_tz") or "").strip()
+    addenda_items: List[Dict[str, Any]] = state.get("tz_addenda") or []
+    addenda_texts: List[str] = []
+    for item in addenda_items:
+        if isinstance(item, dict):
+            text = str(item.get("text") or "").strip()
+            if text:
+                addenda_texts.append(text)
+    if not addenda_texts:
+        return base
+    return base + "\n\n[ADDENDA]\n" + "\n\n---\n\n".join(addenda_texts)
+
+
 @tool("prompt_load_state")
 def prompt_load_state(object_type: str, object_id: str) -> Dict[str, Any]:
     """
@@ -334,6 +360,87 @@ def prompt_get_tz_state(payload: Optional[Dict[str, Any]] = None) -> Dict[str, A
         "object_id": state.get("object_id"),
         "base_tz": state.get("base_tz") or "",
         "tz_addenda": state.get("tz_addenda") or [],
+    }
+
+
+@tool("tz_execute")
+def tz_execute(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Execute TS → detailed implementation brief via LLM for the current project.
+
+    This is invoked from the Prompt IDE workflow state `tz` (tz.execute action).
+    It reads current PromptProjectState (base_tz + tz_addenda), builds a combined
+    Technical Specification and sends it through request_ts_draft.
+
+    The resulting artifact path is returned so that the IDE can show it under
+    LLM Artifacts (draft).
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    state = _load_state(object_type, object_id)
+    ts_text = _build_ts_text(state)
+    if not ts_text:
+        return {
+            "ok": False,
+            "object_type": object_type,
+            "object_id": object_id,
+            "error": "technical_spec_missing",
+        }
+
+    # Send request via Root LLM proxy and persist TS draft artifact for this project.
+    root = _project_root(object_type, object_id)
+    artifact_path = _ts_artifact_path(root)
+    result = request_ts_draft(ts_text, output_path=artifact_path)
+    return {
+        "ok": True,
+        "object_type": object_type,
+        "object_id": object_id,
+        "output_text": str(result.get("output_text") or ""),
+        "output_path": str(result.get("output_path") or artifact_path),
+        "request_prompt": result.get("request_prompt"),
+        "raw_response": result.get("response"),
+    }
+
+
+@tool("prompt_llm_list_models")
+def prompt_llm_list_models(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    List available LLM models from the Root LLM proxy.
+    """
+    payload = payload or {}
+    timeout = payload.get("timeout")
+    try:
+        data = list_llm_models(timeout=float(timeout) if timeout is not None else None)
+    except Exception as exc:
+        _log.warning("prompt_llm_list_models failed: %s", exc, exc_info=True)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "data": data}
+
+
+@tool("tz_add_reset")
+def tz_add_reset(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Reset TZ addenda for the current project (used from tz_add.reset action).
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    state = _load_state(object_type, object_id)
+    state["tz_addenda"] = []
+    root = _project_root(object_type, object_id)
+    _write_state(root, state)
+    return {
+        "ok": True,
+        "object_type": object_type,
+        "object_id": object_id,
+        "tz_addenda": [],
     }
 
 
@@ -711,7 +818,7 @@ def prompt_list_project_files(payload: Optional[Dict[str, Any]] = None) -> List[
     if not object_type or not object_id:
         return []
     root = _project_root(object_type, object_id)
-    exts = {".py", ".json", ".yml", ".yaml"}
+    exts = {".py", ".json", ".yml", ".yaml", ".md"}
     items: List[Dict[str, Any]] = []
 
     if not root.exists():
@@ -750,7 +857,18 @@ def prompt_read_project_file(payload: Optional[Dict[str, Any]] = None) -> Dict[s
     object_id = payload.get("object_id")
     path = payload.get("path")
     if not object_type or not object_id or not path:
-        raise ValueError("object_type, object_id and path are required")
+        _log.info(
+            "prompt_read_project_file missing identifiers payload=%r",
+            payload,
+        )
+        return {
+            "ok": False,
+            "object_type": object_type or "",
+            "object_id": object_id or "",
+            "path": path or "",
+            "language": "",
+            "content": "",
+        }
 
     root = _project_root(object_type, object_id)
     rel_path = Path(path)
@@ -945,7 +1063,17 @@ def prompt_get_project_meta(payload: Optional[Dict[str, Any]] = None) -> Dict[st
     object_type = (payload.get("object_type") or "").strip().lower()
     object_id = (payload.get("object_id") or "").strip()
     if not object_type or not object_id:
-        raise ValueError("object_type and object_id are required")
+        return {
+            "ok": False,
+            "object_type": object_type,
+            "object_id": object_id,
+            "name": "",
+            "type": object_type or "",
+            "title": "",
+            "description": "",
+            "version": "",
+            "updated_at": None,
+        }
 
     ctx = _require_ctx()
     if object_type == "scenario":

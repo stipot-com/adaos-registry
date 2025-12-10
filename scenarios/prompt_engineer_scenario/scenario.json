@@ -113,7 +113,7 @@
               "inputs": {
                 "labelField": "label",
                 "columns": 1,
-                "selectedStateKey": "currentObjectId"
+                "selectedStateKey": "currentFilePath"
               },
               "actions": [
                 {
@@ -122,7 +122,9 @@
                   "target": "scenario.workflow.set_state",
                   "params": {
                     "scenario_id": "prompt_engineer_scenario",
-                    "state": "$event.workflow_state"
+                    "state": "$event.workflow_state",
+                    "object_type": "$event.object_type",
+                    "object_id": "$event.object_id"
                   }
                 },
                 {
@@ -131,38 +133,8 @@
                   "params": {
                     "currentObjectType": "$event.object_type",
                     "currentObjectId": "$event.object_id",
-                    "currentStage": "$event.workflow_state"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "project-files",
-              "type": "collection.grid",
-              "area": "sidebar",
-              "title": "Files",
-              "dataSource": {
-                "kind": "skill",
-                "name": "prompt_engineer_skill.prompt_list_project_files",
-                "params": {
-                  "object_type": "$state.currentObjectType",
-                  "object_id": "$state.currentObjectId"
-                }
-              },
-              "inputs": {
-                "labelField": "label",
-                "columns": 1,
-                "selectedStateKey": "currentFilePath"
-              },
-              "actions": [
-                {
-                  "on": "select",
-                  "type": "updateState",
-                  "params": {
-                    "currentObjectType": "$event.object_type",
-                    "currentObjectId": "$event.object_id",
                     "currentStage": "file",
-                  "currentFilePath": "$event.path"
+                    "currentFilePath": "$event.path"
                   }
                 }
               ]
@@ -189,6 +161,33 @@
                   "params": {
                     "object_type": "$state.currentObjectType",
                     "object_id": "$state.currentObjectId"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "project-files",
+              "type": "collection.grid",
+              "area": "sidebar",
+              "title": "Files",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/prompt/files/list"
+              },
+              "inputs": {
+                "labelField": "label",
+                "columns": 1,
+                "selectedStateKey": "currentFilePath"
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "currentObjectType": "$event.object_type",
+                    "currentObjectId": "$event.object_id",
+                    "currentStage": "file",
+                    "currentFilePath": "$event.path"
                   }
                 }
               ]
@@ -293,10 +292,8 @@
               "area": "right",
               "title": "LLM Artifacts (draft)",
               "dataSource": {
-                "kind": "static",
-                "value": {
-                  "items": []
-                }
+                "kind": "y",
+                "path": "data/prompt/llm_artifacts"
               }
             },
             {
@@ -319,7 +316,9 @@
                   "target": "scenario.workflow.action",
                   "params": {
                     "scenario_id": "prompt_engineer_scenario",
-                    "action_id": "$event.id"
+                    "action_id": "$event.id",
+                    "object_type": "$state.currentObjectType",
+                    "object_id": "$state.currentObjectId"
                   }
                 },
                 {
@@ -345,48 +344,20 @@
               "id": "status-toolbar",
               "type": "input.commandBar",
               "area": "bottom",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/prompt/status/buttons"
+              },
               "inputs": {
                 "size": "small",
-                "buttons": [
-                  {
-                    "id": "dev-webspace",
-                    "label": "dev webspace: default"
-                  },
-                  {
-                    "id": "target-node",
-                    "label": "target: local"
-                  },
-                  {
-                    "id": "llm-profile",
-                    "label": "LLM profile: openai:gpt-4.1-mini"
-                  },
-                  {
-                    "id": "llm-status",
-                    "label": "LLM: idle"
-                  },
-                  {
-                    "id": "git-status",
-                    "label": "git: clean"
-                  },
-                  {
-                    "id": "current-object",
-                    "label": "$state.currentObjectId"
-                  }
-                ]
+                "buttons": []
               },
               "actions": [
                 {
-                  "on": "click:git-status",
+                  "on": "click",
                   "type": "openModal",
                   "params": {
-                    "modalId": "project_git_modal"
-                  }
-                },
-                {
-                  "on": "click:current-object",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "project_meta_modal"
+                    "modalId": "$event.action.openModal"
                   }
                 }
               ]
@@ -429,7 +400,9 @@
                   "target": "scenario.workflow.set_state",
                   "params": {
                     "scenario_id": "prompt_engineer_scenario",
-                    "state": "$event.workflow_state"
+                    "state": "$event.workflow_state",
+                    "object_type": "$event.object_type",
+                    "object_id": "$event.object_id"
                   }
                 },
                 {
@@ -838,6 +811,60 @@
                     }
                   }
                 ]
+              }
+            ]
+          }
+        },
+        "llm_profile_modal": {
+          "title": "LLM profile",
+          "schema": {
+            "id": "llm_profile_modal",
+            "layout": {
+              "type": "single",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "widgets": [
+              {
+                "id": "llm-profile-models",
+                "type": "item.details",
+                "area": "main",
+                "title": "Available LLM models",
+                "dataSource": {
+                  "kind": "skill",
+                  "name": "prompt_engineer_skill.prompt_llm_list_models"
+                }
+              }
+            ]
+          }
+        },
+        "llm_status_modal": {
+          "title": "LLM status",
+          "schema": {
+            "id": "llm_status_modal",
+            "layout": {
+              "type": "single",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "widgets": [
+              {
+                "id": "llm-status-details",
+                "type": "item.details",
+                "area": "main",
+                "title": "LLM status",
+                "dataSource": {
+                  "kind": "y",
+                  "path": "data/prompt/llm_status"
+                }
               }
             ]
           }
