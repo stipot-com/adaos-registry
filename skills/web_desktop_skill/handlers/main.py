@@ -3,13 +3,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-import asyncio
 import os
-import re
 
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
-from adaos.services.yjs.doc import get_ydoc, async_get_ydoc, mutate_live_room
+from adaos.services.io_web import WebDesktopService
 
 _log = logging.getLogger("skills.web_desktop")
 
@@ -20,8 +18,6 @@ if os.environ.get("ADAOS_VALIDATE") == "1":
     _ctx = None  # type: ignore[assignment]
 else:
     _ctx = require_ctx("skills.web_desktop_skill")
-_DEFAULT_SCENARIO_ID = "web_desktop"
-_WS_ID_RE = re.compile(r"[^a-z0-9-_]+")
 
 
 def _payload(evt: Any) -> Dict[str, Any]:
@@ -51,65 +47,15 @@ def _webspace_id(payload: Dict[str, Any]) -> str:
             token = meta.get("webspace_id") or meta.get("workspace_id")
             if token:
                 return str(token)
-    return "default"
+    # Let the underlying service resolve the effective default webspace.
+    return ""
 
 
-def _apply_install_toggle(webspace_id: str, ydoc, txn, item_type: str, target_id: str) -> None:
-    data_map = ydoc.get_map("data")
-    installed = data_map.get("installed") or {}
-    if not isinstance(installed, dict):
-        installed = {}
-    apps = set(installed.get("apps") or [])
-    widgets = set(installed.get("widgets") or [])
-    if item_type == "app":
-        if target_id in apps:
-            apps.remove(target_id)
-        else:
-            apps.add(target_id)
-    else:
-        if target_id in widgets:
-            widgets.remove(target_id)
-        else:
-            widgets.add(target_id)
-    next_installed = {"apps": list(apps), "widgets": list(widgets)}
-    data_map.set(txn, "installed", next_installed)
-    desktop_value = data_map.get("desktop") or {}
-    if not isinstance(desktop_value, dict):
-        desktop_value = {}
-    desktop_next = dict(desktop_value)
-    desktop_installed = dict(desktop_next.get("installed") or {})
-    desktop_installed["apps"] = list(apps)
-    desktop_installed["widgets"] = list(widgets)
-    desktop_next["installed"] = desktop_installed
-    data_map.set(txn, "desktop", desktop_next)
-    _log.debug(
-        "toggle install webspace=%s type=%s target=%s apps=%s widgets=%s",
-        webspace_id,
-        item_type,
-        target_id,
-        sorted(apps),
-        sorted(widgets),
-    )
-
-
-def _toggle_install(webspace_id: str, item_type: str, target_id: str) -> None:
-    with get_ydoc(webspace_id) as ydoc:
-        with ydoc.begin_transaction() as txn:
-            _apply_install_toggle(webspace_id, ydoc, txn, item_type, target_id)
-
-
-def _toggle_install_async(webspace_id: str, item_type: str, target_id: str) -> None:
-    async def _worker() -> None:
-        async with async_get_ydoc(webspace_id) as ydoc:
-            with ydoc.begin_transaction() as txn:
-                _apply_install_toggle(webspace_id, ydoc, txn, item_type, target_id)
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.run(_worker())
-    else:
-        loop.create_task(_worker(), name=f"web-desktop-toggle-{webspace_id}")
+def _desktop_service() -> WebDesktopService:
+    global _ctx  # type: ignore[global-variable-not-assigned]
+    if _ctx is None:
+        _ctx = require_ctx("skills.web_desktop_skill")
+    return WebDesktopService(_ctx)
 
 
 @subscribe("desktop.toggleInstall")
@@ -120,10 +66,20 @@ def on_toggle_install(evt) -> None:
     target_id = payload.get("id")
     if item_type not in ("app", "widget") or not target_id:
         return
-    live_applied = mutate_live_room(webspace_id, lambda doc, txn: _apply_install_toggle(webspace_id, doc, txn, item_type, str(target_id)))
-    if not live_applied:
-        _log.debug("mutate_live_room skipped for toggle webspace=%s type=%s target=%s", webspace_id, item_type, target_id)
-    _toggle_install_async(webspace_id, item_type, str(target_id))
+    try:
+        _desktop_service().toggle_install_with_live_room(
+            str(item_type),
+            str(target_id),
+            webspace_id=str(webspace_id),
+        )
+    except Exception:
+        _log.warning(
+            "desktop.toggleInstall failed webspace=%s type=%s target=%s",
+            webspace_id,
+            item_type,
+            target_id,
+            exc_info=True,
+        )
 
 
 @subscribe("desktop.webspace.create")
