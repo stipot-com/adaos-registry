@@ -2,635 +2,636 @@ name: prompt_engineer_skill
 version: 0.1.0
 entry: handlers/main.py
 runtime:
-  python: '3.11'
-description: ''
+  python: "3.11"
+description: ""
 dependencies:
   - requests>=2.31.0
 events: {}
 tools:
-- name: prompt_load_state
-  description: Load or initialize PromptProjectState for a skill or scenario
-  entry: handlers.main:prompt_load_state
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    required:
-    - ok
-    - state
-    properties:
-      ok:
-        type: boolean
-      state:
-        type: object
-- name: prompt_save_base_tz
-  description: Update base TZ text for a prompt project
-  entry: handlers.main:prompt_save_base_tz
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    - text
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-      text:
-        type: string
-  output_schema:
-    type: object
-    required:
-    - ok
-    - state
-    properties:
-      ok:
-        type: boolean
-      state:
-        type: object
-- name: prompt_append_tz_addendum
-  description: Append a new TZ addendum block (append-only)
-  entry: handlers.main:prompt_append_tz_addendum
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    - text
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-      text:
-        type: string
-      iteration_ref:
-        type:
-        - string
-        - 'null'
-  output_schema:
-    type: object
-    required:
-    - ok
-    - state
-    properties:
-      ok:
-        type: boolean
-      state:
-        type: object
-- name: prompt_get_tz_state
-  description: Return base TZ and addenda for Prompt IDE
-  entry: handlers.main:prompt_get_tz_state
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    required:
-    - ok
-    - base_tz
-    - tz_addenda
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      base_tz:
-        type: string
-      tz_addenda:
-        type: array
-        items:
+  - name: prompt_load_state
+    description: Load or initialize PromptProjectState for a skill or scenario
+    entry: handlers.main:prompt_load_state
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      required:
+        - ok
+        - state
+      properties:
+        ok:
+          type: boolean
+        state:
           type: object
-- name: prompt_list_dev_projects
-  description: List skills and scenarios in DEV space
-  entry: handlers.main:prompt_list_dev_projects
-  input_schema:
-    type: object
-    properties: {}
-  output_schema:
-    type: array
-    items:
+  - name: prompt_save_base_tz
+    description: Update base TZ text for a prompt project
+    entry: handlers.main:prompt_save_base_tz
+    input_schema:
       type: object
-- name: prompt_list_dev_objects
-  description: List root DEV objects (scenarios and skills)
-  entry: handlers.main:prompt_list_dev_objects
-  input_schema:
-    type: object
-    properties: {}
-  output_schema:
-    type: array
-    items:
+      required:
+        - object_type
+        - object_id
+        - text
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+        text:
+          type: string
+    output_schema:
       type: object
-- name: prompt_list_project_files
-  description: List source files for a prompt project
-  entry: handlers.main:prompt_list_project_files
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: array
-    items:
+      required:
+        - ok
+        - state
+      properties:
+        ok:
+          type: boolean
+        state:
+          type: object
+  - name: prompt_append_tz_addendum
+    description: Append a new TZ addendum block (append-only)
+    entry: handlers.main:prompt_append_tz_addendum
+    input_schema:
       type: object
-- name: prompt_read_project_file
-  description: Read a single project file for code viewer
-  entry: handlers.main:prompt_read_project_file
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    - path
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-      path:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      path:
-        type: string
-      language:
-        type: string
-      content:
-        type: string
-- name: prompt_list_templates
-  description: List available templates for skills or scenarios
-  entry: handlers.main:prompt_list_templates
-  input_schema:
-    type: object
-    required:
-    - object_type
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-  output_schema:
-    type: array
-    items:
+      required:
+        - object_type
+        - object_id
+        - text
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+        text:
+          type: string
+        iteration_ref:
+          type:
+            - string
+            - "null"
+    output_schema:
       type: object
-- name: prompt_create_dev_project
-  description: Create a DEV skill or scenario using a template
-  entry: handlers.main:prompt_create_dev_project
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - name
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      name:
-        type: string
-        minLength: 1
-      template:
-        type:
-        - string
-        - 'null'
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      name:
-        type: string
-      path:
-        type: string
-      template:
-        type: string
-      error:
-        type: string
-- name: prompt_list_project_objects
-  description: List constituent objects (scenario + depends skills or single skill)
-    for a Prompt IDE project
-  entry: handlers.main:prompt_list_project_objects
-  input_schema:
-    type: object
-    required:
-    - project_type
-    - project_id
-    properties:
-      project_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      project_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: array
-    items:
+      required:
+        - ok
+        - state
+      properties:
+        ok:
+          type: boolean
+        state:
+          type: object
+  - name: prompt_get_tz_state
+    description: Return base TZ and addenda for Prompt IDE
+    entry: handlers.main:prompt_get_tz_state
+    input_schema:
       type: object
-- name: prompt_snapshot_project
-  description: Persist PromptProjectState snapshot for a dev project
-  entry: handlers.main:prompt_snapshot_project
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-- name: prompt_get_project_meta
-  description: Return metadata for a dev scenario or skill
-  entry: handlers.main:prompt_get_project_meta
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      name:
-        type: string
-      type:
-        type: string
-      title:
-        type: string
-      description:
-        type: string
-      version:
-        type: string
-      updated_at:
-        type: string
-- name: prompt_update_project_meta
-  description: Update metadata (title, description, type) for a dev scenario or skill
-  entry: handlers.main:prompt_update_project_meta
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-      title:
-        type: string
-      description:
-        type: string
-      type:
-        type: string
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      name:
-        type: string
-      type:
-        type: string
-      title:
-        type: string
-      description:
-        type: string
-      version:
-        type: string
-      updated_at:
-        type: string
-- name: prompt_git_push
-  description: Placeholder git push for current project
-  entry: handlers.main:prompt_git_push
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      action:
-        type: string
-- name: tz_execute
-  description: Run TS → detailed implementation brief generation via LLM for current project
-  entry: handlers.main:tz_execute
-  input_schema:
-    type: object
-    required:
-      - object_type
-      - object_id
-    properties:
-      object_type:
-        type: string
-        enum: ["skill", "scenario"]
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      output_path:
-        type: string
-- name: prompt_llm_list_models
-  description: List available LLM models from the Root LLM proxy
-  entry: handlers.main:prompt_llm_list_models
-  input_schema:
-    type: object
-    properties:
-      timeout:
-        type:
-          - number
-          - 'null'
-  output_schema:
-    type: object
-    required:
-      - ok
-    properties:
-      ok:
-        type: boolean
-      data:
-        type:
-          - object
-          - 'null'
-- name: tz_add_reset
-  description: Reset TZ addenda for current project
-  entry: handlers.main:tz_add_reset
-  input_schema:
-    type: object
-    required:
-      - object_type
-      - object_id
-    properties:
-      object_type:
-        type: string
-        enum: ["skill", "scenario"]
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-- name: prompt_git_update
-  description: Placeholder git update/pull for current project
-  entry: handlers.main:prompt_git_update
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      action:
-        type: string
-- name: prompt_git_publish
-  description: Publish DEV skill or scenario (and dependent skills) to the registry
-  entry: handlers.main:prompt_git_publish
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-      bump:
-        type: string
-      force:
-        type: boolean
-      dry_run:
-        type: boolean
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      action:
-        type: string
-      bump:
-        type: string
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      required:
+        - ok
+        - base_tz
+        - tz_addenda
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        base_tz:
+          type: string
+        tz_addenda:
+          type: array
+          items:
+            type: object
+  - name: prompt_list_dev_projects
+    description: List skills and scenarios in DEV space
+    entry: handlers.main:prompt_list_dev_projects
+    input_schema:
+      type: object
+      properties: {}
+    output_schema:
+      type: array
       items:
-        type: array
-        items:
-          type: object
-- name: prompt_git_delete
-  description: Delete DEV skill or scenario from drafts and registry
-  entry: handlers.main:prompt_git_delete
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
-      action:
-        type: string
+        type: object
+  - name: prompt_list_dev_objects
+    description: List root DEV objects (scenarios and skills)
+    entry: handlers.main:prompt_list_dev_objects
+    input_schema:
+      type: object
+      properties: {}
+    output_schema:
+      type: array
       items:
-        type: array
-        items:
-          type: object
-- name: prompt_get_git_log
-  description: Return recent git operations for a project
-  entry: handlers.git_log_tool:prompt_get_git_log
-  input_schema:
-    type: object
-    required:
-    - object_type
-    - object_id
-    properties:
-      object_type:
-        type: string
-        enum:
-        - skill
-        - scenario
-      object_id:
-        type: string
-        minLength: 1
-  output_schema:
-    type: object
-    properties:
-      ok:
-        type: boolean
-      object_type:
-        type: string
-      object_id:
-        type: string
+        type: object
+  - name: prompt_list_project_files
+    description: List source files for a prompt project
+    entry: handlers.main:prompt_list_project_files
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: array
       items:
-        type: array
+        type: object
+  - name: prompt_read_project_file
+    description: Read a single project file for code viewer
+    entry: handlers.main:prompt_read_project_file
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+        - path
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+        path:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        path:
+          type: string
+        language:
+          type: string
+        content:
+          type: string
+  - name: prompt_list_templates
+    description: List available templates for skills or scenarios
+    entry: handlers.main:prompt_list_templates
+    input_schema:
+      type: object
+      required:
+        - object_type
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+    output_schema:
+      type: array
+      items:
+        type: object
+  - name: prompt_create_dev_project
+    description: Create a DEV skill or scenario using a template
+    entry: handlers.main:prompt_create_dev_project
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - name
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        name:
+          type: string
+          minLength: 1
+        template:
+          type:
+            - string
+            - "null"
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        template:
+          type: string
+        error:
+          type: string
+  - name: prompt_list_project_objects
+    description:
+      List constituent objects (scenario + depends skills or single skill)
+      for a Prompt IDE project
+    entry: handlers.main:prompt_list_project_objects
+    input_schema:
+      type: object
+      required:
+        - project_type
+        - project_id
+      properties:
+        project_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        project_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: array
+      items:
+        type: object
+  - name: prompt_snapshot_project
+    description: Persist PromptProjectState snapshot for a dev project
+    entry: handlers.main:prompt_snapshot_project
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+  - name: prompt_get_project_meta
+    description: Return metadata for a dev scenario or skill
+    entry: handlers.main:prompt_get_project_meta
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        updated_at:
+          type: string
+  - name: prompt_update_project_meta
+    description: Update metadata (title, description, type) for a dev scenario or skill
+    entry: handlers.main:prompt_update_project_meta
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        updated_at:
+          type: string
+  - name: prompt_git_push
+    description: Placeholder git push for current project
+    entry: handlers.main:prompt_git_push
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        action:
+          type: string
+  - name: tz_execute
+    description: Run TS → detailed implementation brief generation via LLM for current project
+    entry: handlers.main:tz_execute
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum: ["skill", "scenario"]
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        output_path:
+          type: string
+  - name: prompt_llm_list_models
+    description: List available LLM models from the Root LLM proxy
+    entry: handlers.main:prompt_llm_list_models
+    input_schema:
+      type: object
+      properties:
+        timeout:
+          type:
+            - number
+            - "null"
+    output_schema:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+        data:
+          type:
+            - object
+            - "null"
+  - name: tz_add_reset
+    description: Reset TZ addenda for current project
+    entry: handlers.main:tz_add_reset
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum: ["skill", "scenario"]
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+  - name: prompt_git_update
+    description: Placeholder git update/pull for current project
+    entry: handlers.main:prompt_git_update
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        action:
+          type: string
+  - name: prompt_git_publish
+    description: Publish DEV skill or scenario (and dependent skills) to the registry
+    entry: handlers.main:prompt_git_publish
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+        bump:
+          type: string
+        force:
+          type: boolean
+        dry_run:
+          type: boolean
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        action:
+          type: string
+        bump:
+          type: string
         items:
-          type: object
-- name: prompt_set_workflow_state
-  description: Auto-generated from handlers.main:prompt_set_workflow_state
-  entry: handlers.main:prompt_set_workflow_state
-  input_schema:
-    type: object
-    properties: {}
-  output_schema:
-    type: object
-    properties: {}
+          type: array
+          items:
+            type: object
+  - name: prompt_git_delete
+    description: Delete DEV skill or scenario from drafts and registry
+    entry: handlers.main:prompt_git_delete
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        action:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+  - name: prompt_get_git_log
+    description: Return recent git operations for a project
+    entry: handlers.git_log_tool:prompt_get_git_log
+    input_schema:
+      type: object
+      required:
+        - object_type
+        - object_id
+      properties:
+        object_type:
+          type: string
+          enum:
+            - skill
+            - scenario
+        object_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        object_type:
+          type: string
+        object_id:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+  - name: prompt_set_workflow_state
+    description: Auto-generated from handlers.main:prompt_set_workflow_state
+    entry: handlers.main:prompt_set_workflow_state
+    input_schema:
+      type: object
+      properties: {}
+    output_schema:
+      type: object
+      properties: {}
 exports: {}

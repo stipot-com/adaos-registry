@@ -243,6 +243,24 @@
               "visibleIf": "$state.currentStage === 'tz' || $state.currentStage === 'tz_add'"
             },
             {
+              "id": "tz-view-readonly",
+              "type": "item.details",
+              "area": "main",
+              "title": "Technical Specification",
+              "dataSource": {
+                "kind": "skill",
+                "name": "prompt_engineer_skill.prompt_get_tz_state",
+                "params": {
+                  "object_type": "$state.currentObjectType",
+                  "object_id": "$state.currentObjectId"
+                }
+              },
+              "inputs": {
+                "bindField": "base_tz"
+              },
+              "visibleIf": "$state.currentStage === 'tz_add'"
+            },
+            {
               "id": "tz-addenda-controls",
               "type": "input.commandBar",
               "area": "main",

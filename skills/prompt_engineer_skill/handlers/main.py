@@ -1,4 +1,5 @@
 # Main handler!
+# Main handler!
 from __future__ import annotations
 
 import json
@@ -64,6 +65,13 @@ def _project_root(object_type: str, object_id: str) -> Path:
     root = (base / object_id).resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _ts_artifact_path(root: Path) -> Path:
+    """
+    Location for the TS draft artifact used by Prompt IDE (LLM Artifacts panel).
+    """
+    return root / "artifacts" / "llm_artifacts" / "ts_draft.md"
 
 
 def _ts_artifact_path(root: Path) -> Path:
@@ -552,9 +560,7 @@ def prompt_list_dev_objects(payload: Optional[Dict[str, Any]] = None) -> List[Di
             "title": data.get("title") or name,
             "description": data.get("description") or "",
             "version": data.get("version") or "",
-            "updated_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
-            if path.exists()
-            else None,
+            "updated_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat() if path.exists() else None,
             "workflow_state": wf_state,
         }
 
@@ -583,9 +589,7 @@ def prompt_list_dev_objects(payload: Optional[Dict[str, Any]] = None) -> List[Di
         updated_at: Optional[str] = None
         if manifest_path and manifest_path.exists():
             try:
-                updated_at = datetime.fromtimestamp(
-                    manifest_path.stat().st_mtime, tz=timezone.utc
-                ).isoformat()
+                updated_at = datetime.fromtimestamp(manifest_path.stat().st_mtime, tz=timezone.utc).isoformat()
             except Exception:
                 updated_at = None
         wf_state = "tz"
@@ -716,9 +720,7 @@ def prompt_list_project_objects(payload: Optional[Dict[str, Any]] = None) -> Lis
             updated_at = None
             if manifest_path and manifest_path.exists():
                 try:
-                    updated_at = datetime.fromtimestamp(
-                        manifest_path.stat().st_mtime, tz=timezone.utc
-                    ).isoformat()
+                    updated_at = datetime.fromtimestamp(manifest_path.stat().st_mtime, tz=timezone.utc).isoformat()
                 except Exception:
                     updated_at = None
             meta = {
@@ -818,7 +820,7 @@ def prompt_list_project_files(payload: Optional[Dict[str, Any]] = None) -> List[
     if not object_type or not object_id:
         return []
     root = _project_root(object_type, object_id)
-    exts = {".py", ".json", ".yml", ".yaml", ".md"}
+    exts = {".py", ".json", ".yml", ".yaml"}
     items: List[Dict[str, Any]] = []
 
     if not root.exists():
@@ -857,18 +859,7 @@ def prompt_read_project_file(payload: Optional[Dict[str, Any]] = None) -> Dict[s
     object_id = payload.get("object_id")
     path = payload.get("path")
     if not object_type or not object_id or not path:
-        _log.info(
-            "prompt_read_project_file missing identifiers payload=%r",
-            payload,
-        )
-        return {
-            "ok": False,
-            "object_type": object_type or "",
-            "object_id": object_id or "",
-            "path": path or "",
-            "language": "",
-            "content": "",
-        }
+        raise ValueError("object_type, object_id and path are required")
 
     root = _project_root(object_type, object_id)
     rel_path = Path(path)
@@ -1063,17 +1054,7 @@ def prompt_get_project_meta(payload: Optional[Dict[str, Any]] = None) -> Dict[st
     object_type = (payload.get("object_type") or "").strip().lower()
     object_id = (payload.get("object_id") or "").strip()
     if not object_type or not object_id:
-        return {
-            "ok": False,
-            "object_type": object_type,
-            "object_id": object_id,
-            "name": "",
-            "type": object_type or "",
-            "title": "",
-            "description": "",
-            "version": "",
-            "updated_at": None,
-        }
+        raise ValueError("object_type and object_id are required")
 
     ctx = _require_ctx()
     if object_type == "scenario":
