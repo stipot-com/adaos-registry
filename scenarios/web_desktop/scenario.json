@@ -1,186 +1,189 @@
 {
-  "ui": {
-    "application": {
-      "version": "0.2",
-      "desktop": {
-        "topbar": [
-          {
-            "id": "btn_apps",
-            "label": "Apps45",
-            "action": {
-              "openModal": "apps_catalog"
-            }
-          },
-          {
-            "id": "btn_widgets",
-            "label": "Widgets",
-            "action": {
-              "openModal": "widgets_catalog"
-            }
-          }
-        ],
-        "iconTemplate": {
-          "icon": "apps-outline"
-        },
-        "widgetTemplate": {
-          "style": {
-            "minWidth": 240
-          }
-        },
-        "pageSchema": {
-          "id": "desktop",
-          "title": "Desktop",
-          "layout": {
-            "type": "single",
-            "areas": [
-              {
-                "id": "main",
-                "role": "main"
-              }
-            ]
-          },
-          "widgets": [
-            {
-              "id": "topbar",
-              "type": "input.commandBar",
-              "area": "main",
-              "dataSource": {
-                "kind": "y",
-                "path": "ui/application/desktop/topbar"
-              },
-              "actions": [
-                {
-                  "on": "click",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "$event.action.openModal"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "workspace-tools",
-              "type": "input.commandBar",
-              "area": "main",
-              "inputs": {
-                "buttons": [
-                  {
-                    "id": "apps",
-                    "label": "Apps"
-                  },
-                  {
-                    "id": "widgets",
-                    "label": "Widgets"
-                  },
-                  {
-                    "id": "workspace-manager",
-                    "label": "Workspaces"
-                  },
-                  {
-                    "id": "yjs-reload",
-                    "label": "YJS reload"
-                  },
-                  {
-                    "id": "yjs-reset",
-                    "label": "YJS reset"
-                  }
-                ]
-              },
-              "actions": [
-                {
-                  "on": "click:apps",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "apps_catalog"
-                  }
-                },
-                {
-                  "on": "click:widgets",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "widgets_catalog"
-                  }
-                },
-                {
-                  "on": "click:workspace-manager",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "workspace_manager"
-                  }
-                },
-                {
-                  "on": "click:yjs-reload",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload"
-                },
-                {
-                  "on": "click:yjs-reset",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reset"
-                }
-              ]
-            },
-            {
-              "id": "desktop-icons",
-              "type": "collection.grid",
-              "area": "main",
-              "title": "Icons",
-              "inputs": {
-                "columns": 6
-              },
-              "dataSource": {
-                "kind": "y",
-                "transform": "desktop.icons"
-              },
-              "actions": [
-                {
-                  "on": "select",
-                  "type": "callHost",
-                  "target": "desktop.scenario.set",
-                  "params": {
-                    "scenario_id": "$event.scenario_id"
-                  }
-                },
-                {
-                  "on": "select",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "$event.action.openModal"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "desktop-widgets",
-              "type": "desktop.widgets",
-              "area": "main",
-              "title": "Widgets",
-              "dataSource": {
-                "kind": "y",
-                "transform": "desktop.widgets"
-              }
-            }
-          ]
-        }
-      },
-      "modals": {}
-    }
-  },
-  "registry": {
-    "widgets": [],
-    "modals": []
-  },
-  "catalog": {
-    "apps": [],
-    "widgets": []
-  },
-  "id": "web_desktop",
-  "version": "0.0.1",
-  "data": {
-    "installed": {
-      "apps": [],
-      "widgets": []
-    }
-  }
+	"ui": {
+		"application": {
+			"version": "0.2",
+			"desktop": {
+				"topbar": [
+					{
+						"id": "btn_apps",
+						"label": "Apps45",
+						"action": {
+							"openModal": "apps_catalog"
+						}
+					},
+					{
+						"id": "btn_widgets",
+						"label": "Widgets",
+						"action": {
+							"openModal": "widgets_catalog"
+						}
+					}
+				],
+				"iconTemplate": {
+					"icon": "apps-outline"
+				},
+				"widgetTemplate": {
+					"style": {
+						"minWidth": 240
+					}
+				},
+				"pageSchema": {
+					"id": "desktop",
+					"title": "Desktop",
+					"layout": {
+						"type": "single",
+						"areas": [
+							{
+								"id": "main",
+								"role": "main"
+							},
+							{
+								"id": "right",
+								"role": "aux"
+							}
+						]
+					},
+					"widgets": [
+						{
+							"id": "topbar",
+							"type": "input.commandBar",
+							"area": "main",
+							"dataSource": {
+								"kind": "y",
+								"path": "ui/application/desktop/topbar"
+							},
+							"actions": [
+								{
+									"on": "click",
+									"type": "openModal",
+									"params": {
+										"modalId": "$event.action.openModal"
+									}
+								}
+							]
+						},
+						{
+							"id": "workspace-tools",
+							"type": "input.commandBar",
+							"area": "main",
+							"inputs": {
+								"buttons": [
+									{
+										"id": "apps",
+										"label": "Apps"
+									},
+									{
+										"id": "widgets",
+										"label": "Widgets"
+									},
+									{
+										"id": "workspace-manager",
+										"label": "Workspaces"
+									},
+									{
+										"id": "yjs-reload",
+										"label": "YJS reload"
+									},
+									{
+										"id": "yjs-reset",
+										"label": "YJS reset"
+									}
+								]
+							},
+							"actions": [
+								{
+									"on": "click:apps",
+									"type": "openModal",
+									"params": {
+										"modalId": "apps_catalog"
+									}
+								},
+								{
+									"on": "click:widgets",
+									"type": "openModal",
+									"params": {
+										"modalId": "widgets_catalog"
+									}
+								},
+								{
+									"on": "click:workspace-manager",
+									"type": "openModal",
+									"params": {
+										"modalId": "workspace_manager"
+									}
+								},
+								{
+									"on": "click:yjs-reload",
+									"type": "callHost",
+									"target": "desktop.webspace.reload"
+								},
+								{
+									"on": "click:yjs-reset",
+									"type": "callHost",
+									"target": "desktop.webspace.reset"
+								}
+							]
+						},
+						{
+							"id": "desktop-icons",
+							"type": "collection.grid",
+							"area": "main",
+							"title": "Icons",
+							"inputs": {
+								"columns": 6
+							},
+							"dataSource": {
+								"kind": "y",
+								"transform": "desktop.icons"
+							},
+							"actions": [
+								{
+									"on": "select",
+									"type": "callHost",
+									"target": "desktop.scenario.set",
+									"params": {
+										"scenario_id": "$event.scenario_id"
+									}
+								},
+								{
+									"on": "select",
+									"type": "openModal",
+									"params": {
+										"modalId": "$event.action.openModal"
+									}
+								}
+							]
+						},
+						{
+							"id": "desktop-widgets",
+							"type": "desktop.widgets",
+							"area": "main",
+							"title": "Widgets",
+							"dataSource": {
+								"kind": "y",
+								"transform": "desktop.widgets"
+							}
+						}
+					]
+				}
+			},
+			"modals": {}
+		}
+	},
+	"registry": {
+		"widgets": [],
+		"modals": []
+	},
+	"catalog": {
+		"apps": [],
+		"widgets": []
+	},
+	"id": "web_desktop",
+	"version": "0.0.1",
+	"data": {
+		"installed": {
+			"apps": [],
+			"widgets": []
+		}
+	}
 }
-
