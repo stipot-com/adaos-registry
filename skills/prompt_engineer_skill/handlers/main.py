@@ -121,6 +121,32 @@ def _git_log_path(root: Path) -> Path:
     return root / "git" / "log.json"
 
 
+@tool("prompt_get_git_log")
+def prompt_get_git_log(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Return the recent Prompt IDE git actions for the requested project.
+    """
+    payload = payload or {}
+    object_type = (payload.get("object_type") or "").strip().lower()
+    object_id = (payload.get("object_id") or "").strip()
+    if not object_type or not object_id:
+        raise ValueError("object_type and object_id are required")
+
+    root = _project_root(object_type, object_id)
+    path = _git_log_path(root)
+    items: List[Dict[str, Any]] = []
+    if path.exists():
+        try:
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            if isinstance(data, list):
+                items = [e for e in data if isinstance(e, dict)]
+        except Exception:
+            items = []
+
+    return {"ok": True, "object_type": object_type, "object_id": object_id, "items": items}
+
+
 def _append_git_log(object_type: str, object_id: str, result: Dict[str, Any]) -> None:
     root = _project_root(object_type, object_id)
     log_path = _git_log_path(root)

@@ -3,21 +3,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-import os
-
-from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import subscribe
-from adaos.services.io_web import WebDesktopService
+from adaos.sdk.web.desktop import desktop_toggle_install
 
 _log = logging.getLogger("skills.web_desktop")
-
-# During static validation, handlers are imported in a lightweight subprocess
-# without a full AdaOS runtime. In that case, avoid requiring AgentContext
-# at import time to let validation introspect decorators safely.
-if os.environ.get("ADAOS_VALIDATE") == "1":
-    _ctx = None  # type: ignore[assignment]
-else:
-    _ctx = require_ctx("skills.web_desktop_skill")
 
 
 def _payload(evt: Any) -> Dict[str, Any]:
@@ -51,13 +40,6 @@ def _webspace_id(payload: Dict[str, Any]) -> str:
     return ""
 
 
-def _desktop_service() -> WebDesktopService:
-    global _ctx  # type: ignore[global-variable-not-assigned]
-    if _ctx is None:
-        _ctx = require_ctx("skills.web_desktop_skill")
-    return WebDesktopService(_ctx)
-
-
 @subscribe("desktop.toggleInstall")
 def on_toggle_install(evt) -> None:
     payload = _payload(evt)
@@ -67,10 +49,10 @@ def on_toggle_install(evt) -> None:
     if item_type not in ("app", "widget") or not target_id:
         return
     try:
-        _desktop_service().toggle_install_with_live_room(
+        desktop_toggle_install(
             str(item_type),
             str(target_id),
-            webspace_id=str(webspace_id),
+            webspace_id=str(webspace_id) or None,
         )
     except Exception:
         _log.warning(
@@ -80,33 +62,3 @@ def on_toggle_install(evt) -> None:
             target_id,
             exc_info=True,
         )
-
-
-@subscribe("desktop.webspace.create")
-def on_webspace_create(evt) -> None:  # legacy topic, handled by core runtime
-    return
-
-
-@subscribe("desktop.webspace.rename")
-def on_webspace_rename(evt) -> None:  # legacy topic, handled by core runtime
-    return
-
-
-@subscribe("desktop.webspace.delete")
-def on_webspace_delete(evt) -> None:  # legacy topic, handled by core runtime
-    return
-
-
-@subscribe("desktop.webspace.refresh")
-def on_webspace_refresh(evt) -> None:  # legacy topic, handled by core runtime
-    return
-
-
-@subscribe("desktop.webspace.reload")
-def on_webspace_reload(evt) -> None:  # legacy topic, handled by core runtime
-    return
-
-
-@subscribe("desktop.webspace.reset")
-def on_webspace_reset(evt) -> None:  # legacy topic, handled by core runtime
-    return
