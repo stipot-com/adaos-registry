@@ -1,12 +1,9 @@
-# yaml-language-server: $schema=../../../src/adaos/abi/scenario.schema.json
+# yaml-language-server: $schema=../../../../src/adaos/abi/scenario.schema.json
 id: prompt_engineer_scenario
-version: "0.0.1"
+version: "0.1.0"
 title: Prompt IDE
-description: Prompt engineering IDE.
+description: Prompt engineering IDE workspace for dev skills and scenarios.
 type: desktop
 depends:
   - prompt_engineer_skill
 updated_at: "2025-11-14T18:14:36+00:00"
-trigger: manual
-vars: {}
-steps: []
