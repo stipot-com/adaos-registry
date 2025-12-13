@@ -3,20 +3,14 @@ version: 0.0.1
 entry: handlers/main.py
 runtime:
   python: '3.11'
-description: ''
+description: Desktop shell skill that handles icon/widget installation via the web desktop SDK.
 dependencies: []
 events:
   subscribe:
-    - 'scenarios.synced'
-    - 'skills.activated'
-    - 'skills.rolledback'
     - 'desktop.toggleInstall'
-    - 'desktop.webspace.create'
-    - 'desktop.webspace.rename'
-    - 'desktop.webspace.delete'
-    - 'desktop.webspace.refresh'
   publish: []
 tools: []
-exports: {}
+exports:
+  tools: []
 prototype: default
 updated_at: '2025-11-14T18:38:58+00:00'

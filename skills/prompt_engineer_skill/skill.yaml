@@ -3,7 +3,7 @@ version: 0.1.0
 entry: handlers/main.py
 runtime:
   python: "3.11"
-description: ""
+description: Prompt IDE backend skill that manages dev scenarios/skills, technical specs and git operations.
 dependencies:
   - requests>=2.31.0
 events: {}
@@ -597,7 +597,7 @@ tools:
             type: object
   - name: prompt_get_git_log
     description: Return recent git operations for a project
-    entry: handlers.git_log_tool:prompt_get_git_log
+    entry: handlers.main:prompt_get_git_log
     input_schema:
       type: object
       required:
