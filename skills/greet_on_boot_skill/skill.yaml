@@ -1,0 +1,63 @@
+name: greet_on_boot_skill
+version: 0.1.0
+description: System greeting and infrastructure health-check skill used by the greet_on_boot
+  scenario.
+runtime:
+  python: '3.11'
+dependencies: []
+events: {}
+default_tool: collect_infra_status
+tools:
+- name: collect_infra_status
+  description: Collect a lightweight snapshot of node and subnet status for greet_on_boot.
+  entry: handlers.main:collect_infra_status
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    required:
+    - ok
+    - status
+    properties:
+      ok:
+        type: boolean
+      status:
+        type: object
+        description: Arbitrary infra status payload projected into data_projections
+          slots.
+- name: analyze_and_notify
+  description: Analyze infra status and send a short summary via Telegram and voice.
+  entry: handlers.main:analyze_and_notify
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    required:
+    - ok
+    - message
+    properties:
+      ok:
+        type: boolean
+      message:
+        type: string
+        description: Human-readable summary used for notifications.
+- name: greet_on_boot.collect_infra_status
+  description: Auto-generated from handlers.main:collect_infra_status
+  entry: handlers.main:collect_infra_status
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    properties: {}
+- name: greet_on_boot.analyze_and_notify
+  description: Auto-generated from handlers.main:analyze_and_notify
+  entry: handlers.main:analyze_and_notify
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    properties: {}
