@@ -43,21 +43,3 @@ tools:
       message:
         type: string
         description: Human-readable summary used for notifications.
-- name: greet_on_boot.collect_infra_status
-  description: Auto-generated from handlers.main:collect_infra_status
-  entry: handlers.main:collect_infra_status
-  input_schema:
-    type: object
-    properties: {}
-  output_schema:
-    type: object
-    properties: {}
-- name: greet_on_boot.analyze_and_notify
-  description: Auto-generated from handlers.main:analyze_and_notify
-  entry: handlers.main:analyze_and_notify
-  input_schema:
-    type: object
-    properties: {}
-  output_schema:
-    type: object
-    properties: {}
