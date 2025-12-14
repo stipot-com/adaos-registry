@@ -47,7 +47,7 @@ def collect_infra_status(payload: Mapping[str, Any] | None = None) -> dict[str, 
     role = getattr(conf, "role", None) if conf is not None else None
     hostname = platform.node() or None
 
-    status = {
+    base_status = {
         "node": {
             "id": node_id,
             "hostname": hostname,
@@ -56,6 +56,12 @@ def collect_infra_status(payload: Mapping[str, Any] | None = None) -> dict[str, 
         "subnet": {
             "id": subnet_id,
         },
+    }
+    # Shape tailored for visual.metricTile: main value + label
+    status_value: dict[str, Any] = {
+        "value": "OK",
+        "label": f"{hostname or 'unknown-host'} ({node_id or 'unknown-node'})",
+        **base_status,
     }
 
     _log.info(
@@ -70,7 +76,10 @@ def collect_infra_status(payload: Mapping[str, Any] | None = None) -> dict[str, 
     # greet_on_boot scenarios define a Yjs path for this slot in their
     # data_projections.
     try:
-        ctx_subnet.set("infra.status", status, webspace_id=webspace_id)
+        # Store the bare status_value; ProjectionService will map
+        # (subnet, infra.status) -> data/infra/status so that webui
+        # can read it via path "data/infra/status".
+        ctx_subnet.set("infra.status", status_value, webspace_id=webspace_id)
         _log.info("greet_on_boot.collect_infra_status projected ok webspace=%s", webspace_id)
     except Exception as exc:
         _log.warning(
@@ -80,7 +89,7 @@ def collect_infra_status(payload: Mapping[str, Any] | None = None) -> dict[str, 
             exc_info=True,
         )
 
-    return {"ok": True, "status": status}
+    return {"ok": True, "status": status_value}
 
 
 @tool(

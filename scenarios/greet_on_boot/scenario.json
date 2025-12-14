@@ -1,0 +1,54 @@
+{
+  "id": "greet_on_boot",
+  "version": "0.1.0",
+  "title": "Greet on boot",
+  "description": "First boot greeting and infrastructure health-check scenario.",
+  "workflow": {
+    "initial_state": "collect",
+    "states": {
+      "collect": {
+        "label": "Collect infrastructure status",
+        "actions": [
+          {
+            "id": "collect",
+            "label": "Collect infra status",
+            "trigger": "timer",
+            "tool": "greet_on_boot_skill.collect_infra_status",
+            "next_state": "analyze"
+          }
+        ]
+      },
+      "analyze": {
+        "label": "Analyze and notify",
+        "actions": [
+          {
+            "id": "analyze",
+            "label": "Analyze infra status and notify",
+            "trigger": "timer",
+            "tool": "greet_on_boot_skill.analyze_and_notify",
+            "next_state": "done"
+          },
+          {
+            "id": "collect",
+            "label": "Collect infra status",
+            "trigger": "manual",
+            "tool": "greet_on_boot_skill.collect_infra_status",
+            "next_state": "analyze"
+          }
+        ]
+      },
+      "done": {
+        "label": "Greet_on_boot completed",
+        "actions": [
+          {
+            "id": "collect",
+            "label": "Collect infra status",
+            "trigger": "manual",
+            "tool": "greet_on_boot_skill.collect_infra_status",
+            "next_state": "analyze"
+          }
+        ]
+      }
+    }
+  }
+}

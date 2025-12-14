@@ -3,7 +3,7 @@
     {
       "id": "greet_on_boot_app",
       "title": "Infra check",
-      "icon": "pulse-outline",
+      "icon": "desktop-outline",
       "launchModal": "greet_on_boot_modal"
     }
   ],

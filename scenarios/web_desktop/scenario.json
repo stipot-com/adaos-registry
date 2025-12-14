@@ -163,6 +163,19 @@
 								"kind": "y",
 								"transform": "desktop.widgets"
 							}
+						},
+						{
+							"id": "infra-status",
+							"type": "visual.metricTile",
+							"area": "right",
+							"title": "Infrastructure status",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infra/status"
+							},
+							"inputs": {
+								"labelField": "node.hostname"
+							}
 						}
 					]
 				}

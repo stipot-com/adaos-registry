@@ -6,6 +6,7 @@ description: Desktop shell scenario that defines the main UI layout, registry an
 type: desktop
 depends:
   - web_desktop_skill
+  - greet_on_boot_skill
 updated_at: "2025-11-14T18:14:36+00:00"
 data_projections:
   - scope: current_user
@@ -19,3 +20,8 @@ data_projections:
     targets:
       - backend: yjs
         path: data/weather
+  - scope: subnet
+    slot: infra.status
+    targets:
+      - backend: yjs
+        path: data/infra/status
