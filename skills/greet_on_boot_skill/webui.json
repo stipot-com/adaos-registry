@@ -1,0 +1,72 @@
+{
+  "apps": [
+    {
+      "id": "greet_on_boot_app",
+      "title": "Infra check",
+      "icon": "pulse-outline",
+      "launchModal": "greet_on_boot_modal"
+    }
+  ],
+  "widgets": [],
+  "registry": {
+    "modals": {
+      "greet_on_boot_modal": {
+        "title": "Infrastructure status",
+        "schema": {
+          "id": "greet_on_boot_modal",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "infra-status-tile",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Infrastructure status",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra/status"
+              },
+              "inputs": {
+                "labelField": "node.hostname"
+              }
+            },
+            {
+              "id": "infra-status-actions",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "Actions",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "refresh",
+                    "label": "Refresh"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:refresh",
+                  "type": "callHost",
+                  "target": "scenario.workflow.action",
+                  "params": {
+                    "scenario_id": "greet_on_boot",
+                    "action_id": "collect"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "widgets": {}
+  },
+  "ydoc_defaults": {}
+}
