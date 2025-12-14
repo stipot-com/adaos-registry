@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from adaos.sdk.core.decorators import tool
+from adaos.sdk.core.decorators import tool, subscribe
 from adaos.services.agent_context import get_ctx
 from adaos.services.scenario.projection_service import ProjectionService
 from adaos.services.io_voice_mock import tts_speak
 
 
 @tool(
-    "greet_on_boot.collect_infra_status",
+    "collect_infra_status",
     summary="collect basic infrastructure status for greet_on_boot",
     stability="experimental",
-    examples=["greet_on_boot.collect_infra_status()"],
+    examples=["collect_infra_status()"],
 )
 def collect_infra_status(_: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """
@@ -52,10 +52,10 @@ def collect_infra_status(_: Mapping[str, Any] | None = None) -> dict[str, Any]:
 
 
 @tool(
-    "greet_on_boot.analyze_and_notify",
+    "analyze_and_notify",
     summary="analyze infra.status projection and send a short summary via voice/telegram",
     stability="experimental",
-    examples=["greet_on_boot.analyze_and_notify()"],
+    examples=["analyze_and_notify()"],
 )
 def analyze_and_notify(_: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """
@@ -117,3 +117,13 @@ def analyze_and_notify(_: Mapping[str, Any] | None = None) -> dict[str, Any]:
         pass
 
     return {"ok": True, "message": message}
+
+
+def handle(topic: str, payload: dict) -> None:
+    """
+    Minimal default handler required by the skill runtime.
+
+    greet_on_boot_skill is workflow-driven; regular event handling is not used
+    for now, so this is a no-op.
+    """
+    return None
