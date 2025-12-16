@@ -1,0 +1,24 @@
+{
+  "desktop.installed:default": {
+    "apps": [
+      "weather_app"
+    ],
+    "widgets": [
+      "weather"
+    ]
+  },
+  "desktop.installed:t5": {
+    "apps": [
+      "scenario:prompt_engineer_scenario"
+    ],
+    "widgets": [
+      "weather"
+    ]
+  },
+  "desktop.installed:": {
+    "apps": [
+      "scenario:prompt_engineer_scenario"
+    ],
+    "widgets": []
+  }
+}

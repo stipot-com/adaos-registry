@@ -12,10 +12,12 @@ import json
 import logging
 import time
 from typing import Dict, Optional, Tuple, Any
+from pathlib import Path
 
 import requests
 import re
 from datetime import datetime, timezone
+import yaml
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data.bus import emit
@@ -24,8 +26,12 @@ from adaos.sdk.data import ctx_subnet
 from adaos.sdk.data.i18n import _, I18n
 from adaos.sdk.data.skill_memory import get as memory_get, set as memory_set
 from adaos.sdk.data.events import publish as publish_event
+from adaos.services.agent_context import get_ctx
 
 _log = logging.getLogger("skills.weather_skill")
+REQUIRES_DATA_PROJECTIONS = [
+    {"scope": "subnet", "slot": "weather.snapshot"},
+]
 
 DEFAULT_API_ENDPOINT = "https://api.open-meteo.com/v1/forecast"
 _PLACE_RE = re.compile(r"(?:\bв|\bпо)\s+([A-Za-zА-Яа-яЁё\-]+)")
@@ -36,6 +42,48 @@ _CITY_CACHE_TTL = 300.0  # seconds
 
 def _output(message: str) -> None:
     print(message)
+
+
+def _load_skill_data_projections(ctx) -> None:
+    """
+    Load skill-level data_projections from skill.yaml into ProjectionRegistry.
+
+    This gives weather_skill a default view on where weather.snapshot should
+    be stored. If a scenario has already configured projections for this slot,
+    its data_projections remain authoritative and skill-level defaults are
+    skipped.
+    """
+    try:
+        try:
+            existing = ctx.projections.resolve("subnet", "weather.snapshot")
+        except Exception:
+            existing = []
+        if existing:
+            _log.debug(
+                "weather_skill: projections already configured for subnet/weather.snapshot; skipping skill defaults"
+            )
+            return
+
+        skills_root = ctx.paths.skills_workspace_dir()
+        skills_root = skills_root() if callable(skills_root) else skills_root
+        manifest_path = Path(skills_root) / "weather_skill" / "skill.yaml"
+        if not manifest_path.exists():
+            _log.warning(
+                "weather_skill: skill.yaml not found when loading data_projections (path=%s)",
+                manifest_path,
+            )
+            return
+        spec = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        entries = spec.get("data_projections") or []
+        if not isinstance(entries, list) or not entries:
+            _log.warning(
+                "weather_skill: skill.yaml has no data_projections; weather.snapshot projections may be misconfigured"
+            )
+            return
+        ctx.projections.load_entries(entries)
+        _log.debug("weather_skill: loaded %d skill-level data_projections", len(entries))
+    except Exception:
+        _log.debug("weather_skill: failed to load skill data_projections", exc_info=True)
 
 
 def _normalize_city_token(raw: Any | None) -> Optional[str]:
@@ -311,16 +359,25 @@ async def on_weather_city_changed(evt) -> None:
     via ctx.subnet into configured targets (Yjs / storage).
     """
     set_current_skill("weather_skill")
+    try:
+        ctx = get_ctx()
+        _load_skill_data_projections(ctx)
+    except Exception:
+        # Best-effort: missing projections will be logged by the loader or ctx.subnet.set
+        ctx = None  # type: ignore[assignment]
     payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
     if not isinstance(payload, dict):
         return
     meta = payload.get("_meta") if isinstance(payload, dict) else None
-    webspace_id = str(
-        (meta or {}).get("webspace_id")
-        or payload.get("webspace_id")
-        or payload.get("workspace_id")
-        or "default"
+    raw_ws = (
+        (payload.get("webspace_id") or payload.get("workspace_id"))
+        or (meta or {}).get("webspace_id")
+        or (meta or {}).get("workspace_id")
+        or None
     )
+    webspace_id: Optional[str] = None
+    if isinstance(raw_ws, str) and raw_ws.strip():
+        webspace_id = raw_ws.strip()
     city = payload.get("city")
     if not city:
         return
@@ -339,7 +396,7 @@ async def on_weather_city_changed(evt) -> None:
     }
     _log.info(
         "weather_city_changed webspace=%s city=%s ok=%s temp_c=%s source=%s",
-        webspace_id,
+        webspace_id or "default",
         city,
         ok,
         data.get("temp_c"),

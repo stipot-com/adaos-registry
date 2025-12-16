@@ -5,6 +5,7 @@ from pathlib import Path
 import logging
 import platform
 import requests
+import yaml
 
 from adaos.sdk.core.decorators import tool, subscribe
 from adaos.services.agent_context import get_ctx
@@ -16,6 +17,40 @@ from adaos.sdk.data import ctx_subnet
 
 
 _log = logging.getLogger("skills.greet_on_boot_skill")
+REQUIRES_DATA_PROJECTIONS = [
+    {"scope": "subnet", "slot": "infra.status"},
+]
+
+
+def _load_skill_data_projections(ctx) -> None:
+    """
+    Load skill-level data_projections from skill.yaml into ProjectionRegistry.
+
+    This gives greet_on_boot_skill a default view on where infra.status
+    should be stored; desktop/global scenarios can override this later via
+    their own data_projections.
+    """
+    try:
+        skills_root = ctx.paths.skills_workspace_dir()
+        skills_root = skills_root() if callable(skills_root) else skills_root
+        manifest_path = Path(skills_root) / "greet_on_boot_skill" / "skill.yaml"
+        if not manifest_path.exists():
+            _log.warning(
+                "greet_on_boot_skill: skill.yaml not found when loading data_projections (path=%s)",
+                manifest_path,
+            )
+            return
+        spec = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        entries = spec.get("data_projections") or []
+        if not isinstance(entries, list) or not entries:
+            _log.warning(
+                "greet_on_boot_skill: skill.yaml has no data_projections; infra.status projections may be misconfigured"
+            )
+            return
+        ctx.projections.load_entries(entries)
+        _log.debug("greet_on_boot_skill: loaded %d skill-level data_projections", len(entries))
+    except Exception:
+        _log.debug("greet_on_boot_skill: failed to load skill data_projections", exc_info=True)
 
 
 @tool(
@@ -32,13 +67,13 @@ def collect_infra_status(payload: Mapping[str, Any] | None = None) -> dict[str, 
     Scenario/web_desktop data_projections decide where this snapshot is stored.
     """
     ctx = get_ctx()
-    _log.info("greet_on_boot.collect_infra_status start payload=%r", payload)
+    _log.debug("greet_on_boot.collect_infra_status start payload=%r", payload)
     webspace_id = None
     if isinstance(payload, Mapping):
         ws = payload.get("webspace_id") or payload.get("workspace_id")
         if isinstance(ws, str) and ws.strip():
             webspace_id = ws.strip()
-    _log.info("greet_on_boot.collect_infra_status webspace_id=%r", webspace_id)
+    _log.debug("greet_on_boot.collect_infra_status webspace_id=%r", webspace_id)
 
     # Use config snapshot; AgentContext may not expose node/subnet objects yet.
     conf = getattr(ctx, "config", None)
@@ -64,7 +99,7 @@ def collect_infra_status(payload: Mapping[str, Any] | None = None) -> dict[str, 
         **base_status,
     }
 
-    _log.info(
+    _log.debug(
         "greet_on_boot.collect_infra_status status webspace=%s node_id=%s subnet_id=%s",
         webspace_id,
         node_id,
@@ -80,7 +115,7 @@ def collect_infra_status(payload: Mapping[str, Any] | None = None) -> dict[str, 
         # (subnet, infra.status) -> data/infra/status so that webui
         # can read it via path "data/infra/status".
         ctx_subnet.set("infra.status", status_value, webspace_id=webspace_id)
-        _log.info("greet_on_boot.collect_infra_status projected ok webspace=%s", webspace_id)
+        _log.debug("greet_on_boot.collect_infra_status projected ok webspace=%s", webspace_id)
     except Exception as exc:
         _log.warning(
             "greet_on_boot.collect_infra_status projection failed webspace=%s error=%s",
@@ -146,6 +181,32 @@ def analyze_and_notify(payload: Mapping[str, Any] | None = None) -> dict[str, An
     return {"ok": True, "message": message}
 
 
+@subscribe("subnet.stopped")
+def on_subnet_stopped(evt: Any) -> None:
+    """
+    Mark infrastructure as OFF in all workspace webspaces when subnet stops.
+    """
+    ctx = get_ctx()
+    try:
+        webspaces = WebspaceService(ctx).list(mode="workspace")
+    except Exception:
+        return
+
+    for ws in webspaces:
+        webspace_id = ws.id
+        try:
+            ctx_subnet.set(
+                "infra.status",
+                {
+                    "value": "OFF",
+                    "label": "Hub OFF",
+                },
+                webspace_id=webspace_id,
+            )
+        except Exception:
+            continue
+
+
 def _is_active(name: str, items: list[dict[str, Any]]) -> bool:
     for item in items:
         if not isinstance(item, dict):
@@ -161,7 +222,7 @@ async def on_sys_ready(evt: Any) -> None:
     Trigger greet_on_boot workflow on node boot, if installed and active.
     """
     ctx = get_ctx()
-    _log.info("greet_on_boot.on_sys_ready received")
+    _log.debug("greet_on_boot.on_sys_ready received")
     caps = get_local_capacity() or {}
     skills = caps.get("skills") or []
     scenarios = caps.get("scenarios") or []
@@ -173,15 +234,17 @@ async def on_sys_ready(evt: Any) -> None:
     scenario_allowed = _is_active("greet_on_boot", scenarios) or manifest_present.exists()
 
     if not scenario_allowed:
-        _log.info("greet_on_boot scenario not installed/active; skipping")
+        _log.debug("greet_on_boot scenario not installed/active; skipping")
         return
     if not _is_active("greet_on_boot_skill", skills):
-        _log.info("greet_on_boot_skill not active in capacity; skipping")
+        _log.debug("greet_on_boot_skill not active in capacity; skipping")
         return
 
     # Ensure ProjectionRegistry knows how to project infra.status even if
-    # desktop scenarios have not been rebuilt yet.
+    # desktop scenarios have not been rebuilt yet. First load defaults from
+    # the skill manifest, then allow scenarios to override.
     try:
+        _load_skill_data_projections(ctx)
         ctx.projections.load_from_scenario("greet_on_boot")
     except Exception:
         _log.debug("greet_on_boot: failed to load data_projections", exc_info=True)
@@ -191,7 +254,7 @@ async def on_sys_ready(evt: Any) -> None:
 
     for ws in webspaces:
         webspace_id = ws.id
-        _log.info(
+        _log.debug(
             "greet_on_boot.ready_start scenario=greet_on_boot webspace=%s node_id=%s",
             webspace_id,
             getattr(ctx.config, "node_id", None),
@@ -199,7 +262,7 @@ async def on_sys_ready(evt: Any) -> None:
         try:
             await runtime.apply_action("greet_on_boot", webspace_id, "collect")
             await runtime.apply_action("greet_on_boot", webspace_id, "analyze")
-            _log.info(
+            _log.debug(
                 "greet_on_boot.workflow_completed scenario=greet_on_boot webspace=%s",
                 webspace_id,
             )
@@ -219,3 +282,23 @@ def handle(topic: str, payload: dict) -> None:
     for now, so this is a no-op.
     """
     return None
+
+
+@subscribe("desktop.webspace.reload")
+async def on_webspace_reload(evt: Any) -> None:
+    """
+    Refresh infra.status for a webspace after YJS reload so that the
+    Infrastructure status widget is not empty.
+    """
+    webspace_id = None
+    if isinstance(evt, Mapping):
+        meta = evt.get("_meta") or {}
+        webspace_id = evt.get("webspace_id") or meta.get("webspace_id")
+    if not webspace_id:
+        webspace_id = "default"
+
+    try:
+        collect_infra_status({"webspace_id": webspace_id})
+    except Exception:
+        # best-effort: infra widget can be refreshed manually later
+        return
