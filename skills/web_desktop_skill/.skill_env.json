@@ -1,24 +1,14 @@
 {
-  "desktop.installed:default": {
-    "apps": [
-      "weather_app"
-    ],
-    "widgets": [
-      "weather"
-    ]
-  },
-  "desktop.installed:t5": {
-    "apps": [
-      "weather_app"
-    ],
-    "widgets": [
-      "weather"
-    ]
-  },
-  "desktop.installed:": {
-    "apps": [
-      "scenario:prompt_engineer_scenario"
-    ],
-    "widgets": []
-  }
+	"desktop.installed:default": {
+		"apps": ["weather_app", "scenario:prompt_engineer_scenario"],
+		"widgets": ["weather"]
+	},
+	"desktop.installed:t5": {
+		"apps": ["weather_app"],
+		"widgets": ["weather"]
+	},
+	"desktop.installed:": {
+		"apps": ["scenario:prompt_engineer_scenario"],
+		"widgets": []
+	}
 }
