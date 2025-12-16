@@ -9,7 +9,7 @@
   },
   "desktop.installed:t5": {
     "apps": [
-      "scenario:prompt_engineer_scenario"
+      "weather_app"
     ],
     "widgets": [
       "weather"
