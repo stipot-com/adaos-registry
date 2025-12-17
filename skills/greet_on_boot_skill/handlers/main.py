@@ -8,11 +8,11 @@ import requests
 import yaml
 
 from adaos.sdk.core.decorators import tool, subscribe
-from adaos.services.agent_context import get_ctx
-from adaos.services.scenario.workflow_runtime import ScenarioWorkflowRuntime
-from adaos.services.scenario.webspace_runtime import WebspaceService
-from adaos.services.io_voice_mock import tts_speak
-from adaos.services.capacity import get_local_capacity
+from adaos.sdk.core.ctx import get_ctx
+from adaos.sdk.scenarios.workflow import ScenarioWorkflowRuntime
+from adaos.sdk.web.webspace import webspace_list
+from adaos.sdk.io.voice import tts_speak
+from adaos.sdk.capacity import get_local_capacity
 from adaos.sdk.data import ctx_subnet
 
 
@@ -188,7 +188,7 @@ def on_subnet_stopped(evt: Any) -> None:
     """
     ctx = get_ctx()
     try:
-        webspaces = WebspaceService(ctx).list(mode="workspace")
+        webspaces = webspace_list(mode="workspace")
     except Exception:
         return
 
@@ -250,7 +250,7 @@ async def on_sys_ready(evt: Any) -> None:
         _log.debug("greet_on_boot: failed to load data_projections", exc_info=True)
 
     runtime = ScenarioWorkflowRuntime(ctx)
-    webspaces = WebspaceService(ctx).list(mode="workspace")
+    webspaces = webspace_list(mode="workspace")
 
     for ws in webspaces:
         webspace_id = ws.id
