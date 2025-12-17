@@ -29,5 +29,13 @@
     "widgets": [
       "weather"
     ]
+  },
+  "desktop.installed:t2": {
+    "apps": [
+      "scenario:prompt_engineer_scenario"
+    ],
+    "widgets": [
+      "weather"
+    ]
   }
 }
