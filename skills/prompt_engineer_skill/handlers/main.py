@@ -14,7 +14,7 @@ import yaml
 
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import tool
-from adaos.services.root.service import RootDeveloperService, TemplateResolutionError, RootServiceError
+from adaos.sdk.root.developer import RootDeveloperService, TemplateResolutionError, RootServiceError
 from adaos.sdk.llm.llm_client import request_ts_draft, list_llm_models
 
 _log = logging.getLogger("skills.prompt_engineer")
