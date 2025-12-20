@@ -4,14 +4,13 @@ from typing import Any, Mapping
 from pathlib import Path
 import logging
 import platform
-import requests
 import yaml
 
 from adaos.sdk.core.decorators import tool, subscribe
 from adaos.sdk.core.ctx import get_ctx
 from adaos.sdk.scenarios.workflow import ScenarioWorkflowRuntime
 from adaos.sdk.web.webspace import webspace_list
-from adaos.sdk.io.voice import tts_speak
+from adaos.sdk.data.events import publish as publish_event
 from adaos.sdk.capacity import get_local_capacity
 from adaos.sdk.data import ctx_subnet
 
@@ -20,6 +19,7 @@ _log = logging.getLogger("skills.greet_on_boot_skill")
 REQUIRES_DATA_PROJECTIONS = [
     {"scope": "subnet", "slot": "infra.status"},
 ]
+_NOTIFY_SENT = False
 
 
 def _load_skill_data_projections(ctx) -> None:
@@ -137,10 +137,16 @@ def analyze_and_notify(payload: Mapping[str, Any] | None = None) -> dict[str, An
     """
     Read the latest infra.status snapshot and emit a short summary.
 
-    For v0 this uses voice mock (tts_speak) and a generic event for Telegram;
-    in production this can be wired to real IO integrations.
+    For v0 this emits ui.say and ui.notify for router-based delivery.
     """
     ctx = get_ctx()
+    webspace_id = None
+    force = False
+    if isinstance(payload, Mapping):
+        ws = payload.get("webspace_id") or payload.get("workspace_id")
+        if isinstance(ws, str) and ws.strip():
+            webspace_id = ws.strip()
+        force = bool(payload.get("force")) if "force" in payload else False
     # For now reuse the same config snapshot as in collect_infra_status.
     conf = getattr(ctx, "config", None)
     node_id = getattr(conf, "node_id", None) if conf is not None else None
@@ -158,25 +164,22 @@ def analyze_and_notify(payload: Mapping[str, Any] | None = None) -> dict[str, An
         f"Roles: {', '.join(roles) if roles else 'none'}."
     )
 
-    # Voice: use local mock TTS for now.
+    # Avoid spamming notifications for every webspace; speak once by default.
+    global _NOTIFY_SENT
+    if _NOTIFY_SENT and not force:
+        return {"ok": True, "message": message, "skipped": True, "webspace_id": webspace_id}
+    _NOTIFY_SENT = True
+
+    # ui.say -> TTS, ui.notify -> stdout/telegram via route_rules.
     try:
-        tts_speak(message)
+        publish_event("ui.say", {"text": message}, source="greet_on_boot_skill")
+    except Exception:
+        pass
+    try:
+        publish_event("ui.notify", {"text": message}, source="greet_on_boot_skill")
     except Exception:
         pass
 
-    # Telegram: reuse Root API /io/tg/send (same path, что и subnet.started).
-    try:
-        conf = ctx.config
-        api_base = getattr(ctx.settings, "api_base", "https://api.inimatic.com")
-        hub_id = getattr(conf, "subnet_id", None)
-        if hub_id:
-            requests.post(
-                f"{api_base.rstrip('/')}/io/tg/send",
-                json={"hub_id": hub_id, "text": message},
-                timeout=3.0,
-            )
-    except Exception:
-        pass
 
     return {"ok": True, "message": message}
 
