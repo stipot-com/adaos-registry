@@ -51,3 +51,12 @@ def create_pairing(payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
         "note": "scaffold: pairing record created; approval/grant flow not wired yet",
     }
 
+
+def handle(topic: str, payload: dict) -> None:
+    """
+    Default handler required by the skill runtime.
+
+    This skill is currently tool-driven; event handling is not used.
+    """
+    return None
+
