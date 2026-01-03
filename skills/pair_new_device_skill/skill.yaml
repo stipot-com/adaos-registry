@@ -1,0 +1,33 @@
+name: pair_new_device_skill
+version: 0.0.1
+entry: handlers/main.py
+runtime:
+  python: '3.11'
+description: Hub-side pairing skill. Generates short-lived pairing IDs and stores payloads needed to provision new browsers (TV/Smart displays).
+dependencies: []
+events: {}
+tools:
+  - name: create_pairing
+    description: Create a new short-lived pairing session and return a QR/link token.
+    entry: handlers.main:create_pairing
+    input_schema:
+      type: object
+      properties:
+        webspace_id:
+          type: string
+          description: Optional target webspace id to associate with the device.
+    output_schema:
+      type: object
+      required: [ok, pairing_id]
+      properties:
+        ok:
+          type: boolean
+        pairing_id:
+          type: string
+        expires_in_sec:
+          type: number
+        note:
+          type: string
+prototype: default
+updated_at: '2026-01-02T22:30:00+00:00'
+
