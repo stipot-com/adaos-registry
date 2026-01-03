@@ -27,6 +27,15 @@
 						"minWidth": 240
 					}
 				},
+				"pinnedWidgets": [
+					{
+						"id": "infra-status",
+						"type": "visual.metricTile",
+						"title": "Infrastructure status",
+						"source": "data/infra/status",
+						"dev": false
+					}
+				],
 				"pageSchema": {
 					"id": "desktop",
 					"title": "Desktop",
@@ -36,10 +45,6 @@
 							{
 								"id": "main",
 								"role": "main"
-							},
-							{
-								"id": "right",
-								"role": "aux"
 							}
 						]
 					},
@@ -162,19 +167,6 @@
 							"dataSource": {
 								"kind": "y",
 								"transform": "desktop.widgets"
-							}
-						},
-						{
-							"id": "infra-status",
-							"type": "visual.metricTile",
-							"area": "right",
-							"title": "Infrastructure status",
-							"dataSource": {
-								"kind": "y",
-								"path": "data/infra/status"
-							},
-							"inputs": {
-								"labelField": "node.hostname"
 							}
 						}
 					]
