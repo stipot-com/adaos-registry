@@ -1,0 +1,58 @@
+{
+  "registry": {
+    "modals": {
+      "voice_chat_modal": {
+        "title": "Voice",
+        "schema": {
+          "id": "voice_chat_modal",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "voice-input",
+              "type": "ui.voiceInput",
+              "area": "main",
+              "inputs": {
+                "lang": "ru-RU",
+                "startLabel": "🎙️ Listen",
+                "stopLabel": "Stop",
+                "sendCommand": "voice.chat.user"
+              }
+            },
+            {
+              "id": "chat",
+              "type": "ui.chat",
+              "area": "main",
+              "title": "Voice chat",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/voice_chat"
+              },
+              "inputs": {
+                "openCommand": "voice.chat.open",
+                "sendCommand": "voice.chat.user",
+                "alignRightFrom": "user",
+                "autoSpeak": true,
+                "autoSpeakFrom": "hub",
+                "autoSpeakLang": "ru-RU"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "widgets": {}
+  },
+  "ydoc_defaults": {
+    "data/voice_chat": {
+      "messages": []
+    }
+  }
+}
