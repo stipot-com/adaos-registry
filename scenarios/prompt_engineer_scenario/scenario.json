@@ -78,12 +78,16 @@
               "id": "project-current",
               "type": "input.commandBar",
               "area": "sidebar",
-              "title": "Current project",
+              "title": "Project",
               "inputs": {
+                "variant": "header",
+                "selectedStateKey": "currentProjectId",
+                "primaryButtonId": "select-project",
                 "buttons": [
                   {
                     "id": "select-project",
-                    "label": "Select project"
+                    "label": "Select project",
+                    "icon": "folder-open-outline"
                   }
                 ]
               },
@@ -309,6 +313,10 @@
               "type": "item.details",
               "area": "right",
               "title": "LLM Artifacts (draft)",
+              "inputs": {
+                "collapsible": true,
+                "collapsedByDefault": true
+              },
               "dataSource": {
                 "kind": "y",
                 "path": "data/prompt/llm_artifacts"
