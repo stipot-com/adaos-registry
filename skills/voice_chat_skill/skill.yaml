@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../../src/adaos/abi/skill.schema.json
 name: voice_chat_skill
 version: '0.0.1'
-description: Voice chat bridge for web_desktop (browser STT + per-webspace chat + browser TTS).
+description: Voice chat bridge for web_desktop (text in -> publish chat + TTS via io.out.*; RouterService projects into Yjs by webspace_id).
 runtime:
   python: '3.11'
 events:
@@ -9,6 +9,7 @@ events:
   publish:
     - 'io.out.chat.append'
     - 'io.out.say'
+default_tool: 'handle_text'
 tools:
   - name: 'handle_text'
     description: Convert text into a weather request and publish chat + tts outputs (no direct Yjs writes).

@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
+from adaos.sdk.core.decorators import tool
 from adaos.services.agent_context import get_ctx
 from adaos.skills.runtime_runner import execute_tool
 from adaos.sdk.io.out import chat_append, say
@@ -60,6 +61,7 @@ def _call_weather_tool(city: str) -> dict:
                 pass
 
 
+@tool("handle_text")
 def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> Mapping[str, Any]:
     """
     Web voice-chat MVP pipeline:
@@ -103,4 +105,3 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     chat_append(reply, from_="hub", _meta=meta)
     say(reply, lang=meta.get("lang") or "ru-RU", _meta=meta)
     return {"ok": True, "reply": reply, "ts": time.time()}
-
