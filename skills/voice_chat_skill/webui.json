@@ -31,7 +31,8 @@
                 "lang": "ru-RU",
                 "startLabel": "🎙️ Слушать",
                 "stopLabel": "⏹️ Стоп",
-                "sendCommand": "voice.chat.user"
+                "sendCommand": "voice.chat.user",
+                "meta": { "route_id": "voice_chat" }
               }
             },
             {
@@ -46,6 +47,7 @@
               "inputs": {
                 "openCommand": "voice.chat.open",
                 "sendCommand": "voice.chat.user",
+                "meta": { "route_id": "voice_chat" },
                 "alignRightFrom": "user",
                 "autoSpeak": true,
                 "autoSpeakFrom": "hub",

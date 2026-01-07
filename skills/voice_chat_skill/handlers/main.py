@@ -16,6 +16,51 @@ _WEATHER_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 
+_CITY_ALIASES: dict[str, tuple[str, str]] = {
+    # ru (cases) -> (weather_skill city key, display)
+    "москва": ("Moscow", "Москва"),
+    "москве": ("Moscow", "Москва"),
+    "москву": ("Moscow", "Москва"),
+    "москвы": ("Moscow", "Москва"),
+    "берлин": ("Berlin", "Berlin"),
+    "берлине": ("Berlin", "Berlin"),
+    "берлина": ("Berlin", "Berlin"),
+    "париж": ("Paris", "Paris"),
+    "париже": ("Paris", "Paris"),
+    "парижа": ("Paris", "Paris"),
+    "токио": ("Tokyo", "Tokyo"),
+    "нью-йорк": ("New York", "New York"),
+    "нью йорк": ("New York", "New York"),
+    "нью-йорке": ("New York", "New York"),
+    "нью йорке": ("New York", "New York"),
+}
+
+
+def _normalize_city_key(text: str) -> str:
+    return (
+        str(text or "")
+        .strip()
+        .lower()
+        .replace("ё", "е")
+        .replace("‑", "-")
+    )
+
+
+def _canon_city_for_weather(raw_city: str) -> tuple[str, str]:
+    """
+    Return (city_for_weather_skill, city_for_display).
+
+    `weather_skill` currently supports a small built-in catalog, so for common
+    Russian city names we map them to the canonical keys used by that skill.
+    """
+    cleaned = str(raw_city or "").strip()
+    if not cleaned:
+        return ("", "")
+    key = _normalize_city_key(cleaned)
+    if key in _CITY_ALIASES:
+        return _CITY_ALIASES[key]
+    return (cleaned, cleaned)
+
 
 def _extract_city(text: str) -> str | None:
     raw = (text or "").strip()
@@ -30,7 +75,7 @@ def _extract_city(text: str) -> str | None:
     city = re.sub(r"^(город|г\.)\s+", "", city, flags=re.IGNORECASE).strip()
     if not city:
         return None
-    return city[:1].upper() + city[1:]
+    return city
 
 
 def _call_weather_tool(city: str) -> dict:
@@ -64,23 +109,26 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     """
     Web voice-chat MVP pipeline:
       text in -> derive weather request -> publish chat reply + TTS request.
-
-    No direct Yjs writes: outputs are emitted via io.out.* topics, and RouterService
-    projects them to the proper webspace based on `_meta.webspace_id`.
     """
     meta = dict(_meta or {})
     if not isinstance(text, str) or not text.strip():
         return {"ok": False, "error": "text_required"}
     text = text.strip()
 
-    city = _extract_city(text)
-    if not city:
-        reply = 'Пока я понимаю только запросы про погоду. Скажи: «Какая погода в Москве?»'
+    city_raw = _extract_city(text)
+    if not city_raw:
+        reply = "Пока я понимаю только запросы про погоду. Скажи: «Какая погода в Москве?»"
         chat_append(reply, from_="hub")
         return {"ok": False, "error": "intent_not_supported"}
 
+    city_for_weather, city_display = _canon_city_for_weather(city_raw)
+    if not city_for_weather:
+        reply = "Не понял город. Попробуй: «Какая погода в Москве?»"
+        chat_append(reply, from_="hub")
+        return {"ok": False, "error": "city_required"}
+
     try:
-        result = _call_weather_tool(city)
+        result = _call_weather_tool(city_for_weather)
     except Exception as exc:
         reply = f"Ошибка при получении погоды: {exc}"
         chat_append(reply, from_="hub")
@@ -89,15 +137,15 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     ok = isinstance(result, dict) and bool(result.get("ok"))
     if not ok:
         err = result.get("error") if isinstance(result, dict) else None
-        reply = f"Не удалось получить погоду в {city}." + (f" ({err})" if err else "")
+        reply = f"Не удалось получить погоду в {city_display}." + (f" ({err})" if err else "")
         chat_append(reply, from_="hub")
         return {"ok": False, "error": err or "weather_failed"}
 
     temp = result.get("temp_c") if result.get("temp_c") is not None else result.get("temp")
     desc = result.get("condition") or result.get("description") or ""
-    resolved_city = result.get("city") or city
-    reply = f"Погода в {resolved_city}: {temp}°C, {desc}".strip().rstrip(",")
+    reply = f"Погода в {city_display}: {temp}°C, {desc}".strip().rstrip(",")
 
     chat_append(reply, from_="hub")
     say(reply, lang=meta.get("lang") or "ru-RU")
     return {"ok": True, "reply": reply, "ts": time.time()}
+
