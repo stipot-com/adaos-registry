@@ -249,6 +249,10 @@ def handle_intent(intent: str, entities: dict) -> None:
 
 @tool("get_weather")
 def get_weather(city: Optional[str] = None) -> Dict:
+    silent = False
+    if isinstance(city, dict):
+        silent = bool(city.get("silent"))
+        city = city.get("city") or city.get("name") or city.get("value")
     api_entry_point, default_city = _load_config()
 
     target_city = city or default_city or memory_get("last_city")
@@ -259,20 +263,21 @@ def get_weather(city: Optional[str] = None) -> Dict:
     if not ok:
         return {"ok": False, **data}
 
-    # Emit ui.notify for router (stdout routing) in tools/call path as well
-    try:
-        _city = data.get("city")
-        if isinstance(_city, dict):
-            _city = _city.get("city") or _city.get("name") or str(_city)
-        text = _(
-            "prep.weather.success",
-            city=_city,
-            temp=data.get("temp") or data.get("temp_c"),
-            description=data.get("description"),
-        )
-        publish_event("ui.notify", {"text": text}, source="weather_skill")
-    except Exception:
-        pass
+    if not silent:
+        # Emit ui.notify for router (stdout routing) in tools/call path as well
+        try:
+            _city = data.get("city")
+            if isinstance(_city, dict):
+                _city = _city.get("city") or _city.get("name") or str(_city)
+            text = _(
+                "prep.weather.success",
+                city=_city,
+                temp=data.get("temp") or data.get("temp_c"),
+                description=data.get("description"),
+            )
+            publish_event("ui.notify", {"text": text}, source="weather_skill")
+        except Exception:
+            pass
 
     return {"ok": True, **data}
 
