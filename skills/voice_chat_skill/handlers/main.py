@@ -76,21 +76,21 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     city = _extract_city(text)
     if not city:
         reply = 'Пока я понимаю только запросы про погоду. Скажи: «Какая погода в Москве?»'
-        chat_append(reply, from_="hub", _meta=meta)
+        chat_append(reply, from_="hub")
         return {"ok": False, "error": "intent_not_supported"}
 
     try:
         result = _call_weather_tool(city)
     except Exception as exc:
         reply = f"Ошибка при получении погоды: {exc}"
-        chat_append(reply, from_="hub", _meta=meta)
+        chat_append(reply, from_="hub")
         return {"ok": False, "error": str(exc)}
 
     ok = isinstance(result, dict) and bool(result.get("ok"))
     if not ok:
         err = result.get("error") if isinstance(result, dict) else None
         reply = f"Не удалось получить погоду в {city}." + (f" ({err})" if err else "")
-        chat_append(reply, from_="hub", _meta=meta)
+        chat_append(reply, from_="hub")
         return {"ok": False, "error": err or "weather_failed"}
 
     temp = result.get("temp_c") if result.get("temp_c") is not None else result.get("temp")
@@ -98,6 +98,6 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     resolved_city = result.get("city") or city
     reply = f"Погода в {resolved_city}: {temp}°C, {desc}".strip().rstrip(",")
 
-    chat_append(reply, from_="hub", _meta=meta)
-    say(reply, lang=meta.get("lang") or "ru-RU", _meta=meta)
+    chat_append(reply, from_="hub")
+    say(reply, lang=meta.get("lang") or "ru-RU")
     return {"ok": True, "reply": reply, "ts": time.time()}

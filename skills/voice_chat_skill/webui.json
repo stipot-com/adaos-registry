@@ -1,4 +1,12 @@
 {
+  "apps": [
+    {
+      "id": "voice_chat_app",
+      "title": "Voice",
+      "icon": "mic-outline",
+      "launchModal": "voice_chat_modal"
+    }
+  ],
   "registry": {
     "modals": {
       "voice_chat_modal": {
@@ -55,35 +63,12 @@
       "messages": []
     }
   },
-  "widgets": [
-    {
-      "id": "voice_chat_widget",
-      "title": "Voice",
-      "type": "input.commandBar",
-      "inputs": {
-        "buttons": [
-          {
-            "id": "open",
-            "label": "🎙️ Слушать"
-          }
-        ]
-      },
-      "actions": [
-        {
-          "on": "click:open",
-          "type": "openModal",
-          "params": {
-            "modalId": "voice_chat_modal"
-          }
-        }
-      ]
-    }
-  ],
+  "widgets": [],
   "contributions": [
     {
-      "extensionPoint": "desktop.widgets",
-      "type": "widget",
-      "id": "voice_chat_widget",
+      "extensionPoint": "desktop.apps",
+      "type": "app",
+      "id": "voice_chat_app",
       "autoInstall": true
     }
   ]
