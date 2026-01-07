@@ -39,6 +39,74 @@ _CANON_RE = re.compile(r"^[A-Za-z][A-Za-z\-\s]+,\s*[A-Za-z]{2}$")
 _CITY_CACHE: Dict[str, Tuple[float, Dict]] = {}
 _CITY_CACHE_TTL = 300.0  # seconds
 
+_RU_TRANSLIT = {
+    ord("\u0430"): "a",
+    ord("\u0431"): "b",
+    ord("\u0432"): "v",
+    ord("\u0433"): "g",
+    ord("\u0434"): "d",
+    ord("\u0435"): "e",
+    ord("\u0451"): "e",
+    ord("\u0436"): "zh",
+    ord("\u0437"): "z",
+    ord("\u0438"): "i",
+    ord("\u0439"): "y",
+    ord("\u043a"): "k",
+    ord("\u043b"): "l",
+    ord("\u043c"): "m",
+    ord("\u043d"): "n",
+    ord("\u043e"): "o",
+    ord("\u043f"): "p",
+    ord("\u0440"): "r",
+    ord("\u0441"): "s",
+    ord("\u0442"): "t",
+    ord("\u0443"): "u",
+    ord("\u0444"): "f",
+    ord("\u0445"): "h",
+    ord("\u0446"): "ts",
+    ord("\u0447"): "ch",
+    ord("\u0448"): "sh",
+    ord("\u0449"): "sch",
+    ord("\u044a"): "",
+    ord("\u044b"): "y",
+    ord("\u044c"): "",
+    ord("\u044d"): "e",
+    ord("\u044e"): "yu",
+    ord("\u044f"): "ya",
+}
+
+_CITY_ALIASES_ASCII: Dict[str, str] = {
+    # Russian declensions transliterated to ASCII
+    "moskva": "Moscow",
+    "moskve": "Moscow",
+    "moskvu": "Moscow",
+    "moskvy": "Moscow",
+    "parizh": "Paris",
+    "parizhe": "Paris",
+    "parizha": "Paris",
+    "berlin": "Berlin",
+    "berline": "Berlin",
+    "berlina": "Berlin",
+    "tokio": "Tokyo",
+    "nyu-york": "New York",
+    "nyu york": "New York",
+    "nyu-yorke": "New York",
+    "nyu yorke": "New York",
+}
+
+
+def _canonical_city_key(city: str) -> str:
+    raw = str(city or "").strip()
+    if not raw:
+        return raw
+    lowered = raw.lower()
+    # Best-effort transliteration for Russian inputs (keeps English intact).
+    translit = lowered.translate(_RU_TRANSLIT)
+    translit = re.sub(r"\s+", " ", translit.replace("_", " ").strip())
+    if translit in _CITY_ALIASES_ASCII:
+        return _CITY_ALIASES_ASCII[translit]
+    return raw
+
 
 def _output(message: str) -> None:
     print(message)
@@ -142,6 +210,7 @@ def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
     city_key = _normalize_city_token(city)
     if not city_key:
         return False, {"error": _("runtime.weather.errors.missing_city")}
+    city_key = _canonical_city_key(city_key)
     cache_key = city_key.lower()
     now = time.time()
     cached = _CITY_CACHE.get(cache_key)
