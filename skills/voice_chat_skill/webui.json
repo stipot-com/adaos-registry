@@ -21,8 +21,8 @@
               "area": "main",
               "inputs": {
                 "lang": "ru-RU",
-                "startLabel": "🎙️ Listen",
-                "stopLabel": "Stop",
+                "startLabel": "🎙️ Слушать",
+                "stopLabel": "⏹️ Стоп",
                 "sendCommand": "voice.chat.user"
               }
             },
@@ -54,5 +54,37 @@
     "data/voice_chat": {
       "messages": []
     }
-  }
+  },
+  "widgets": [
+    {
+      "id": "voice_chat_widget",
+      "title": "Voice",
+      "type": "input.commandBar",
+      "inputs": {
+        "buttons": [
+          {
+            "id": "open",
+            "label": "🎙️ Слушать"
+          }
+        ]
+      },
+      "actions": [
+        {
+          "on": "click:open",
+          "type": "openModal",
+          "params": {
+            "modalId": "voice_chat_modal"
+          }
+        }
+      ]
+    }
+  ],
+  "contributions": [
+    {
+      "extensionPoint": "desktop.widgets",
+      "type": "widget",
+      "id": "voice_chat_widget",
+      "autoInstall": true
+    }
+  ]
 }

@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from adaos.sdk.core.decorators import tool
+from adaos.sdk.io.out import chat_append, say
 from adaos.services.agent_context import get_ctx
 from adaos.skills.runtime_runner import execute_tool
-from adaos.sdk.io.out import chat_append, say
 
 
 _WEATHER_RE = re.compile(
-    r"(?:погод\\w*|температур\\w*).*(?:\\bв\\b|\\bво\\b)\\s+(.+)$",
+    r"(?:какая\s+)?погода\w*\s+(?:в|во)\s+(.+)$",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -27,17 +27,15 @@ def _extract_city(text: str) -> str | None:
     city = m.group(1).strip().strip("?.!,;:()[]{}\"'")
     if not city:
         return None
-    city = re.sub(r"^(город|г\\.)\\s+", "", city, flags=re.IGNORECASE).strip()
-    if city and city[0].isalpha():
-        city = city[0].upper() + city[1:]
-    return city or None
+    city = re.sub(r"^(город|г\.)\s+", "", city, flags=re.IGNORECASE).strip()
+    if not city:
+        return None
+    return city[:1].upper() + city[1:]
 
 
 def _call_weather_tool(city: str) -> dict:
     ctx = get_ctx()
-    skills_root = ctx.paths.skills_workspace_dir()
-    skills_root = skills_root() if callable(skills_root) else skills_root
-    weather_dir = Path(skills_root) / "weather_skill"
+    weather_dir = Path(ctx.paths.skills_workspace_dir()) / "weather_skill"
 
     prev = ctx.skill_ctx.get()
     try:
@@ -65,7 +63,7 @@ def _call_weather_tool(city: str) -> dict:
 def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> Mapping[str, Any]:
     """
     Web voice-chat MVP pipeline:
-      text in -> derive weather request -> publish chat reply + tts request.
+      text in -> derive weather request -> publish chat reply + TTS request.
 
     No direct Yjs writes: outputs are emitted via io.out.* topics, and RouterService
     projects them to the proper webspace based on `_meta.webspace_id`.
@@ -75,11 +73,9 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
         return {"ok": False, "error": "text_required"}
     text = text.strip()
 
-    chat_append(text, from_="user", _meta=meta)
-
     city = _extract_city(text)
     if not city:
-        reply = "Пока умею только погоду. Скажи: «Какая погода в Москве?»"
+        reply = 'Пока я понимаю только запросы про погоду. Скажи: «Какая погода в Москве?»'
         chat_append(reply, from_="hub", _meta=meta)
         return {"ok": False, "error": "intent_not_supported"}
 
@@ -93,7 +89,7 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     ok = isinstance(result, dict) and bool(result.get("ok"))
     if not ok:
         err = result.get("error") if isinstance(result, dict) else None
-        reply = f"Не смог получить погоду для {city}." + (f" ({err})" if err else "")
+        reply = f"Не удалось получить погоду в {city}." + (f" ({err})" if err else "")
         chat_append(reply, from_="hub", _meta=meta)
         return {"ok": False, "error": err or "weather_failed"}
 
