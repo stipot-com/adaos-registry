@@ -8,6 +8,7 @@ depends:
   - web_desktop_skill
   - greet_on_boot_skill
   - pair_new_device_skill
+  - voice_chat_skill
 updated_at: "2025-11-14T18:14:36+00:00"
 data_projections:
   - scope: current_user

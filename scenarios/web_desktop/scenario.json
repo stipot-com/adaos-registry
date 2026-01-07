@@ -6,9 +6,16 @@
 				"topbar": [
 					{
 						"id": "btn_apps",
-						"label": "Apps45",
+						"label": "Apps",
 						"action": {
 							"openModal": "apps_catalog"
+						}
+					},
+					{
+						"id": "btn_voice",
+						"label": "\ud83c\udf99\ufe0f",
+						"action": {
+							"openModal": "voice_chat_modal"
 						}
 					},
 					{
