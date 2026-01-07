@@ -24,7 +24,8 @@
   },
   "desktop.installed:t7": {
     "apps": [
-      "scenario:prompt_engineer_scenario"
+      "scenario:prompt_engineer_scenario",
+      "weather_app"
     ],
     "widgets": [
       "weather"
