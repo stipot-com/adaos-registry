@@ -192,6 +192,25 @@
 	},
 	"id": "web_desktop",
 	"version": "0.0.1",
+	"nlu": {
+		"intents": {
+			"desktop.open_weather": {
+				"description": "Open or toggle the weather widget for the current desktop webspace.",
+				"scope": "scenario",
+				"actions": [
+					{
+						"type": "callSkill",
+						"target": "desktop.toggleInstall",
+						"params": {
+							"type": "widget",
+							"id": "weather",
+							"webspace_id": "$ctx.webspace_id"
+						}
+					}
+				]
+			}
+		}
+	},
 	"data": {
 		"installed": {
 			"apps": [],
