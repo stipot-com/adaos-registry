@@ -4,6 +4,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any, Mapping
+import logging
 
 from adaos.sdk.core.decorators import tool
 from adaos.sdk.io.out import chat_append, say
@@ -34,6 +35,8 @@ _CITY_ALIASES: dict[str, tuple[str, str]] = {
     "нью-йорке": ("New York", "New York"),
     "нью йорке": ("New York", "New York"),
 }
+
+_log = logging.getLogger("adaos.voice_chat_skill")
 
 
 def _normalize_city_key(text: str) -> str:
@@ -110,6 +113,7 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     Web voice-chat MVP pipeline:
       text in -> derive weather request -> publish chat reply + TTS request.
     """
+    _log.debug("voice_chat_skill.handle_text text=%r meta=%r", text, _meta)
     meta = dict(_meta or {})
     if not isinstance(text, str) or not text.strip():
         return {"ok": False, "error": "text_required"}
