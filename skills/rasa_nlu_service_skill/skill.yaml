@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../../../src/adaos/abi/skill.schema.json
+name: rasa_nlu_service_skill
+version: "0.0.1"
+description: Rasa NLU service skill (Python 3.10) providing HTTP API for parse/train.
+runtime:
+  kind: service
+  python: "3.10"
+  env:
+    mode: venv
+    python: "3.10"
+service:
+  host: "127.0.0.1"
+  port: 6179
+  workdir: "."
+  healthcheck:
+    type: http
+    path: "/health"
+    timeout_ms: 1000
+  # The platform prepends the selected python interpreter.
+  command:
+    - "-m"
+    - "sanic"
+    - "handlers.service:app"
+    - "--host=127.0.0.1"
+    - "--port=6179"
+dependencies:
+  - "rasa==3.6.20"
+events:
+  subscribe: []
+  publish: []
