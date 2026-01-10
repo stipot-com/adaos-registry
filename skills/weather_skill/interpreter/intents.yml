@@ -1,0 +1,8 @@
+intents:
+- intent: weather.show
+  description: null
+  skill: weather_skill
+  examples:
+  - какая погода {date?} {place?}
+  - погода {date?} {place?}
+  - '{date?} погода {place?}'

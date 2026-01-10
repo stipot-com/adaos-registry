@@ -352,45 +352,37 @@ def get_weather(city: Optional[str] = None) -> Dict:
 
 
 @subscribe("nlp.intent.weather.get")
-async def on_weather_intent(evt) -> None:
+async def on_weather_intent(payload) -> None:
     api_entry_point, default_city = _load_config()
 
-    city = _resolve_city((evt.payload or {}).get("city")) or default_city
+    payload = payload if isinstance(payload, dict) else {}
+    meta = payload.get("_meta") or {}
+    if not isinstance(meta, dict):
+        meta = {}
+    extra = {"source": "weather_skill"}
+    trace_id = meta.get("trace_id")
+    if isinstance(trace_id, str) and trace_id:
+        extra["trace_id"] = trace_id
+
+    city = _resolve_city(payload.get("city")) or default_city
     if not city:
-        await emit(
-            "ui.notify",
-            {"text": _("prep.weather.api_error", city="")},
-            actor=evt.actor,
-            source="weather_skill",
-            trace_id=evt.trace_id,
-        )
+        text_out = _("prep.weather.api_error", city="")
+        await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
         return
 
     ok, data = await _fetch_weather_async(api_entry_point, city)
     if not ok:
-        await emit(
-            "ui.notify",
-            {"text": _("prep.weather.api_error", city=city)},
-            actor=evt.actor,
-            source="weather_skill",
-            trace_id=evt.trace_id,
-        )
+        text_out = _("prep.weather.api_error", city=city)
+        await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
         return
 
-    await emit(
-        "ui.notify",
-        {
-            "text": _(
-                "prep.weather.success",
-                city=data["city"],
-                temp=data.get("temp") or data.get("temp_c"),
-                description=data["description"],
-            )
-        },
-        actor=evt.actor,
-        source="weather_skill",
-        trace_id=evt.trace_id,
+    text_out = _(
+        "prep.weather.success",
+        city=data["city"],
+        temp=data.get("temp") or data.get("temp_c"),
+        description=data["description"],
     )
+    await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
 
 
 def resolve_location(*, text: str, lang: str = "ru", slots: Dict[str, Any] | None = None, resources: Dict[str, Any] | None = None) -> Optional[Tuple[str, float]]:
