@@ -45,5 +45,12 @@
       "scenario:prompt_engineer_scenario"
     ],
     "widgets": []
+  },
+  "desktop.installed:ws1": {
+    "apps": [
+      "scenario:prompt_engineer_scenario",
+      "voice_chat_app"
+    ],
+    "widgets": []
   }
 }
