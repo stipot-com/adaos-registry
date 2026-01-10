@@ -13,7 +13,7 @@
 					},
 					{
 						"id": "btn_voice",
-						"label": "\ud83c\udf99\ufe0f",
+						"label": "🎙️",
 						"action": {
 							"openModal": "voice_chat_modal"
 						}
@@ -195,18 +195,64 @@
 	"nlu": {
 		"intents": {
 			"desktop.open_weather": {
-				"description": "Open or toggle the weather widget for the current desktop webspace.",
+				"description": "Show weather for a city (voice/chat).",
+				"scope": "scenario",
+				"examples": [
+					"??????",
+					"????? ??????",
+					"?????? ? ??????",
+					"weather",
+					"weather in Paris"
+				],
+				"actions": [
+					{
+						"type": "callSkill",
+						"target": "nlp.intent.weather.get",
+						"params": {
+							"city": "$slot.city"
+						}
+					}
+				]
+			},
+			"desktop.open_app": {
+				"description": "Ensure an app icon is installed on the desktop for the given app id (skill or scenario launcher).",
 				"scope": "scenario",
 				"actions": [
 					{
 						"type": "callSkill",
 						"target": "desktop.toggleInstall",
 						"params": {
-							"type": "widget",
-							"id": "weather",
+							"type": "app",
+							"id": "$slot.app_id",
 							"webspace_id": "$ctx.webspace_id"
 						}
 					}
+				],
+				"examples": [
+					"?????? ?????????? weather_app",
+					"??????? ?????????? voice_chat_app",
+					"open app weather_app",
+					"launch app voice_chat_app"
+				]
+			},
+			"desktop.open_scenario": {
+				"description": "Switch current desktop scenario for this webspace.",
+				"scope": "scenario",
+				"actions": [
+					{
+						"type": "callHost",
+						"target": "desktop.scenario.set",
+						"params": {
+							"scenario_id": "$slot.scenario_id",
+							"webspace_id": "$ctx.webspace_id"
+						}
+					}
+				],
+				"examples": [
+					"????????? ???????? web_desktop",
+					"?????? ???????? prompt_engineer_scenario",
+					"switch scenario web_desktop",
+					"open scenario prompt_engineer_scenario"
 				]
 			}
 		}
