@@ -25,6 +25,7 @@ service:
     - "--port=6179"
 dependencies:
   - "rasa==3.6.20"
+  - "sanic==23.12.1"
 events:
   subscribe: []
   publish: []
