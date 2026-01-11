@@ -16,6 +16,19 @@ service:
     type: http
     path: "/health"
     timeout_ms: 1000
+  self_managed:
+    enabled: true
+    crash:
+      max_in_window: 3
+      window_s: 60
+      cooloff_s: 30
+    health:
+      interval_s: 10
+      failures_before_issue: 3
+    hooks:
+      on_issue: handlers.main:on_issue
+      on_self_heal: handlers.main:on_self_heal
+      timeout_s: 5.0
   # The platform prepends the selected python interpreter.
   command:
     - "-m"
