@@ -24,6 +24,13 @@
 						"action": {
 							"openModal": "widgets_catalog"
 						}
+					},
+					{
+						"id": "btn_teacher",
+						"label": "NLU",
+						"action": {
+							"openModal": "nlu_teacher_modal"
+						}
 					}
 				],
 				"iconTemplate": {
@@ -179,7 +186,35 @@
 					]
 				}
 			},
-			"modals": {}
+			"modals": {
+				"nlu_teacher_modal": {
+					"title": "NLU Teacher",
+					"schema": {
+						"id": "nlu_teacher_modal",
+						"layout": {
+							"type": "single",
+							"areas": [
+								{
+									"id": "main",
+									"role": "main"
+								}
+							]
+						},
+						"widgets": [
+							{
+								"id": "nlu-teacher",
+								"type": "ui.nluTeacher",
+								"area": "main",
+								"title": "NLU Teacher",
+								"dataSource": {
+									"kind": "y",
+									"path": "data/nlu_teacher"
+								}
+							}
+						]
+					}
+				}
+			}
 		}
 	},
 	"registry": {
