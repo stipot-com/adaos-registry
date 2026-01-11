@@ -209,7 +209,7 @@ def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
     # Map known cities to coordinates for Open-Meteo API.
     city_key = _normalize_city_token(city)
     if not city_key:
-        return False, {"error": _("runtime.weather.errors.missing_city")}
+        return False, {"error_code": "missing_city", "error": _("runtime.weather.errors.missing_city")}
     city_key = _canonical_city_key(city_key)
     cache_key = city_key.lower()
     now = time.time()
@@ -228,7 +228,7 @@ def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
         None,
     )
     if not coords:
-        return False, {"error": _("runtime.weather.errors.missing_city")}
+        return False, {"error_code": "missing_city", "error": _("runtime.weather.errors.missing_city"), "city": city_key}
 
     lat, lon = coords
     try:
@@ -326,7 +326,7 @@ def get_weather(city: Optional[str] = None) -> Dict:
 
     target_city = city or default_city or memory_get("last_city")
     if not target_city:
-        return {"ok": False, "error": _("runtime.weather.errors.missing_city")}
+        return {"ok": False, "error_code": "missing_city", "error": _("runtime.weather.errors.missing_city")}
 
     ok, data = _fetch_weather(api_entry_point, target_city)
     if not ok:
@@ -372,7 +372,14 @@ async def on_weather_intent(payload) -> None:
 
     ok, data = await _fetch_weather_async(api_entry_point, city)
     if not ok:
-        text_out = _("prep.weather.api_error", city=city)
+        if data.get("error_code") == "missing_city":
+            text_out = (
+                "Я не смог распознать город. "
+                "Попробуй, например: «Погода в Москве» / «Weather in Paris». "
+                "Пока поддерживаются: Moscow, Berlin, Paris, Tokyo, New York."
+            )
+        else:
+            text_out = _("prep.weather.api_error", city=city)
         await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
         return
 
