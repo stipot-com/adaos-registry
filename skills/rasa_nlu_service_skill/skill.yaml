@@ -29,6 +29,11 @@ service:
       on_issue: handlers.main:on_issue
       on_self_heal: handlers.main:on_self_heal
       timeout_s: 5.0
+    doctor:
+      enabled: true
+      cooldown_s: 60
+      issue_types: ["rasa_timeout", "rasa_failed", "crash_loop", "healthcheck_failed"]
+      include_log_tail_lines: 200
   # The platform prepends the selected python interpreter.
   command:
     - "-m"
