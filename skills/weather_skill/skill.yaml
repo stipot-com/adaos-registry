@@ -1,54 +1,85 @@
-# yaml-language-server: $schema=../../../src/adaos/abi/skill.schema.json
-# .adaos\workspace\skills\weather_skill\skill.yaml
 name: weather_skill
-version: '2.0.0'
-description: Simple weather demo skill that shows current conditions on the desktop and reacts to city changes.
+version: 2.0.0
+description: Simple weather demo skill that shows current conditions on the desktop
+  and reacts to city changes.
 runtime:
   python: '3.11'
 dependencies:
-  - requests>=2.31
+- requests>=2.31
+llm_policy:
+  autoapply_nlu_teacher: true
 events:
   subscribe:
-    - 'nlp.intent.weather.get'
-    - 'weather.city_changed'
+  - nlp.intent.weather.get
+  - weather.city_changed
   publish:
-    - 'ui.notify'
+  - ui.notify
 data_projections:
-  - scope: subnet
-    slot: weather.snapshot
-    targets:
-      - backend: yjs
-        path: data/weather
-default_tool: 'get_weather'
+- scope: subnet
+  slot: weather.snapshot
+  targets:
+  - backend: yjs
+    path: data/weather
+default_tool: get_weather
 tools:
-  - name: 'get_weather'
-    description: Resolve current weather for the requested city and return a basic summary for the UI.
-    entry: 'handlers.main:get_weather'
-    input_schema:
-      type: object
-      properties:
-        city: { type: string, minLength: 1 }
-    output_schema:
-      type: object
-      required: [ok]
-      properties:
-        ok: { type: boolean }
-        city: { type: string }
-        temp: { type: number }
-        description: { type: string }
-        error: { type: string }
+- name: get_weather
+  description: Resolve current weather for the requested city and return a basic summary
+    for the UI.
+  entry: handlers.main:get_weather
+  input_schema:
+    type: object
+    properties:
+      city:
+        type: string
+        minLength: 1
+  output_schema:
+    type: object
+    required:
+    - ok
+    properties:
+      ok:
+        type: boolean
+      city:
+        type: string
+      temp:
+        type: number
+      description:
+        type: string
+      error:
+        type: string
 nlu:
   intents:
-    - name: weather.show
-      utterances:
-        - 'какая погода {date?} {place?}'
-        - 'погода {date?} {place?}'
-        - '{date?} погода {place?}'
-      slots:
-        date: { type: datetime, required: false }
-        place: { type: location, required: false }
-      disambiguation:
-        inherit: ['date']
-        defaults: { place: '@home_city' }
+  - name: weather.show
+    utterances:
+    - какая погода {date?} {place?}
+    - погода {date?} {place?}
+    - '{date?} погода {place?}'
+    slots:
+      date:
+        type: datetime
+        required: false
+      place:
+        type: location
+        required: false
+    disambiguation:
+      inherit:
+      - date
+      defaults:
+        place: '@home_city'
   resolvers:
-    location: "handlers.main:resolve_location"
+    location: handlers.main:resolve_location
+  regex_rules:
+  - id: rx.1768305525282
+    created_at: 1768305525.282357
+    intent: desktop.open_weather
+    pattern: \bпомерить\s+температуру\s+в\s+(?P<city>[^?.!,;:]+)\b
+    enabled: true
+    source: teacher
+    candidate_id: cand.1768305403150
+  - id: rx.655bf395-a748-4bf0-b1b2-5213f62daab8
+    created_at: 1768330400.5334976
+    intent: desktop.open_weather
+    pattern: \bкакая\s+температура\s+в\s+(?P<city>[^?.!,;:]+)\b
+    enabled: true
+    source: teacher
+    candidate_id: cand.1768330399036
