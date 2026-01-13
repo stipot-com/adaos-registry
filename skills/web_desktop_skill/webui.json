@@ -1,5 +1,12 @@
 {
-  "apps": [],
+  "apps": [
+    {
+      "id": "nlu_teacher_app",
+      "title": "NLU Teacher",
+      "icon": "school-outline",
+      "launchModal": "nlu_teacher_modal"
+    }
+  ],
   "widgets": [],
   "registry": {
     "modals": {
@@ -72,6 +79,166 @@
                   "params": {
                     "type": "widget",
                     "id": "$event.id"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "nlu_teacher_modal": {
+        "title": "NLU Teacher",
+        "schema": {
+          "id": "nlu_teacher_modal",
+          "title": "NLU Teacher",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "nlu-tabs",
+              "type": "input.commandBar",
+              "area": "main",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "requests",
+                    "label": "User requests"
+                  },
+                  {
+                    "id": "candidates",
+                    "label": "Candidates"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:requests",
+                  "type": "updateState",
+                  "params": {
+                    "nluTeacherTab": "requests"
+                  }
+                },
+                {
+                  "on": "click:candidates",
+                  "type": "updateState",
+                  "params": {
+                    "nluTeacherTab": "candidates"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "nlu-events",
+              "type": "ui.list",
+              "area": "main",
+              "title": "User requests",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/nlu_teacher/events"
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No teacher events yet",
+                "groupBy": "request_id",
+                "groupTitleKey": "request_text",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "itemAccordion": false,
+                "showDetails": false,
+                "detailsPath": "raw",
+                "detailsModal": true,
+                "detailsModalTitleKey": "title",
+                "buttons": [
+                  {
+                    "id": "apply",
+                    "icon": "checkmark-outline",
+                    "whenKey": "kind",
+                    "whenEquals": "revision.suggested"
+                  }
+                ]
+              },
+              "visibleIf": "$state.nluTeacherTab === 'requests'",
+              "actions": [
+                {
+                  "on": "click:apply",
+                  "type": "callHost",
+                  "target": "nlp.teacher.revision.apply",
+                  "params": {
+                    "revision_id": "$event.raw.id",
+                    "intent": "$event.raw.proposal.intent",
+                    "examples": "$event.raw.proposal.examples",
+                    "slots": "$event.raw.proposal.slots"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "nlu-candidates",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Candidates",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/nlu_teacher/events_by_candidate"
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No candidates yet",
+                "groupBy": "candidate_name",
+                "groupTitleKey": "candidate_name",
+                "groupSubtitleKey": "candidate_description",
+                "subGroupBy": "request_id",
+                "subGroupTitleKey": "request_text",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "itemAccordion": false,
+                "showDetails": false,
+                "detailsPath": "raw",
+                "detailsModal": true,
+                "detailsModalTitleKey": "title",
+                "buttons": [
+                  {
+                    "id": "apply",
+                    "icon": "checkmark-outline",
+                    "whenKey": "kind",
+                    "whenEquals": "candidate.proposed"
+                  },
+                  {
+                    "id": "applyScenario",
+                    "icon": "checkmark-outline",
+                    "whenKey": "kind",
+                    "whenEquals": "candidate.proposed"
+                  }
+                ]
+              },
+              "visibleIf": "$state.nluTeacherTab === 'candidates'",
+              "actions": [
+                {
+                  "on": "click:apply",
+                  "type": "callHost",
+                  "target": "nlp.teacher.candidate.apply",
+                  "params": {
+                    "candidate_id": "$event.raw.id",
+                    "target": "$event.raw.target"
+                  }
+                },
+                {
+                  "on": "click:applyScenario",
+                  "type": "callHost",
+                  "target": "nlp.teacher.candidate.apply",
+                  "params": {
+                    "candidate_id": "$event.raw.id",
+                    "target": {
+                      "type": "scenario",
+                      "id": "$event.raw.origin_scenario_id"
+                    }
                   }
                 }
               ]

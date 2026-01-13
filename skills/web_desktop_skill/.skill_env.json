@@ -1,6 +1,7 @@
 {
   "desktop.installed:default": {
     "apps": [
+      "voice_chat_app",
       "weather_app",
       "scenario:prompt_engineer_scenario"
     ],
@@ -25,7 +26,7 @@
   "desktop.installed:t7": {
     "apps": [
       "scenario:prompt_engineer_scenario",
-      "weather_app"
+      "voice_chat_app"
     ],
     "widgets": [
       "weather"
@@ -48,9 +49,21 @@
   },
   "desktop.installed:ws1": {
     "apps": [
+      "voice_chat_app",
+      "weather_app",
+      "scenario:prompt_engineer_scenario"
+    ],
+    "widgets": [
+      "weather"
+    ]
+  },
+  "desktop.installed:ws2": {
+    "apps": [
       "scenario:prompt_engineer_scenario",
       "voice_chat_app"
     ],
-    "widgets": []
+    "widgets": [
+      "weather"
+    ]
   }
 }
