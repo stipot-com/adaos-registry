@@ -1,301 +1,437 @@
 {
-	"ui": {
-		"application": {
-			"version": "0.2",
-			"desktop": {
-				"topbar": [
-					{
-						"id": "btn_apps",
-						"label": "Apps",
-						"action": {
-							"openModal": "apps_catalog"
-						}
-					},
-					{
-						"id": "btn_voice",
-						"label": "🎙️",
-						"action": {
-							"openModal": "voice_chat_modal"
-						}
-					},
-					{
-						"id": "btn_widgets",
-						"label": "Widgets",
-						"action": {
-							"openModal": "widgets_catalog"
-						}
-					},
-					{
-						"id": "btn_teacher",
-						"label": "NLU",
-						"action": {
-							"openModal": "nlu_teacher_modal"
-						}
-					}
-				],
-				"iconTemplate": {
-					"icon": "apps-outline"
-				},
-				"widgetTemplate": {
-					"style": {
-						"minWidth": 240
-					}
-				},
-				"pinnedWidgets": [
-					{
-						"id": "infra-status",
-						"type": "visual.metricTile",
-						"title": "Infrastructure status",
-						"source": "data/infra/status",
-						"dev": false
-					}
-				],
-				"pageSchema": {
-					"id": "desktop",
-					"title": "Desktop",
-					"layout": {
-						"type": "single",
-						"areas": [
-							{
-								"id": "main",
-								"role": "main"
-							}
-						]
-					},
-					"widgets": [
-						{
-							"id": "topbar",
-							"type": "input.commandBar",
-							"area": "main",
-							"dataSource": {
-								"kind": "y",
-								"path": "ui/application/desktop/topbar"
-							},
-							"actions": [
-								{
-									"on": "click",
-									"type": "openModal",
-									"params": {
-										"modalId": "$event.action.openModal"
-									}
-								}
-							]
-						},
-						{
-							"id": "workspace-tools",
-							"type": "input.commandBar",
-							"area": "main",
-							"inputs": {
-								"buttons": [
-									{
-										"id": "apps",
-										"label": "Apps"
-									},
-									{
-										"id": "widgets",
-										"label": "Widgets"
-									},
-									{
-										"id": "workspace-manager",
-										"label": "Workspaces"
-									},
-									{
-										"id": "yjs-reload",
-										"label": "YJS reload"
-									},
-									{
-										"id": "yjs-reset",
-										"label": "YJS reset"
-									}
-								]
-							},
-							"actions": [
-								{
-									"on": "click:apps",
-									"type": "openModal",
-									"params": {
-										"modalId": "apps_catalog"
-									}
-								},
-								{
-									"on": "click:widgets",
-									"type": "openModal",
-									"params": {
-										"modalId": "widgets_catalog"
-									}
-								},
-								{
-									"on": "click:workspace-manager",
-									"type": "openModal",
-									"params": {
-										"modalId": "workspace_manager"
-									}
-								},
-								{
-									"on": "click:yjs-reload",
-									"type": "callHost",
-									"target": "desktop.webspace.reload"
-								},
-								{
-									"on": "click:yjs-reset",
-									"type": "callHost",
-									"target": "desktop.webspace.reset"
-								}
-							]
-						},
-						{
-							"id": "desktop-icons",
-							"type": "collection.grid",
-							"area": "main",
-							"title": "Icons",
-							"inputs": {
-								"columns": 6
-							},
-							"dataSource": {
-								"kind": "y",
-								"transform": "desktop.icons"
-							},
-							"actions": [
-								{
-									"on": "select",
-									"type": "callHost",
-									"target": "desktop.scenario.set",
-									"params": {
-										"scenario_id": "$event.scenario_id"
-									}
-								},
-								{
-									"on": "select",
-									"type": "openModal",
-									"params": {
-										"modalId": "$event.action.openModal"
-									}
-								}
-							]
-						},
-						{
-							"id": "desktop-widgets",
-							"type": "desktop.widgets",
-							"area": "main",
-							"title": "Widgets",
-							"dataSource": {
-								"kind": "y",
-								"transform": "desktop.widgets"
-							}
-						}
-					]
-				}
-			},
-			"modals": {
-				"nlu_teacher_modal": {
-					"title": "NLU Teacher",
-					"schema": {
-						"id": "nlu_teacher_modal",
-						"layout": {
-							"type": "single",
-							"areas": [
-								{
-									"id": "main",
-									"role": "main"
-								}
-							]
-						},
-						"widgets": [
-							{
-								"id": "nlu-teacher",
-								"type": "ui.nluTeacher",
-								"area": "main",
-								"title": "NLU Teacher",
-								"dataSource": {
-									"kind": "y",
-									"path": "data/nlu_teacher"
-								}
-							}
-						]
-					}
-				}
-			}
-		}
-	},
-	"registry": {
-		"widgets": [],
-		"modals": []
-	},
-	"catalog": {
-		"apps": [],
-		"widgets": []
-	},
-	"id": "web_desktop",
-	"version": "0.0.1",
-	"nlu": {
-		"intents": {
-			"desktop.open_weather": {
-				"description": "Show weather for a city (voice/chat).",
-				"scope": "scenario",
-				"examples": [
-					"??????",
-					"????? ??????",
-					"?????? ? ??????",
-					"weather",
-					"weather in Paris"
-				],
-				"actions": [
-					{
-						"type": "callSkill",
-						"target": "nlp.intent.weather.get",
-						"params": {
-							"city": "$slot.city"
-						}
-					}
-				]
-			},
-			"desktop.open_app": {
-				"description": "Ensure an app icon is installed on the desktop for the given app id (skill or scenario launcher).",
-				"scope": "scenario",
-				"actions": [
-					{
-						"type": "callSkill",
-						"target": "desktop.toggleInstall",
-						"params": {
-							"type": "app",
-							"id": "$slot.app_id",
-							"webspace_id": "$ctx.webspace_id"
-						}
-					}
-				],
-				"examples": [
-					"?????? ?????????? weather_app",
-					"??????? ?????????? voice_chat_app",
-					"open app weather_app",
-					"launch app voice_chat_app"
-				]
-			},
-			"desktop.open_scenario": {
-				"description": "Switch current desktop scenario for this webspace.",
-				"scope": "scenario",
-				"actions": [
-					{
-						"type": "callHost",
-						"target": "desktop.scenario.set",
-						"params": {
-							"scenario_id": "$slot.scenario_id",
-							"webspace_id": "$ctx.webspace_id"
-						}
-					}
-				],
-				"examples": [
-					"????????? ???????? web_desktop",
-					"?????? ???????? prompt_engineer_scenario",
-					"switch scenario web_desktop",
-					"open scenario prompt_engineer_scenario"
-				]
-			}
-		}
-	},
-	"data": {
-		"installed": {
-			"apps": [],
-			"widgets": []
-		}
-	}
+  "ui": {
+    "application": {
+      "version": "0.2",
+      "desktop": {
+        "topbar": [
+          {
+            "id": "btn_apps",
+            "label": "Apps",
+            "action": {
+              "openModal": "apps_catalog"
+            }
+          },
+          {
+            "id": "btn_voice",
+            "label": "🎙️",
+            "action": {
+              "openModal": "voice_chat_modal"
+            }
+          },
+          {
+            "id": "btn_widgets",
+            "label": "Widgets",
+            "action": {
+              "openModal": "widgets_catalog"
+            }
+          },
+          {
+            "id": "btn_teacher",
+            "label": "NLU",
+            "action": {
+              "openModal": "nlu_teacher_modal"
+            }
+          }
+        ],
+        "iconTemplate": {
+          "icon": "apps-outline"
+        },
+        "widgetTemplate": {
+          "style": {
+            "minWidth": 240
+          }
+        },
+        "pinnedWidgets": [
+          {
+            "id": "infra-status",
+            "type": "visual.metricTile",
+            "title": "Infrastructure status",
+            "source": "data/infra/status",
+            "dev": false
+          }
+        ],
+        "pageSchema": {
+          "id": "desktop",
+          "title": "Desktop",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "topbar",
+              "type": "input.commandBar",
+              "area": "main",
+              "dataSource": {
+                "kind": "y",
+                "path": "ui/application/desktop/topbar"
+              },
+              "actions": [
+                {
+                  "on": "click",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "$event.action.openModal"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "workspace-tools",
+              "type": "input.commandBar",
+              "area": "main",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "apps",
+                    "label": "Apps"
+                  },
+                  {
+                    "id": "widgets",
+                    "label": "Widgets"
+                  },
+                  {
+                    "id": "workspace-manager",
+                    "label": "Workspaces"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:apps",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "apps_catalog"
+                  }
+                },
+                {
+                  "on": "click:widgets",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "widgets_catalog"
+                  }
+                },
+                {
+                  "on": "click:workspace-manager",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "workspace_manager"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "desktop-icons",
+              "type": "collection.grid",
+              "area": "main",
+              "title": "Icons",
+              "inputs": {
+                "columns": 6
+              },
+              "dataSource": {
+                "kind": "y",
+                "transform": "desktop.icons"
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "callHost",
+                  "target": "desktop.scenario.set",
+                  "params": {
+                    "scenario_id": "$event.scenario_id"
+                  }
+                },
+                {
+                  "on": "select",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "$event.action.openModal"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "desktop-widgets",
+              "type": "desktop.widgets",
+              "area": "main",
+              "title": "Widgets",
+              "dataSource": {
+                "kind": "y",
+                "transform": "desktop.widgets"
+              }
+            }
+          ]
+        }
+      },
+      "modals": {
+        "nlu_teacher_modal": {
+          "title": "NLU Teacher",
+          "schema": {
+            "id": "nlu_teacher_modal",
+            "layout": {
+              "type": "single",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "initialState": {
+              "nluTeacherTab": "requests"
+            },
+            "widgets": [
+              {
+                "id": "nlu-tabs",
+                "type": "input.commandBar",
+                "area": "main",
+                "inputs": {
+                  "buttons": [
+                    {
+                      "id": "requests",
+                      "label": "User requests"
+                    },
+                    {
+                      "id": "candidates",
+                      "label": "Candidates"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "on": "click:requests",
+                    "type": "updateState",
+                    "params": {
+                      "nluTeacherTab": "requests"
+                    }
+                  },
+                  {
+                    "on": "click:candidates",
+                    "type": "updateState",
+                    "params": {
+                      "nluTeacherTab": "candidates"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "nlu-requests",
+                "type": "ui.list",
+                "area": "main",
+                "title": "User requests",
+                "dataSource": {
+                  "kind": "y",
+                  "path": "data/nlu_teacher/threads_by_request"
+                },
+                "inputs": {
+                  "inset": true,
+                  "emptyText": "No user requests yet",
+                  "titleKey": "title",
+                  "subtitleKey": "subtitle",
+                  "itemAccordion": true,
+                  "detailsPath": "details",
+                  "detailsModal": true,
+                  "detailsModalTitleKey": "title",
+                  "buttons": [
+                    {
+                      "id": "apply",
+                      "label": "Apply",
+                      "icon": "checkmark-circle-outline",
+                      "whenKey": "candidate_id"
+                    }
+                  ]
+                },
+                "visibleIf": "$state.nluTeacherTab === 'requests'",
+                "actions": [
+                  {
+                    "on": "click:apply",
+                    "type": "callHost",
+                    "target": "nlp.teacher.candidate.apply",
+                    "params": {
+                      "candidate_id": "$event.candidate_id"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "nlu-candidates",
+                "type": "ui.list",
+                "area": "main",
+                "title": "Candidates",
+                "dataSource": {
+                  "kind": "y",
+                  "path": "data/nlu_teacher/threads_by_candidate"
+                },
+                "inputs": {
+                  "inset": true,
+                  "emptyText": "No candidates yet",
+                  "groupBy": "candidate_name",
+                  "groupTitleKey": "candidate_name",
+                  "groupSubtitleKey": "candidate_description",
+                  "titleKey": "subtitle",
+                  "subtitleKey": "candidate_meta",
+                  "itemAccordion": true,
+                  "detailsPath": "details",
+                  "detailsModal": true,
+                  "detailsModalTitleKey": "candidate_name",
+                  "buttons": [
+                    {
+                      "id": "apply",
+                      "label": "Apply",
+                      "icon": "checkmark-circle-outline",
+                      "whenKey": "candidate_status",
+                      "whenEquals": "pending"
+                    },
+                    {
+                      "id": "applyScenario",
+                      "label": "Apply to Scenario",
+                      "icon": "checkmark-circle-outline",
+                      "whenKey": "candidate_status",
+                      "whenEquals": "pending"
+                    }
+                  ]
+                },
+                "visibleIf": "$state.nluTeacherTab === 'candidates'",
+                "actions": [
+                  {
+                    "on": "click:apply",
+                    "type": "callHost",
+                    "target": "nlp.teacher.candidate.apply",
+                    "params": {
+                      "candidate_id": "$event.candidate_id",
+                      "target": "$event.candidate_target"
+                    }
+                  },
+                  {
+                    "on": "click:applyScenario",
+                    "type": "callHost",
+                    "target": "nlp.teacher.candidate.apply",
+                    "params": {
+                      "candidate_id": "$event.candidate_id",
+                      "target": {
+                        "type": "scenario",
+                        "id": "$event.candidate_origin_scenario_id"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "registry": {
+    "widgets": [
+      "input.commandBar",
+      "ui.list",
+      "ui.jsonViewer"
+    ],
+    "modals": [
+      "nlu_teacher_modal"
+    ]
+  },
+  "catalog": {
+    "apps": [
+      {
+        "id": "nlu_teacher_app",
+        "title": "NLU Teacher",
+        "icon": "apps-outline",
+        "launchModal": "nlu_teacher_modal",
+        "dev": false,
+        "origin": "system:nlu.teacher"
+      }
+    ],
+    "widgets": []
+  },
+  "id": "web_desktop",
+  "version": "0.0.1",
+  "nlu": {
+    "intents": {
+      "desktop.open_weather": {
+        "description": "Show weather for a city (voice/chat).",
+        "scope": "scenario",
+        "examples": [
+          "погода",
+          "какая погода",
+          "погода в Москве",
+          "weather",
+          "weather in Paris"
+        ],
+        "actions": [
+          {
+            "type": "callSkill",
+            "target": "nlp.intent.weather.get",
+            "params": {
+              "city": "$slot.city"
+            }
+          }
+        ]
+      },
+      "desktop.open_app": {
+        "description": "Ensure an app icon is installed on the desktop for the given app id (skill or scenario launcher).",
+        "scope": "scenario",
+        "actions": [
+          {
+            "type": "callSkill",
+            "target": "desktop.toggleInstall",
+            "params": {
+              "type": "app",
+              "id": "$slot.app_id",
+              "webspace_id": "$ctx.webspace_id"
+            }
+          }
+        ],
+        "examples": [
+          "запусти приложение weather_app",
+          "открой приложение voice_chat_app",
+          "open app weather_app",
+          "launch app voice_chat_app"
+        ]
+      },
+      "desktop.open_scenario": {
+        "description": "Switch current desktop scenario for this webspace.",
+        "scope": "scenario",
+        "actions": [
+          {
+            "type": "callHost",
+            "target": "desktop.scenario.set",
+            "params": {
+              "scenario_id": "$slot.scenario_id",
+              "webspace_id": "$ctx.webspace_id"
+            }
+          }
+        ],
+        "examples": [
+          "переключи сценарий web_desktop",
+          "открой сценарий prompt_engineer_scenario",
+          "switch scenario web_desktop",
+          "open scenario prompt_engineer_scenario"
+        ]
+      }
+    },
+    "regex_rules": [
+      {
+        "id": "rx.1768301351746",
+        "created_at": 1768301351.7463748,
+        "intent": "desktop.open_weather",
+        "pattern": "\\bпокажи\\s+температуру\\s+в\\s+(?P<city>[^?.!,;:]+)\\b",
+        "enabled": true,
+        "source": "teacher",
+        "candidate_id": "cand.1768301216687"
+      }
+    ]
+  },
+  "data": {
+    "installed": {
+      "apps": [],
+      "widgets": []
+    }
+  }
 }
