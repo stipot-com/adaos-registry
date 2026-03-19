@@ -1,69 +1,16 @@
 {
-  "desktop.installed:default": {
-    "apps": [
-      "voice_chat_app",
-      "weather_app",
-      "scenario:prompt_engineer_scenario"
-    ],
-    "widgets": [
-      "weather"
-    ]
-  },
-  "desktop.installed:t5": {
-    "apps": [
-      "weather_app"
-    ],
-    "widgets": [
-      "weather"
-    ]
-  },
-  "desktop.installed:": {
-    "apps": [
-      "scenario:prompt_engineer_scenario"
-    ],
-    "widgets": []
-  },
-  "desktop.installed:t7": {
-    "apps": [
-      "scenario:prompt_engineer_scenario",
-      "voice_chat_app"
-    ],
-    "widgets": [
-      "weather"
-    ]
-  },
-  "desktop.installed:t2": {
-    "apps": [
-      "scenario:prompt_engineer_scenario"
-    ],
-    "widgets": [
-      "weather"
-    ]
-  },
-  "desktop.installed:test3ws": {
-    "apps": [
-      "weather_app",
-      "scenario:prompt_engineer_scenario"
-    ],
-    "widgets": []
-  },
-  "desktop.installed:ws1": {
-    "apps": [
-      "voice_chat_app",
-      "weather_app",
-      "scenario:prompt_engineer_scenario"
-    ],
-    "widgets": [
-      "weather"
-    ]
-  },
-  "desktop.installed:ws2": {
-    "apps": [
-      "scenario:prompt_engineer_scenario",
-      "voice_chat_app"
-    ],
-    "widgets": [
-      "weather"
-    ]
-  }
+	"desktop.installed:default": {
+		"apps": [
+			"voice_chat_app",
+			"weather_app",
+			"infrastate_app",
+			"scenario:prompt_engineer_scenario",
+			"nlu_teacher_app"
+		],
+		"widgets": ["weather", "infrastate_widget"]
+	},
+	"desktop.installed:": {
+		"apps": ["scenario:prompt_engineer_scenario"],
+		"widgets": []
+	}
 }

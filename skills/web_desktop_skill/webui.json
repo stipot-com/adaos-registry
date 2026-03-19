@@ -1,4 +1,5 @@
 {
+  "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
   "apps": [
     {
       "id": "nlu_teacher_app",
@@ -251,4 +252,3 @@
   },
   "ydoc_defaults": {}
 }
-
