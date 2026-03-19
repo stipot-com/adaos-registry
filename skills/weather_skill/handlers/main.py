@@ -170,6 +170,14 @@ def _normalize_city_token(raw: Any | None) -> Optional[str]:
     return text or None
 
 
+def _event_meta(evt: Any) -> Dict[str, Any]:
+    payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
+    if not isinstance(payload, dict):
+        return {}
+    meta = payload.get("_meta")
+    return dict(meta) if isinstance(meta, dict) else {}
+
+
 def _load_config() -> Tuple[str, Optional[str]]:
     """Load runtime configuration from the SDK stores."""
 
@@ -354,7 +362,6 @@ def get_weather(city: Optional[str] = None) -> Dict:
 @subscribe("nlp.intent.weather.get")
 async def on_weather_intent(payload) -> None:
     api_entry_point, default_city = _load_config()
-
     payload = payload if isinstance(payload, dict) else {}
     meta = payload.get("_meta") or {}
     if not isinstance(meta, dict):
@@ -366,17 +373,16 @@ async def on_weather_intent(payload) -> None:
 
     city = _resolve_city(payload.get("city")) or default_city
     if not city:
-        text_out = _("prep.weather.api_error", city="")
-        await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
+        await emit("ui.notify", {"text": _("prep.weather.api_error", city=""), "_meta": meta}, **extra)
         return
 
     ok, data = await _fetch_weather_async(api_entry_point, city)
     if not ok:
         if data.get("error_code") == "missing_city":
             text_out = (
-                "Я не смог распознать город. "
-                "Попробуй, например: «Погода в Москве» / «Weather in Paris». "
-                "Пока поддерживаются: Moscow, Berlin, Paris, Tokyo, New York."
+                "? ?? ???? ?????????? ?????. "
+                "????????, ????????: ??????? ? ??????? / ?Weather in Paris?. "
+                "???? ??????????????: Moscow, Berlin, Paris, Tokyo, New York."
             )
         else:
             text_out = _("prep.weather.api_error", city=city)
@@ -390,7 +396,6 @@ async def on_weather_intent(payload) -> None:
         description=data["description"],
     )
     await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
-
 
 def resolve_location(*, text: str, lang: str = "ru", slots: Dict[str, Any] | None = None, resources: Dict[str, Any] | None = None) -> Optional[Tuple[str, float]]:
     token = (slots or {}).get("place_raw")
