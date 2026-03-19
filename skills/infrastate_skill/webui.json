@@ -4,7 +4,7 @@
 		{
 			"id": "infrastate_app",
 			"title": "Infra State",
-			"icon": "desktop-outline",
+  "icon": "server-outline",
 			"launchModal": "infrastate_modal"
 		}
 	],
@@ -53,10 +53,20 @@
 								{
 									"on": "select",
 									"type": "callHost",
-									"target": "infrastate.refresh",
+									"target": "infrastate.action",
 									"params": {}
 								}
 							]
+						},
+						{
+							"id": "infrastate-build",
+							"type": "collection.grid",
+							"area": "main",
+							"title": "Build",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/build"
+							}
 						},
 						{
 							"id": "infrastate-steps",
@@ -107,8 +117,24 @@
 					"id": "refresh",
 					"title": "Refresh snapshot",
 					"description": "Reload current local update state"
+				},
+				{
+					"id": "cancel_update",
+					"title": "Cancel update",
+					"description": "Cancel current countdown/update task"
+				},
+				{
+					"id": "rollback",
+					"title": "Rollback slot",
+					"description": "Switch back to previous active core slot"
+				},
+				{
+					"id": "drain",
+					"title": "Drain node",
+					"description": "Reject new tool calls and enter draining state"
 				}
 			],
+			"build": [],
 			"steps": [],
 			"slots": [],
 			"logs": []
