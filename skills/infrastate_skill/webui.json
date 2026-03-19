@@ -4,7 +4,7 @@
 		{
 			"id": "infrastate_app",
 			"title": "Infra State",
-			"icon": "server-outline",
+			"icon": "desktop-outline",
 			"launchModal": "infrastate_modal"
 		}
 	],
@@ -27,9 +27,7 @@
 					"id": "infrastate_modal",
 					"layout": {
 						"type": "single",
-						"areas": [
-							{ "id": "main", "role": "main" }
-						]
+						"areas": [{ "id": "main", "role": "main" }]
 					},
 					"widgets": [
 						{
