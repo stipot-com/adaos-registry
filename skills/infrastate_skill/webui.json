@@ -1,0 +1,133 @@
+{
+	"$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+	"apps": [
+		{
+			"id": "infrastate_app",
+			"title": "Infra State",
+			"icon": "server-outline",
+			"launchModal": "infrastate_modal"
+		}
+	],
+	"widgets": [
+		{
+			"id": "infrastate_widget",
+			"title": "Infra State",
+			"type": "visual.metricTile",
+			"dataSource": {
+				"kind": "y",
+				"path": "data/infrastate/summary"
+			}
+		}
+	],
+	"registry": {
+		"modals": {
+			"infrastate_modal": {
+				"title": "Infrastructure State",
+				"schema": {
+					"id": "infrastate_modal",
+					"layout": {
+						"type": "single",
+						"areas": [
+							{ "id": "main", "role": "main" }
+						]
+					},
+					"widgets": [
+						{
+							"id": "infrastate-summary",
+							"type": "visual.metricTile",
+							"area": "main",
+							"title": "Current state",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/summary"
+							}
+						},
+						{
+							"id": "infrastate-actions",
+							"type": "collection.grid",
+							"area": "main",
+							"title": "Actions",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/actions"
+							},
+							"actions": [
+								{
+									"on": "select",
+									"type": "callHost",
+									"target": "infrastate.refresh",
+									"params": {}
+								}
+							]
+						},
+						{
+							"id": "infrastate-steps",
+							"type": "collection.grid",
+							"area": "main",
+							"title": "Pipeline",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/steps"
+							}
+						},
+						{
+							"id": "infrastate-slots",
+							"type": "collection.grid",
+							"area": "main",
+							"title": "Core slots",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/slots"
+							}
+						},
+						{
+							"id": "infrastate-logs",
+							"type": "collection.grid",
+							"area": "main",
+							"title": "Last logs",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/logs"
+							}
+						}
+					]
+				}
+			}
+		},
+		"widgets": {}
+	},
+	"ydoc_defaults": {
+		"data/infrastate": {
+			"summary": {
+				"label": "Core update",
+				"value": "idle",
+				"subtitle": "slot —",
+				"description": "No update in progress"
+			},
+			"actions": [
+				{
+					"id": "refresh",
+					"title": "Refresh snapshot",
+					"description": "Reload current local update state"
+				}
+			],
+			"steps": [],
+			"slots": [],
+			"logs": []
+		}
+	},
+	"contributions": [
+		{
+			"extensionPoint": "desktop.apps",
+			"type": "app",
+			"id": "infrastate_app",
+			"autoInstall": true
+		},
+		{
+			"extensionPoint": "desktop.widgets",
+			"type": "widget",
+			"id": "infrastate_widget",
+			"autoInstall": true
+		}
+	]
+}
