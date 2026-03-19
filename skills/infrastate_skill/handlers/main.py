@@ -20,6 +20,7 @@ from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 
 _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
+_EVENTS_STATE_KEY = "infrastate.events"
 
 
 def lang_res() -> dict[str, str]:
@@ -87,6 +88,26 @@ def _write_ui_state(**updates: Any) -> dict[str, Any]:
     payload.update(updates)
     skill_memory_set(_UI_STATE_KEY, payload)
     return payload
+
+
+def _event_state() -> list[dict[str, Any]]:
+    raw = skill_memory_get(_EVENTS_STATE_KEY, [])
+    return raw if isinstance(raw, list) else []
+
+
+def _append_event(event_type: str, payload: Any) -> list[dict[str, Any]]:
+    item = {
+        "id": f"{event_type}:{int(time.time() * 1000)}",
+        "type": str(event_type or "event"),
+        "ts": time.time(),
+        "preview": json.dumps(payload, ensure_ascii=False)[:400] if isinstance(payload, (dict, list)) else str(payload or "")[:400],
+        "payload": payload if isinstance(payload, (dict, list)) else {"value": str(payload or "")},
+    }
+    items = list(_event_state())
+    items.append(item)
+    items = items[-40:]
+    skill_memory_set(_EVENTS_STATE_KEY, items)
+    return items
 
 
 def _self_base_url(conf) -> str:
@@ -180,6 +201,13 @@ def _build_items(build: dict[str, Any]) -> list[dict[str, Any]]:
             "subtitle": str(build.get("git_subject") or build.get("git_branch") or ""),
         },
         {
+            "id": "git_full_head",
+            "title": "Git commit",
+            "status": "idle",
+            "description": str(build.get("git_sha") or "unknown"),
+            "subtitle": str(build.get("git_branch") or ""),
+        },
+        {
             "id": "git_branch",
             "title": "Git branch",
             "status": "idle",
@@ -209,10 +237,14 @@ def _slot_items(slots_payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "id": str(slot_id),
                 "title": f"Slot {slot_id}",
                 "status": "ok" if slot_id == active else "idle",
-                "subtitle": str(manifest.get("target_rev") or manifest.get("target_version") or "empty"),
+                "subtitle": str(manifest.get("git_short_commit") or manifest.get("target_rev") or manifest.get("target_version") or "empty"),
                 "description": str(meta.get("path") or ""),
                 "version": str(manifest.get("target_version") or ""),
                 "target_rev": str(manifest.get("target_rev") or ""),
+                "git_commit": str(manifest.get("git_commit") or ""),
+                "git_short_commit": str(manifest.get("git_short_commit") or ""),
+                "git_branch": str(manifest.get("git_branch") or ""),
+                "git_subject": str(manifest.get("git_subject") or ""),
                 "badges": badges,
             }
         )
@@ -232,6 +264,8 @@ def _step_items(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle
         {"id": "previous_slot", "title": "Previous slot", "status": "idle", "description": previous},
         {"id": "build", "title": "Build", "status": "ok", "description": str(build.get("version") or "unknown")},
         {"id": "commit", "title": "Commit", "status": "idle", "description": str(build.get("git_short_sha") or "unknown")},
+        {"id": "target_rev", "title": "Target rev", "status": "idle", "description": str(status.get("target_rev") or "—")},
+        {"id": "command", "title": "Command", "status": "idle", "description": str(status.get("command") or "—")},
     ]
 
 
@@ -261,6 +295,8 @@ def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: d
         "draining": bool(lifecycle.get("draining")),
         "version": str(build.get("version") or ""),
         "git_short_sha": str(build.get("git_short_sha") or ""),
+        "target_rev": str(status.get("target_rev") or ""),
+        "target_version": str(status.get("target_version") or ""),
     }
 
 
@@ -269,6 +305,13 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any]) -> list[dict
     last_action = str(ui_state.get("last_action") or "").strip()
     state = str(status.get("state") or "idle")
     return [
+        {
+            "id": "start_update",
+            "title": "Start update",
+            "status": "ok" if state in {"idle", "failed", "succeeded", "cancelled", "rolled_back"} else "idle",
+            "description": "Schedule core update with current target rev",
+            "subtitle": last_action if last_action == "start_update" else "",
+        },
         {
             "id": "refresh",
             "title": "Refresh snapshot",
@@ -301,10 +344,24 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any]) -> list[dict
 
 
 def _perform_action(action_id: str, conf) -> dict[str, Any]:
+    status = read_core_update_status()
     if action_id == "refresh":
         _write_ui_state(last_action="refresh", last_action_ts=time.time(), last_refresh_ts=time.time(), last_error="")
         return {"ok": True, "action": action_id}
-    if action_id == "cancel_update":
+    if action_id == "start_update":
+        current_rev = str(status.get("target_rev") or os.getenv("ADAOS_REV") or "").strip()
+        current_version = str(status.get("target_version") or BUILD_INFO.version or "").strip()
+        result = _post_local_admin(
+            conf,
+            "/api/admin/update/start",
+            {
+                "reason": "infrastate.start_update",
+                "countdown_sec": 60,
+                "target_rev": current_rev,
+                "target_version": current_version,
+            },
+        )
+    elif action_id == "cancel_update":
         result = _post_local_admin(conf, "/api/admin/update/cancel", {"reason": "infrastate.cancel"})
     elif action_id == "rollback":
         result = _post_local_admin(conf, "/api/admin/update/rollback", {"reason": "infrastate.rollback"})
@@ -337,6 +394,7 @@ def _snapshot() -> dict[str, Any]:
         "steps": _step_items(status, slots_payload, lifecycle, build),
         "slots": _slot_items(slots_payload),
         "logs": _status_log_items(report),
+        "events": list(reversed(_event_state())),
         "status": status,
         "lifecycle": lifecycle,
         "build_meta": build,
@@ -422,9 +480,12 @@ def on_webspace_reload(evt: Any) -> None:
 @subscribe("subnet.nats.up")
 @subscribe("subnet.stopping")
 @subscribe("subnet.stopped")
+@subscribe("core.update.status")
 def on_runtime_event(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     try:
+        event_type = str(getattr(evt, "type", "") or (payload.get("type") if isinstance(payload, dict) else "") or "runtime.event")
+        _append_event(event_type, payload)
         refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
     except Exception:
         _log.debug("failed to refresh infrastate snapshot from runtime event", exc_info=True)

@@ -97,6 +97,16 @@
 								"kind": "y",
 								"path": "data/infrastate/logs"
 							}
+						},
+						{
+							"id": "infrastate-events",
+							"type": "collection.grid",
+							"area": "main",
+							"title": "Event history",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/events"
+							}
 						}
 					]
 				}
@@ -138,6 +148,8 @@
 			"steps": [],
 			"slots": [],
 			"logs": []
+			,
+			"events": []
 		}
 	},
 	"contributions": [
