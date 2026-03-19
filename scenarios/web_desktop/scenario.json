@@ -98,6 +98,14 @@
                   {
                     "id": "workspace-manager",
                     "label": "Workspaces"
+                  },
+                  {
+                    "id": "yjs-reload",
+                    "label": "YJS reload"
+                  },
+                  {
+                    "id": "yjs-reset",
+                    "label": "YJS reset"
                   }
                 ]
               },
@@ -122,6 +130,16 @@
                   "params": {
                     "modalId": "workspace_manager"
                   }
+                },
+                {
+                  "on": "click:yjs-reload",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload"
+                },
+                {
+                  "on": "click:yjs-reset",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reset"
                 }
               ]
             },
