@@ -1,77 +1,85 @@
 {
-  "apps": [
-    {
-      "id": "voice_chat_app",
-      "title": "Voice",
-      "icon": "mic-outline",
-      "launchModal": "voice_chat_modal"
-    }
-  ],
-  "registry": {
-    "modals": {
-      "voice_chat_modal": {
-        "title": "Voice",
-        "schema": {
-          "id": "voice_chat_modal",
-          "layout": {
-            "type": "single",
-            "areas": [
-              {
-                "id": "main",
-                "role": "main"
-              }
-            ]
-          },
-          "widgets": [
-            {
-              "id": "voice-input",
-              "type": "ui.voiceInput",
-              "area": "main",
-              "inputs": {
-                "lang": "ru-RU",
-                "startLabel": "🎙️ Слушать",
-                "stopLabel": "⏹️ Стоп",
-                "sendCommand": "voice.chat.user",
-                "meta": { "route_id": "voice_chat" }
-              }
-            },
-            {
-              "id": "chat",
-              "type": "ui.chat",
-              "area": "main",
-              "title": "Voice chat",
-              "dataSource": {
-                "kind": "y",
-                "path": "data/voice_chat"
-              },
-              "inputs": {
-                "openCommand": "voice.chat.open",
-                "sendCommand": "voice.chat.user",
-                "meta": { "route_id": "voice_chat" },
-                "alignRightFrom": "user",
-                "autoSpeak": true,
-                "autoSpeakFrom": "hub",
-                "autoSpeakLang": "ru-RU"
-              }
-            }
-          ]
-        }
-      }
-    },
-    "widgets": {}
-  },
-  "ydoc_defaults": {
-    "data/voice_chat": {
-      "messages": []
-    }
-  },
-  "widgets": [],
-  "contributions": [
-    {
-      "extensionPoint": "desktop.apps",
-      "type": "app",
-      "id": "voice_chat_app",
-      "autoInstall": true
-    }
-  ]
+	"$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+	"apps": [
+		{
+			"id": "voice_chat_app",
+			"title": "Voice",
+			"icon": "mic-outline",
+			"launchModal": "voice_chat_modal"
+		}
+	],
+	"registry": {
+		"modals": {
+			"voice_chat_modal": {
+				"title": "Voice",
+				"schema": {
+					"id": "voice_chat_modal",
+					"layout": {
+						"type": "single",
+						"areas": [
+							{
+								"id": "main",
+								"role": "main"
+							}
+						]
+					},
+					"widgets": [
+						{
+							"id": "voice-input",
+							"type": "ui.voiceInput",
+							"area": "main",
+							"inputs": {
+								"lang": "ru-RU",
+								"startLabel": "🎙️ Слушать",
+								"stopLabel": "⏹️ Стоп",
+								"sendCommand": "voice.chat.user",
+								"meta": { "route_id": "voice_chat" },
+								"stt": {
+									"provider": "phone",
+									"pushToTalk": false,
+									"vad": true,
+									"vadSilenceMs": 900,
+									"autoSend": true
+								}
+							}
+						},
+						{
+							"id": "chat",
+							"type": "ui.chat",
+							"area": "main",
+							"title": "Voice chat",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/voice_chat"
+							},
+							"inputs": {
+								"openCommand": "voice.chat.open",
+								"sendCommand": "voice.chat.user",
+								"meta": { "route_id": "voice_chat" },
+								"alignRightFrom": "user",
+								"autoSpeak": true,
+								"autoSpeakFrom": "hub",
+								"autoSpeakLang": "ru-RU"
+							}
+						}
+					]
+				}
+			}
+		},
+		"widgets": {}
+	},
+	"ydoc_defaults": {
+		"data/voice_chat": {
+			"messages": []
+		}
+	},
+	"widgets": [],
+	"contributions": [
+		{
+			"extensionPoint": "desktop.apps",
+			"type": "app",
+			"id": "voice_chat_app",
+			"autoInstall": true
+		}
+	]
 }
