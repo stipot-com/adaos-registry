@@ -337,6 +337,8 @@ def _step_items(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle
         {"id": "commit", "title": "Runtime commit", "status": "idle", "description": str(build.get("runtime_git_short_commit") or build.get("git_short_sha") or "unknown")},
         {"id": "branch", "title": "Runtime branch", "status": "idle", "description": str(build.get("runtime_git_branch") or build.get("git_branch") or "unknown")},
         {"id": "target_rev", "title": "Target rev", "status": "idle", "description": str(status.get("target_rev") or "--")},
+        {"id": "drain_timeout", "title": "Drain timeout", "status": "idle", "description": str(status.get("drain_timeout_sec") or "--")},
+        {"id": "signal_delay", "title": "Signal delay", "status": "idle", "description": str(status.get("signal_delay_sec") or "--")},
         {"id": "command", "title": "Command", "status": "idle", "description": str(status.get("command") or "--")},
     ]
 
@@ -361,7 +363,11 @@ def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
     label = "Cancel update"
     if remaining_sec > 0:
         label = f"{label} ({remaining_sec}s)"
-    return [{"id": "cancel_update", "label": label, "title": label, "kind": "danger"}]
+    buttons = [{"id": "cancel_update", "label": label, "title": label, "kind": "danger"}]
+    reason = str(status.get("reason") or "").strip().lower()
+    if reason.startswith("github.push:") or reason.startswith("root.release:"):
+        buttons.insert(0, {"id": "refuse_update", "label": "Refuse update", "title": "Refuse update", "kind": "danger"})
+    return buttons
 
 
 def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: dict[str, Any], conf, build: dict[str, Any], ui_state: dict[str, Any]) -> dict[str, Any]:
@@ -396,8 +402,11 @@ def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: d
         "runtime_git_subject": str(build.get("runtime_git_subject") or ""),
         "target_rev": str(status.get("target_rev") or ""),
         "target_version": str(status.get("target_version") or ""),
+        "reason": str(status.get("reason") or ""),
         "scheduled_for": float(status.get("scheduled_for") or 0.0),
         "countdown_remaining_sec": _countdown_remaining_sec(status),
+        "drain_timeout_sec": float(status.get("drain_timeout_sec") or 0.0),
+        "signal_delay_sec": float(status.get("signal_delay_sec") or 0.0),
         "buttons": _summary_buttons(status),
     }
 
@@ -406,7 +415,7 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any]) -> list[dict
     last_refresh = float(ui_state.get("last_refresh_ts") or 0.0)
     last_action = str(ui_state.get("last_action") or "").strip()
     state = str(status.get("state") or "idle")
-    return [
+    items = [
         {
             "id": "start_update",
             "title": "Start update",
@@ -443,6 +452,21 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any]) -> list[dict
             "subtitle": last_action if last_action == "drain" else "",
         },
     ]
+    reason = str(status.get("reason") or "").strip().lower()
+    if state in {"countdown", "draining", "stopping"} and (
+        reason.startswith("github.push:") or reason.startswith("root.release:")
+    ):
+        items.insert(
+            2,
+            {
+                "id": "refuse_update",
+                "title": "Refuse update",
+                "status": "warn",
+                "description": "Decline root-requested update before restart begins",
+                "subtitle": last_action if last_action == "refuse_update" else "",
+            },
+        )
+    return items
 
 
 def _perform_action(action_id: str, conf) -> dict[str, Any]:
@@ -461,9 +485,11 @@ def _perform_action(action_id: str, conf) -> dict[str, Any]:
                 "countdown_sec": 60,
                 "target_rev": current_rev,
                 "target_version": current_version,
+                "drain_timeout_sec": 10,
+                "signal_delay_sec": 0.25,
             },
         )
-    elif action_id == "cancel_update":
+    elif action_id in {"cancel_update", "refuse_update"}:
         result = _post_local_admin(conf, "/api/admin/update/cancel", {"reason": "infrastate.cancel"})
     elif action_id == "rollback":
         result = _post_local_admin(conf, "/api/admin/update/rollback", {"reason": "infrastate.rollback"})

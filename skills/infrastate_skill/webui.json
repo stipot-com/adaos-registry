@@ -67,7 +67,9 @@
 									"on": "click",
 									"type": "callHost",
 									"target": "infrastate.action",
-									"params": {}
+									"params": {
+										"id": "$event.id"
+									}
 								}
 							]
 						},
