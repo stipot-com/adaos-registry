@@ -1,16 +1,1 @@
-{
-	"desktop.installed:default": {
-		"apps": [
-			"voice_chat_app",
-			"weather_app",
-			"infrastate_app",
-			"scenario:prompt_engineer_scenario",
-			"nlu_teacher_app"
-		],
-		"widgets": ["weather", "infrastate_widget"]
-	},
-	"desktop.installed:": {
-		"apps": ["scenario:prompt_engineer_scenario"],
-		"widgets": []
-	}
-}
+{}
