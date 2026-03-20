@@ -1,9 +1,3 @@
 {
-  "api_entry_point": "https://api.openweathermap.org/data/2.5/weather",
-  "default_city": "Moscow",
-<<<<<<< Updated upstream
-  "last_city": "Берлине"
-=======
-  "last_city": "нью-йорке"
->>>>>>> Stashed changes
+  "last_city": "Москве"
 }

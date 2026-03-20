@@ -127,9 +127,7 @@ def _load_skill_data_projections(ctx) -> None:
         except Exception:
             existing = []
         if existing:
-            _log.debug(
-                "weather_skill: projections already configured for subnet/weather.snapshot; skipping skill defaults"
-            )
+            _log.debug("weather_skill: projections already configured for subnet/weather.snapshot; skipping skill defaults")
             return
 
         skills_root = ctx.paths.skills_workspace_dir()
@@ -144,9 +142,7 @@ def _load_skill_data_projections(ctx) -> None:
         spec = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
         entries = spec.get("data_projections") or []
         if not isinstance(entries, list) or not entries:
-            _log.warning(
-                "weather_skill: skill.yaml has no data_projections; weather.snapshot projections may be misconfigured"
-            )
+            _log.warning("weather_skill: skill.yaml has no data_projections; weather.snapshot projections may be misconfigured")
             return
         ctx.projections.load_entries(entries)
         _log.debug("weather_skill: loaded %d skill-level data_projections", len(entries))
@@ -379,11 +375,7 @@ async def on_weather_intent(payload) -> None:
     ok, data = await _fetch_weather_async(api_entry_point, city)
     if not ok:
         if data.get("error_code") == "missing_city":
-            text_out = (
-                "? ?? ???? ?????????? ?????. "
-                "????????, ????????: ??????? ? ??????? / ?Weather in Paris?. "
-                "???? ??????????????: Moscow, Berlin, Paris, Tokyo, New York."
-            )
+            text_out = "Я не смог распознать город. " "Попробуй, например: «Погода в Москве» / «Weather in Paris». " "Пока поддерживаются: Moscow, Berlin, Paris, Tokyo, New York."
         else:
             text_out = _("prep.weather.api_error", city=city)
         await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
@@ -396,6 +388,7 @@ async def on_weather_intent(payload) -> None:
         description=data["description"],
     )
     await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
+
 
 def resolve_location(*, text: str, lang: str = "ru", slots: Dict[str, Any] | None = None, resources: Dict[str, Any] | None = None) -> Optional[Tuple[str, float]]:
     token = (slots or {}).get("place_raw")
@@ -447,12 +440,7 @@ async def on_weather_city_changed(evt) -> None:
     if not isinstance(payload, dict):
         return
     meta = payload.get("_meta") if isinstance(payload, dict) else None
-    raw_ws = (
-        (payload.get("webspace_id") or payload.get("workspace_id"))
-        or (meta or {}).get("webspace_id")
-        or (meta or {}).get("workspace_id")
-        or None
-    )
+    raw_ws = (payload.get("webspace_id") or payload.get("workspace_id")) or (meta or {}).get("webspace_id") or (meta or {}).get("workspace_id") or None
     webspace_id: Optional[str] = None
     if isinstance(raw_ws, str) and raw_ws.strip():
         webspace_id = raw_ws.strip()
