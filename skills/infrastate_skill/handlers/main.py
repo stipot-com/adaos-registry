@@ -13,10 +13,12 @@ import requests
 from adaos.build_info import BUILD_INFO
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet, skill_memory_get, skill_memory_set
-from adaos.services.core_slots import slot_status
+from adaos.services.core_slots import active_slot_manifest, slot_status
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.node_config import load_config
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
+from adaos.services.scenario.webspace_runtime import WebspaceService
+from adaos.services.yjs.webspace import default_webspace_id
 
 _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
@@ -67,6 +69,7 @@ def _git_text(*args: str) -> str:
 
 
 def _build_meta() -> dict[str, Any]:
+    active_manifest = active_slot_manifest() or {}
     return {
         "version": BUILD_INFO.version,
         "build_date": BUILD_INFO.build_date,
@@ -75,6 +78,11 @@ def _build_meta() -> dict[str, Any]:
         "git_branch": _git_text("rev-parse", "--abbrev-ref", "HEAD"),
         "git_subject": _git_text("show", "-s", "--format=%s", "HEAD"),
         "repo_root": str(_repo_root() or ""),
+        "runtime_version": str(active_manifest.get("target_version") or ""),
+        "runtime_git_commit": str(active_manifest.get("git_commit") or ""),
+        "runtime_git_short_commit": str(active_manifest.get("git_short_commit") or ""),
+        "runtime_git_branch": str(active_manifest.get("git_branch") or active_manifest.get("target_rev") or ""),
+        "runtime_git_subject": str(active_manifest.get("git_subject") or ""),
     }
 
 
@@ -157,6 +165,17 @@ def _extract_action_id(payload: Any) -> str:
 
 def _status_log_items(status: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    command = str(status.get("command") or "").strip()
+    if command:
+        items.append(
+            {
+                "id": "command",
+                "title": "command",
+                "status": "idle",
+                "preview": command[:400].strip(),
+                "content": command,
+            }
+        )
     for key, title in (("stdout", "stdout"), ("stderr", "stderr")):
         text = str(status.get(key) or "").strip()
         if not text:
@@ -187,6 +206,27 @@ def _status_log_items(status: dict[str, Any]) -> list[dict[str, Any]]:
 def _build_items(build: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {
+            "id": "runtime_version",
+            "title": "Runtime version",
+            "status": "ok",
+            "description": str(build.get("runtime_version") or build.get("version") or "unknown"),
+            "subtitle": str(build.get("runtime_git_short_commit") or ""),
+        },
+        {
+            "id": "runtime_head",
+            "title": "Runtime commit",
+            "status": "ok",
+            "description": str(build.get("runtime_git_commit") or build.get("git_sha") or "unknown"),
+            "subtitle": str(build.get("runtime_git_branch") or build.get("git_branch") or ""),
+        },
+        {
+            "id": "runtime_subject",
+            "title": "Runtime subject",
+            "status": "idle",
+            "description": str(build.get("runtime_git_subject") or build.get("git_subject") or "unknown"),
+            "subtitle": str(build.get("runtime_git_short_commit") or build.get("git_short_sha") or ""),
+        },
+        {
             "id": "version",
             "title": "AdaOS version",
             "status": "ok",
@@ -195,21 +235,21 @@ def _build_items(build: dict[str, Any]) -> list[dict[str, Any]]:
         },
         {
             "id": "git_head",
-            "title": "Git HEAD",
+            "title": "Source Git HEAD",
             "status": "idle",
             "description": str(build.get("git_short_sha") or "unknown"),
             "subtitle": str(build.get("git_subject") or build.get("git_branch") or ""),
         },
         {
             "id": "git_full_head",
-            "title": "Git commit",
+            "title": "Source commit",
             "status": "idle",
             "description": str(build.get("git_sha") or "unknown"),
             "subtitle": str(build.get("git_branch") or ""),
         },
         {
             "id": "git_branch",
-            "title": "Git branch",
+            "title": "Source branch",
             "status": "idle",
             "description": str(build.get("git_branch") or "unknown"),
             "subtitle": str(build.get("repo_root") or ""),
@@ -254,8 +294,8 @@ def _slot_items(slots_payload: dict[str, Any]) -> list[dict[str, Any]]:
 def _step_items(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: dict[str, Any], build: dict[str, Any]) -> list[dict[str, Any]]:
     state = str(status.get("state") or "idle")
     phase = str(status.get("phase") or "")
-    active = str(slots_payload.get("active_slot") or "—")
-    previous = str(slots_payload.get("previous_slot") or "—")
+    active = str(slots_payload.get("active_slot") or "--")
+    previous = str(slots_payload.get("previous_slot") or "--")
     node_state = str(lifecycle.get("node_state") or "ready")
     return [
         {"id": "lifecycle", "title": "Lifecycle", "status": node_state, "description": str(lifecycle.get("reason") or "ready")},
@@ -263,14 +303,38 @@ def _step_items(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle
         {"id": "active_slot", "title": "Active slot", "status": "ok", "description": active},
         {"id": "previous_slot", "title": "Previous slot", "status": "idle", "description": previous},
         {"id": "build", "title": "Build", "status": "ok", "description": str(build.get("version") or "unknown")},
-        {"id": "commit", "title": "Commit", "status": "idle", "description": str(build.get("git_short_sha") or "unknown")},
-        {"id": "target_rev", "title": "Target rev", "status": "idle", "description": str(status.get("target_rev") or "—")},
-        {"id": "command", "title": "Command", "status": "idle", "description": str(status.get("command") or "—")},
+        {"id": "commit", "title": "Runtime commit", "status": "idle", "description": str(build.get("runtime_git_short_commit") or build.get("git_short_sha") or "unknown")},
+        {"id": "branch", "title": "Runtime branch", "status": "idle", "description": str(build.get("runtime_git_branch") or build.get("git_branch") or "unknown")},
+        {"id": "target_rev", "title": "Target rev", "status": "idle", "description": str(status.get("target_rev") or "--")},
+        {"id": "command", "title": "Command", "status": "idle", "description": str(status.get("command") or "--")},
     ]
 
 
+def _countdown_remaining_sec(status: dict[str, Any]) -> int:
+    try:
+        scheduled_for = float(status.get("scheduled_for") or 0.0)
+    except Exception:
+        scheduled_for = 0.0
+    if scheduled_for <= 0:
+        return 0
+    return max(0, int(round(scheduled_for - time.time())))
+
+
+def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
+    state = str(status.get("state") or "")
+    remaining_sec = _countdown_remaining_sec(status)
+    if state not in {"countdown", "draining", "stopping"}:
+        return []
+    if remaining_sec <= 0 and state == "countdown":
+        return []
+    label = "Stop update"
+    if remaining_sec > 0:
+        label = f"{label} ({remaining_sec}s)"
+    return [{"id": "cancel_update", "label": label, "title": label, "kind": "danger"}]
+
+
 def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: dict[str, Any], conf, build: dict[str, Any], ui_state: dict[str, Any]) -> dict[str, Any]:
-    active = str(slots_payload.get("active_slot") or "—")
+    active = str(slots_payload.get("active_slot") or "--")
     phase = str(status.get("phase") or "")
     state = str(status.get("state") or "idle")
     message = str(status.get("message") or lifecycle.get("reason") or "No update in progress")
@@ -284,7 +348,7 @@ def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: d
     return {
         "label": "Core update",
         "value": state,
-        "subtitle": f"slot {active} | {build.get('git_short_sha') or build.get('version') or 'unknown'}",
+        "subtitle": f"slot {active} | {build.get('runtime_git_short_commit') or build.get('git_short_sha') or build.get('version') or 'unknown'}",
         "description": message,
         "phase": phase,
         "role": str(getattr(conf, "role", "") or ""),
@@ -295,8 +359,15 @@ def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: d
         "draining": bool(lifecycle.get("draining")),
         "version": str(build.get("version") or ""),
         "git_short_sha": str(build.get("git_short_sha") or ""),
+        "runtime_git_commit": str(build.get("runtime_git_commit") or ""),
+        "runtime_git_short_commit": str(build.get("runtime_git_short_commit") or ""),
+        "runtime_git_branch": str(build.get("runtime_git_branch") or ""),
+        "runtime_git_subject": str(build.get("runtime_git_subject") or ""),
         "target_rev": str(status.get("target_rev") or ""),
         "target_version": str(status.get("target_version") or ""),
+        "scheduled_for": float(status.get("scheduled_for") or 0.0),
+        "countdown_remaining_sec": _countdown_remaining_sec(status),
+        "buttons": _summary_buttons(status),
     }
 
 
@@ -405,8 +476,25 @@ def _snapshot() -> dict[str, Any]:
     return snapshot
 
 
+def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
+    ids: set[str] = set()
+    token = str(webspace_id or "").strip()
+    if token:
+        ids.add(token)
+    ids.add(default_webspace_id())
+    try:
+        for info in WebspaceService().list(mode="mixed"):
+            slot = str(getattr(info, "id", "") or "").strip()
+            if slot:
+                ids.add(slot)
+    except Exception:
+        _log.debug("failed to enumerate webspaces for infrastate projection", exc_info=True)
+    return sorted(ids)
+
+
 def _project(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
-    ctx_subnet.set("infrastate.snapshot", snapshot, webspace_id=webspace_id)
+    for target_ws in _projection_webspace_ids(webspace_id):
+        ctx_subnet.set("infrastate.snapshot", snapshot, webspace_id=target_ws)
 
 
 def _webspace_id_from_payload(payload: Any) -> str | None:
