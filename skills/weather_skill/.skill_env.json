@@ -1,3 +1,4 @@
 {
-  "last_city": "Москве"
+  "api_entry_point": "https://api.open-meteo.com/v1/forecast",
+  "default_city": "Moscow"
 }

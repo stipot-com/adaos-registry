@@ -177,8 +177,8 @@ def _event_meta(evt: Any) -> Dict[str, Any]:
 def _load_config() -> Tuple[str, Optional[str]]:
     """Load runtime configuration from the SDK stores."""
 
-    api_entry_point = DEFAULT_API_ENDPOINT
-    default_city = "Moscow"
+    api_entry_point = str(memory_get("api_entry_point") or DEFAULT_API_ENDPOINT)
+    default_city = _normalize_city_token(memory_get("default_city")) or "Moscow"
 
     # Legacy support: migrate values from the local prep cache if present.
     try:
@@ -188,10 +188,10 @@ def _load_config() -> Tuple[str, Optional[str]]:
             if prep_file.exists():
                 data = json.loads(prep_file.read_text(encoding="utf-8"))
                 resources = data.get("resources") or {}
-                if not default_city and resources.get("default_city"):
+                if not memory_get("default_city") and resources.get("default_city"):
                     default_city = resources["default_city"]
                     memory_set("default_city", default_city)
-                if resources.get("api_entry_point"):
+                if not memory_get("api_entry_point") and resources.get("api_entry_point"):
                     api_entry_point = resources["api_entry_point"]
                     memory_set("api_entry_point", api_entry_point)
     except Exception:
