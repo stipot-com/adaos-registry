@@ -616,6 +616,7 @@ def on_skill_activated(evt: Any) -> None:
     refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
 
 
+@subscribe("desktop.webspace.refresh")
 @subscribe("desktop.webspace.reload")
 def on_webspace_reload(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)

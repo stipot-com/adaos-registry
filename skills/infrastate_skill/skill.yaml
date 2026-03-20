@@ -9,6 +9,7 @@ events:
   subscribe:
     - 'infrastate.refresh'
     - 'skills.activated'
+    - 'desktop.webspace.refresh'
     - 'desktop.webspace.reload'
     - 'sys.ready'
     - 'subnet.nats.up'
