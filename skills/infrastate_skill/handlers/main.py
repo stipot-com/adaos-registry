@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import requests
+import yaml
 
 from adaos.build_info import BUILD_INFO
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet, skill_memory_get, skill_memory_set
+from adaos.services.agent_context import get_ctx
 from adaos.services.core_slots import active_slot_manifest, slot_status
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.node_config import load_config
@@ -43,12 +45,41 @@ def _repo_root() -> Path | None:
     return None
 
 
+def _skill_root() -> Path | None:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "skill.yaml").exists():
+            return parent
+    return None
+
+
 def _read_json(path: Path) -> dict[str, Any] | None:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
     return raw if isinstance(raw, dict) else None
+
+
+def _ensure_skill_data_projections() -> None:
+    try:
+        ctx = get_ctx()
+        existing = ctx.projections.resolve("subnet", "infrastate.snapshot")
+        if existing:
+            return
+        skill_root = _skill_root()
+        if skill_root is None:
+            return
+        manifest_path = skill_root / "skill.yaml"
+        payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(payload, dict):
+            return
+        entries = payload.get("data_projections") or []
+        if not isinstance(entries, list) or not entries:
+            return
+        ctx.projections.load_entries(entries)
+        _log.debug("loaded infrastate data_projections entries=%d", len(entries))
+    except Exception:
+        _log.debug("failed to load infrastate data_projections", exc_info=True)
 
 
 def _git_text(*args: str) -> str:
@@ -327,7 +358,7 @@ def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     if remaining_sec <= 0 and state == "countdown":
         return []
-    label = "Stop update"
+    label = "Cancel update"
     if remaining_sec > 0:
         label = f"{label} ({remaining_sec}s)"
     return [{"id": "cancel_update", "label": label, "title": label, "kind": "danger"}]
@@ -451,6 +482,7 @@ def _perform_action(action_id: str, conf) -> dict[str, Any]:
 
 
 def _snapshot() -> dict[str, Any]:
+    _ensure_skill_data_projections()
     conf = load_config()
     status = read_core_update_status()
     slots_payload = slot_status()
@@ -514,8 +546,7 @@ def _webspace_id_from_payload(payload: Any) -> str | None:
 @tool("get_snapshot")
 def get_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     snapshot = _snapshot()
-    if webspace_id:
-        _project(snapshot, webspace_id=webspace_id)
+    _project(snapshot, webspace_id=webspace_id)
     return snapshot
 
 
@@ -565,6 +596,7 @@ def on_webspace_reload(evt: Any) -> None:
     refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
 
 
+@subscribe("sys.ready")
 @subscribe("subnet.nats.up")
 @subscribe("subnet.stopping")
 @subscribe("subnet.stopped")

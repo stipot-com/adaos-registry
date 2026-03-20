@@ -10,6 +10,7 @@ events:
     - 'infrastate.refresh'
     - 'skills.activated'
     - 'desktop.webspace.reload'
+    - 'sys.ready'
     - 'subnet.nats.up'
     - 'subnet.stopping'
     - 'subnet.stopped'
