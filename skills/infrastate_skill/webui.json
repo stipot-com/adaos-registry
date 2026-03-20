@@ -52,16 +52,19 @@
 						},
 						{
 							"id": "infrastate-actions",
-							"type": "collection.grid",
+							"type": "ui.actions",
 							"area": "main",
 							"title": "Actions",
 							"dataSource": {
 								"kind": "y",
 								"path": "data/infrastate/actions"
 							},
+							"inputs": {
+								"size": "small"
+							},
 							"actions": [
 								{
-									"on": "select",
+									"on": "click",
 									"type": "callHost",
 									"target": "infrastate.action",
 									"params": {}
@@ -70,52 +73,91 @@
 						},
 						{
 							"id": "infrastate-build",
-							"type": "collection.grid",
+							"type": "ui.list",
 							"area": "main",
 							"title": "Build",
 							"dataSource": {
 								"kind": "y",
 								"path": "data/infrastate/build"
+							},
+							"inputs": {
+								"titleKey": "title",
+								"subtitleKey": "description",
+								"detailsPath": "",
+								"showDetails": false,
+								"itemAccordion": false,
+								"emptyText": "No build metadata yet"
 							}
 						},
 						{
 							"id": "infrastate-steps",
-							"type": "collection.grid",
+							"type": "ui.list",
 							"area": "main",
 							"title": "Pipeline",
 							"dataSource": {
 								"kind": "y",
 								"path": "data/infrastate/steps"
+							},
+							"inputs": {
+								"titleKey": "title",
+								"subtitleKey": "description",
+								"showDetails": false,
+								"itemAccordion": false,
+								"emptyText": "No pipeline state yet"
 							}
 						},
 						{
 							"id": "infrastate-slots",
-							"type": "collection.grid",
+							"type": "ui.list",
 							"area": "main",
 							"title": "Core slots",
 							"dataSource": {
 								"kind": "y",
 								"path": "data/infrastate/slots"
+							},
+							"inputs": {
+								"titleKey": "title",
+								"subtitleKey": "subtitle",
+								"detailsPath": "",
+								"showDetails": false,
+								"itemAccordion": false,
+								"emptyText": "No slot manifests yet"
 							}
 						},
 						{
 							"id": "infrastate-logs",
-							"type": "collection.grid",
+							"type": "ui.list",
 							"area": "main",
 							"title": "Last logs",
 							"dataSource": {
 								"kind": "y",
 								"path": "data/infrastate/logs"
+							},
+							"inputs": {
+								"titleKey": "title",
+								"subtitleKey": "preview",
+								"detailsPath": "content",
+								"showDetails": true,
+								"itemAccordion": true,
+								"emptyText": "No logs yet"
 							}
 						},
 						{
 							"id": "infrastate-events",
-							"type": "collection.grid",
+							"type": "ui.list",
 							"area": "main",
 							"title": "Event history",
 							"dataSource": {
 								"kind": "y",
 								"path": "data/infrastate/events"
+							},
+							"inputs": {
+								"titleKey": "type",
+								"subtitleKey": "preview",
+								"detailsPath": "payload",
+								"showDetails": true,
+								"itemAccordion": true,
+								"emptyText": "No events yet"
 							}
 						}
 					]
