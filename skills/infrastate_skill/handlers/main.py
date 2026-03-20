@@ -18,6 +18,8 @@ from adaos.services.agent_context import get_ctx
 from adaos.services.core_slots import active_slot_manifest, slot_status
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.node_config import load_config
+from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime_sidecar_enabled
+from adaos.services.reliability import reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.yjs.webspace import default_webspace_id
@@ -58,6 +60,180 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     except Exception:
         return None
     return raw if isinstance(raw, dict) else None
+
+
+def _read_last_jsonl_record(path: Path, *, max_bytes: int = 131072) -> dict[str, Any] | None:
+    try:
+        if not path.exists() or not path.is_file():
+            return None
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - max_bytes))
+            chunk = fh.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    for line in reversed(chunk.splitlines()):
+        text = str(line or "").strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _read_recent_jsonl_records(path: Path, *, max_bytes: int = 262144, limit: int = 200) -> list[dict[str, Any]]:
+    try:
+        if not path.exists() or not path.is_file():
+            return []
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - max_bytes))
+            chunk = fh.read().decode("utf-8", errors="replace")
+    except Exception:
+        return []
+    items: list[dict[str, Any]] = []
+    for line in chunk.splitlines():
+        text = str(line or "").strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            items.append(payload)
+    return items[-limit:]
+
+
+def _route_info(conf) -> tuple[str | None, bool | None]:
+    role = str(getattr(conf, "role", "") or "").strip().lower()
+    if role == "hub":
+        return "hub", None
+    if role != "member":
+        return None, None
+    try:
+        from adaos.services.subnet.link_client import get_member_link_client
+
+        connected = bool(get_member_link_client().is_connected())
+        return ("ws" if connected else "none"), connected
+    except Exception:
+        return None, None
+
+
+def _local_ready() -> bool:
+    try:
+        from adaos.services.bootstrap import is_ready
+
+        return bool(is_ready())
+    except Exception:
+        lifecycle = runtime_lifecycle_snapshot()
+        return bool(lifecycle.get("accepting_new_work"))
+
+
+def _safe_json_text(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False, indent=2)
+    except Exception:
+        return str(value)
+
+
+def _ui_level_from_channel_status(status: str, *, stability_state: str = "") -> str:
+    if status == "ready":
+        if stability_state in {"flapping", "unstable"}:
+            return "warn"
+        return "ok"
+    if status == "degraded":
+        return "warn"
+    if status == "down":
+        return "error"
+    return "idle"
+
+
+def _transport_diag_snapshot() -> dict[str, Any]:
+    sidecar_diag = None
+    sidecar_enabled = False
+    try:
+        sidecar_enabled = bool(realtime_sidecar_enabled())
+        sidecar_diag = _read_last_jsonl_record(realtime_sidecar_diag_path())
+    except Exception:
+        sidecar_diag = None
+
+    hub_diag = None
+    hub_diag_recent: list[dict[str, Any]] = []
+    try:
+        raw_path = str(os.getenv("HUB_NATS_WS_DIAG_FILE", "") or "").strip()
+        if raw_path:
+            hub_diag_path = Path(raw_path)
+            if not hub_diag_path.is_absolute():
+                hub_diag_path = Path.cwd() / hub_diag_path
+        else:
+            hub_diag_path = _base_dir() / "diagnostics" / "nats_ws_diag.jsonl"
+        hub_diag = _read_last_jsonl_record(hub_diag_path)
+        hub_diag_recent = _read_recent_jsonl_records(hub_diag_path)
+    except Exception:
+        hub_diag = None
+        hub_diag_recent = []
+
+    now_ts = time.time()
+    recent_tags: set[str] = set()
+    recent_errors = 0
+    recent_records = 0
+    for item in hub_diag_recent:
+        try:
+            ts = float(item.get("ts") or 0.0)
+        except Exception:
+            ts = 0.0
+        if ts < (now_ts - 300.0):
+            continue
+        recent_records += 1
+        tag = str(item.get("ws_tag") or "").strip()
+        if tag:
+            recent_tags.add(tag)
+        if item.get("err"):
+            recent_errors += 1
+
+    transport_assessment = {
+        "state": "stable",
+        "reason": "no recent transport anomalies detected",
+        "recent_records_5m": recent_records,
+        "recent_ws_tags_5m": sorted(recent_tags),
+        "recent_tag_changes_5m": max(0, len(recent_tags) - 1),
+        "recent_error_records_5m": recent_errors,
+    }
+    if recent_errors >= 2 or len(recent_tags) >= 3:
+        transport_assessment["state"] = "flapping"
+        transport_assessment["reason"] = "multiple recent transport resets/errors detected in nats_ws_diag"
+    elif recent_errors >= 1 or len(recent_tags) >= 2:
+        transport_assessment["state"] = "unstable"
+        transport_assessment["reason"] = "recent transport reset/error detected in nats_ws_diag"
+
+    return {
+        "sidecar_enabled": sidecar_enabled,
+        "sidecar_diag": sidecar_diag,
+        "hub_ws_diag": hub_diag,
+        "hub_ws_diag_recent": hub_diag_recent[-12:],
+        "root_transport_assessment": transport_assessment,
+    }
+
+
+def _reliability_snapshot(conf, lifecycle: dict[str, Any]) -> dict[str, Any]:
+    route_mode, connected_to_hub = _route_info(conf)
+    return reliability_snapshot(
+        node_id=str(getattr(conf, "node_id", "") or ""),
+        subnet_id=str(getattr(conf, "subnet_id", "") or ""),
+        role=str(getattr(conf, "role", "") or ""),
+        local_ready=_local_ready(),
+        node_state=str(lifecycle.get("node_state") or "ready"),
+        draining=bool(lifecycle.get("draining")),
+        route_mode=route_mode,
+        connected_to_hub=connected_to_hub,
+    )
 
 
 def _ensure_skill_data_projections() -> None:
@@ -370,7 +546,150 @@ def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
     return buttons
 
 
-def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: dict[str, Any], conf, build: dict[str, Any], ui_state: dict[str, Any]) -> dict[str, Any]:
+def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[str, Any]) -> str:
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    tree = runtime.get("readiness_tree") if isinstance(runtime.get("readiness_tree"), dict) else {}
+    channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
+    transport_assessment = (
+        transport_diag.get("root_transport_assessment")
+        if isinstance(transport_diag.get("root_transport_assessment"), dict)
+        else {}
+    )
+
+    root = tree.get("root_control") if isinstance(tree.get("root_control"), dict) else {}
+    root_diag = channel_diag.get("root_control") if isinstance(channel_diag.get("root_control"), dict) else {}
+    route = tree.get("route") if isinstance(tree.get("route"), dict) else {}
+    route_diag = channel_diag.get("route") if isinstance(channel_diag.get("route"), dict) else {}
+
+    root_status = str(root.get("status") or "unknown")
+    root_stability = root_diag.get("stability") if isinstance(root_diag.get("stability"), dict) else {}
+    route_status = str(route.get("status") or "unknown")
+    route_stability = route_diag.get("stability") if isinstance(route_diag.get("stability"), dict) else {}
+    root_state = str(root_stability.get("state") or "unknown")
+    transport_state = str(transport_assessment.get("state") or "")
+    if transport_state in {"unstable", "flapping"} and root_status == "ready":
+        root_status = "degraded"
+    if transport_state in {"unstable", "flapping"} and route_status == "ready":
+        route_status = "degraded"
+    if transport_state in {"unstable", "flapping"} and root_state in {"stable", "unknown"}:
+        root_state = transport_state
+    return (
+        f"realtime root={root_status}/{root_state}"
+        f" route={route_status}/{route_stability.get('state') or 'unknown'}"
+    )
+
+
+def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any]) -> list[dict[str, Any]]:
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    tree = runtime.get("readiness_tree") if isinstance(runtime.get("readiness_tree"), dict) else {}
+    channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
+    signals = runtime.get("signals") if isinstance(runtime.get("signals"), dict) else {}
+    transport_assessment = (
+        transport_diag.get("root_transport_assessment")
+        if isinstance(transport_diag.get("root_transport_assessment"), dict)
+        else {}
+    )
+
+    def _channel_item(channel_id: str, title: str, note: str = "") -> dict[str, Any]:
+        tree_item = tree.get(channel_id) if isinstance(tree.get(channel_id), dict) else {}
+        diag_item = channel_diag.get(channel_id) if isinstance(channel_diag.get(channel_id), dict) else {}
+        signal_item = signals.get(channel_id) if isinstance(signals.get(channel_id), dict) else {}
+        status = str(tree_item.get("status") or diag_item.get("status") or "unknown")
+        stability = diag_item.get("stability") if isinstance(diag_item.get("stability"), dict) else {}
+        effective_state = str(stability.get("state") or "unknown")
+        if channel_id in {"root_control", "route"}:
+            transport_state = str(transport_assessment.get("state") or "")
+            if transport_state in {"unstable", "flapping"} and status == "ready":
+                status = "degraded"
+            if transport_state in {"unstable", "flapping"} and effective_state in {"stable", "unknown"}:
+                effective_state = transport_state
+        if stability:
+            description = (
+                f"{status} | {effective_state} "
+                f"score={stability.get('score') if stability.get('score') is not None else '?'}"
+            )
+        else:
+            description = status
+        subtitle = str(tree_item.get("summary") or diag_item.get("summary") or note or "").strip()
+        if note:
+            subtitle = f"{subtitle} | {note}" if subtitle else note
+        content = {
+            "readiness": tree_item,
+            "diagnostics": diag_item,
+            "signal": signal_item,
+        }
+        return {
+            "id": channel_id,
+            "title": title,
+            "status": _ui_level_from_channel_status(status, stability_state=effective_state),
+            "description": description,
+            "subtitle": subtitle,
+            "content": _safe_json_text(content),
+        }
+
+    items = [
+        _channel_item(
+            "root_control",
+            "Hub -> Root control",
+            note="Repeated disconnects here indicate upstream realtime instability, even when the browser stays connected to the hub.",
+        ),
+        _channel_item(
+            "route",
+            "Root relay route",
+            note="This path matters for root-proxied browser traffic; direct browser -> hub still keeps this panel visible through local Yjs.",
+        ),
+        _channel_item(
+            "sync",
+            "Browser -> Hub Yjs projection",
+            note="This panel is projected via local Yjs. If it updates while hub -> root is down, the browser-hub realtime path is healthy.",
+        ),
+    ]
+
+    sidecar_diag = transport_diag.get("sidecar_diag") if isinstance(transport_diag.get("sidecar_diag"), dict) else None
+    hub_ws_diag = transport_diag.get("hub_ws_diag") if isinstance(transport_diag.get("hub_ws_diag"), dict) else None
+    if sidecar_diag or hub_ws_diag or transport_diag.get("sidecar_enabled"):
+        source = "sidecar" if sidecar_diag else "hub"
+        record = sidecar_diag or hub_ws_diag or {}
+        last_error = str(record.get("last_error") or "").strip()
+        description = f"{source} transport"
+        if isinstance(record, dict) and record.get("remote_url"):
+            description += f" | {record.get('remote_url')}"
+        subtitle = last_error or "latest transport snapshot"
+        items.append(
+            {
+                "id": "transport_diag",
+                "title": "Realtime transport diag",
+                "status": "warn"
+                if transport_assessment.get("state") in {"unstable", "flapping"} or last_error
+                else "ok"
+                if record
+                else "idle",
+                "description": f"{description} | {transport_assessment.get('state') or 'unknown'}",
+                "subtitle": subtitle,
+                "content": _safe_json_text(
+                    {
+                        "sidecar_enabled": bool(transport_diag.get("sidecar_enabled")),
+                        "sidecar_diag": sidecar_diag,
+                        "hub_ws_diag": hub_ws_diag,
+                        "hub_ws_diag_recent": transport_diag.get("hub_ws_diag_recent"),
+                        "root_transport_assessment": transport_assessment,
+                    }
+                ),
+            }
+        )
+    return items
+
+
+def _summary(
+    status: dict[str, Any],
+    slots_payload: dict[str, Any],
+    lifecycle: dict[str, Any],
+    conf,
+    build: dict[str, Any],
+    ui_state: dict[str, Any],
+    reliability: dict[str, Any],
+    transport_diag: dict[str, Any],
+) -> dict[str, Any]:
     active = str(slots_payload.get("active_slot") or "--")
     phase = str(status.get("phase") or "")
     state = str(status.get("state") or "idle")
@@ -382,6 +701,16 @@ def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: d
         if last_action_at:
             suffix += f" @ {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_action_at))}"
         message += suffix
+    reliability_note = _reliability_summary_note(reliability, transport_diag)
+    if reliability_note:
+        message += f" | {reliability_note}"
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    tree = runtime.get("readiness_tree") if isinstance(runtime.get("readiness_tree"), dict) else {}
+    channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
+    root_tree = tree.get("root_control") if isinstance(tree.get("root_control"), dict) else {}
+    route_tree = tree.get("route") if isinstance(tree.get("route"), dict) else {}
+    root_diag = channel_diag.get("root_control") if isinstance(channel_diag.get("root_control"), dict) else {}
+    route_diag = channel_diag.get("route") if isinstance(channel_diag.get("route"), dict) else {}
     return {
         "label": "Core update",
         "value": state,
@@ -403,6 +732,11 @@ def _summary(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle: d
         "target_rev": str(status.get("target_rev") or ""),
         "target_version": str(status.get("target_version") or ""),
         "reason": str(status.get("reason") or ""),
+        "root_control_status": str(root_tree.get("status") or "unknown"),
+        "root_control_stability": str(((root_diag.get("stability") or {}) if isinstance(root_diag, dict) else {}).get("state") or "unknown"),
+        "root_control_score": (((root_diag.get("stability") or {}) if isinstance(root_diag, dict) else {}).get("score")),
+        "route_status": str(route_tree.get("status") or "unknown"),
+        "route_stability": str(((route_diag.get("stability") or {}) if isinstance(route_diag, dict) else {}).get("state") or "unknown"),
         "scheduled_for": float(status.get("scheduled_for") or 0.0),
         "countdown_remaining_sec": _countdown_remaining_sec(status),
         "drain_timeout_sec": float(status.get("drain_timeout_sec") or 0.0),
@@ -515,17 +849,22 @@ def _snapshot() -> dict[str, Any]:
     lifecycle = runtime_lifecycle_snapshot()
     build = _build_meta()
     ui_state = _ui_state()
+    reliability = _reliability_snapshot(conf, lifecycle)
+    transport_diag = _transport_diag_snapshot()
     report = _read_json(_base_dir() / "state" / "core_update" / "status.json") or {}
     snapshot = {
-        "summary": _summary(status, slots_payload, lifecycle, conf, build, ui_state),
+        "summary": _summary(status, slots_payload, lifecycle, conf, build, ui_state, reliability, transport_diag),
         "actions": _action_items(status, ui_state),
         "build": _build_items(build),
         "steps": _step_items(status, slots_payload, lifecycle, build),
+        "realtime": _realtime_items(reliability, transport_diag),
         "slots": _slot_items(slots_payload),
         "logs": _status_log_items(report),
         "events": list(reversed(_event_state())),
         "status": status,
         "lifecycle": lifecycle,
+        "reliability": reliability,
+        "transport_diag": transport_diag,
         "build_meta": build,
         "ui_state": ui_state,
         "slots_meta": slots_payload,
@@ -625,6 +964,8 @@ def on_webspace_reload(evt: Any) -> None:
 
 @subscribe("sys.ready")
 @subscribe("subnet.nats.up")
+@subscribe("subnet.nats.down")
+@subscribe("subnet.nats.reconnect")
 @subscribe("subnet.stopping")
 @subscribe("subnet.stopped")
 @subscribe("core.update.status")

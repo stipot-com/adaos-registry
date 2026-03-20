@@ -1,5 +1,242 @@
 {
   "infrastate.ui_state": {
-    "last_refresh_ts": 1773935269.6584902
-  }
+    "last_refresh_ts": 1774014513.399837
+  },
+  "infrastate.events": [
+    {
+      "id": "runtime.event:1774010436377",
+      "type": "runtime.event",
+      "ts": 1774010436.3774283,
+      "preview": "{\"state\": \"idle\", \"updated_at\": 1774010436.1907122, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"2be3c6a4-26e0-4232-9b35-2d103c978654\"}}",
+      "payload": {
+        "state": "idle",
+        "updated_at": 1774010436.1907122,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "2be3c6a4-26e0-4232-9b35-2d103c978654"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774010436658",
+      "type": "runtime.event",
+      "ts": 1774010436.6584222,
+      "preview": "{\"ts\": 1774010436.194714, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"a9ef58f7-0d80-44a5-9dc9-94f49af452f1\"}}",
+      "payload": {
+        "ts": 1774010436.194714,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "a9ef58f7-0d80-44a5-9dc9-94f49af452f1"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774010935014",
+      "type": "runtime.event",
+      "ts": 1774010935.0144997,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774010935821",
+      "type": "runtime.event",
+      "ts": 1774010935.8215096,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774011713013",
+      "type": "runtime.event",
+      "ts": 1774011713.0135639,
+      "preview": "{\"state\": \"idle\", \"updated_at\": 1774011712.8228712, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"956b0f37-2e43-4599-8a63-80333aa23151\"}}",
+      "payload": {
+        "state": "idle",
+        "updated_at": 1774011712.8228712,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "956b0f37-2e43-4599-8a63-80333aa23151"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774011713336",
+      "type": "runtime.event",
+      "ts": 1774011713.336828,
+      "preview": "{\"ts\": 1774011712.824874, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"426e9501-1a6f-4f80-9f14-152e962c6dd3\"}}",
+      "payload": {
+        "ts": 1774011712.824874,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "426e9501-1a6f-4f80-9f14-152e962c6dd3"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774011865475",
+      "type": "runtime.event",
+      "ts": 1774011865.4753225,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774011866419",
+      "type": "runtime.event",
+      "ts": 1774011866.4193463,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774012989164",
+      "type": "runtime.event",
+      "ts": 1774012989.164182,
+      "preview": "{\"state\": \"idle\", \"updated_at\": 1774012988.9882479, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"c442cebe-2af5-4e46-941b-ae54e779f32c\"}}",
+      "payload": {
+        "state": "idle",
+        "updated_at": 1774012988.9882479,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "c442cebe-2af5-4e46-941b-ae54e779f32c"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774012989571",
+      "type": "runtime.event",
+      "ts": 1774012989.5711093,
+      "preview": "{\"ts\": 1774012988.9922402, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"493add63-18b6-4bba-bb00-dbef0d041ccc\"}}",
+      "payload": {
+        "ts": 1774012988.9922402,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "493add63-18b6-4bba-bb00-dbef0d041ccc"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774013237967",
+      "type": "runtime.event",
+      "ts": 1774013237.9678488,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774013239005",
+      "type": "runtime.event",
+      "ts": 1774013239.0059276,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774013851822",
+      "type": "runtime.event",
+      "ts": 1774013851.8225846,
+      "preview": "{\"state\": \"idle\", \"updated_at\": 1774013851.667354, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"94045544-2d4c-4d44-8c3b-2889a560d32c\"}}",
+      "payload": {
+        "state": "idle",
+        "updated_at": 1774013851.667354,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "94045544-2d4c-4d44-8c3b-2889a560d32c"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774013852151",
+      "type": "runtime.event",
+      "ts": 1774013852.1515584,
+      "preview": "{\"ts\": 1774013851.6695662, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"0277e3c5-c205-4118-9a43-82a7845d0bc6\"}}",
+      "payload": {
+        "ts": 1774013851.6695662,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "0277e3c5-c205-4118-9a43-82a7845d0bc6"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774014285772",
+      "type": "runtime.event",
+      "ts": 1774014285.7725956,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774014287056",
+      "type": "runtime.event",
+      "ts": 1774014287.0565088,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774014409914",
+      "type": "runtime.event",
+      "ts": 1774014409.9146452,
+      "preview": "{\"state\": \"idle\", \"updated_at\": 1774014409.7756593, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"ef63abb7-52c8-43f4-a850-8ebb368b6c2e\"}}",
+      "payload": {
+        "state": "idle",
+        "updated_at": 1774014409.7756593,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "ef63abb7-52c8-43f4-a850-8ebb368b6c2e"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774014410201",
+      "type": "runtime.event",
+      "ts": 1774014410.201651,
+      "preview": "{\"ts\": 1774014409.7766426, \"_meta\": {\"actor\": \"system\", \"trace_id\": \"6afceae6-882e-4565-9fd3-772063e335bf\"}}",
+      "payload": {
+        "ts": 1774014409.7766426,
+        "_meta": {
+          "actor": "system",
+          "trace_id": "6afceae6-882e-4565-9fd3-772063e335bf"
+        }
+      }
+    },
+    {
+      "id": "runtime.event:1774014512355",
+      "type": "runtime.event",
+      "ts": 1774014512.3555603,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    },
+    {
+      "id": "runtime.event:1774014513397",
+      "type": "runtime.event",
+      "ts": 1774014513.397555,
+      "preview": "{\"subnet_id\": \"sn_6acf0c01\", \"reason\": \"cli.stop\"}",
+      "payload": {
+        "subnet_id": "sn_6acf0c01",
+        "reason": "cli.stop"
+      }
+    }
+  ]
 }

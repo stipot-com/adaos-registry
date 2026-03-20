@@ -109,6 +109,24 @@
 							}
 						},
 						{
+							"id": "infrastate-realtime",
+							"type": "ui.list",
+							"area": "main",
+							"title": "Realtime channels",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/realtime"
+							},
+							"inputs": {
+								"titleKey": "title",
+								"subtitleKey": "description",
+								"detailsPath": "content",
+								"showDetails": true,
+								"itemAccordion": true,
+								"emptyText": "No realtime diagnostics yet"
+							}
+						},
+						{
 							"id": "infrastate-slots",
 							"type": "ui.list",
 							"area": "main",
@@ -200,6 +218,7 @@
 			],
 			"build": [],
 			"steps": [],
+			"realtime": [],
 			"slots": [],
 			"logs": []
 			,

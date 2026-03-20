@@ -13,6 +13,8 @@ events:
     - 'desktop.webspace.reload'
     - 'sys.ready'
     - 'subnet.nats.up'
+    - 'subnet.nats.down'
+    - 'subnet.nats.reconnect'
     - 'subnet.stopping'
     - 'subnet.stopped'
     - 'core.update.status'
