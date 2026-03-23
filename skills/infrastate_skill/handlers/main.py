@@ -24,6 +24,10 @@ from adaos.services.reliability import assess_transport_diagnostics, reliability
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.yjs.webspace import default_webspace_id
+from adaos.services.skill.manager import SkillManager
+from adaos.adapters.db import SqliteSkillRegistry
+
+from packaging.version import Version, InvalidVersion
 
 _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
@@ -119,6 +123,149 @@ def _read_recent_jsonl_records(path: Path, *, max_bytes: int = 262144, limit: in
         if isinstance(payload, dict):
             items.append(payload)
     return items[-limit:]
+
+
+def _safe_version(v: Any) -> Version | None:
+    if v is None:
+        return None
+    raw = str(v).strip()
+    if not raw:
+        return None
+    try:
+        return Version(raw)
+    except InvalidVersion:
+        return None
+
+
+def _read_remote_manifest_version(*, skill_id: str) -> str | None:
+    """
+    Best-effort resolve remote version for a skill without touching the worktree.
+    """
+    try:
+        ctx = get_ctx()
+    except Exception:
+        return None
+
+    settings = getattr(ctx, "settings", None)
+    git = getattr(ctx, "git", None)
+    repo = getattr(ctx, "skills_repo", None)
+    if git is None or repo is None:
+        return None
+
+    meta = repo.get(skill_id)
+    if meta is None:
+        return None
+    local_path = Path(getattr(meta, "path", ctx.paths.skills_dir() / skill_id))
+
+    monorepo_url = getattr(settings, "skills_monorepo_url", None) if settings else None
+    monorepo_branch = (getattr(settings, "skills_monorepo_branch", None) if settings else None) or "main"
+
+    if monorepo_url:
+        skills_root = Path(ctx.paths.skills_dir())
+        if (skills_root / ".git").exists():
+            repo_root = skills_root
+        elif (skills_root.parent / ".git").exists():
+            repo_root = skills_root.parent
+        else:
+            return None
+        try:
+            git.fetch(str(repo_root), remote="origin", branch=monorepo_branch)
+        except Exception:
+            pass
+        candidates = [
+            f"origin/{monorepo_branch}:skills/{skill_id}/skill.yaml",
+            f"origin/{monorepo_branch}:skills/{skill_id}/manifest.yaml",
+            f"origin/{monorepo_branch}:skills/{skill_id}/adaos.skill.yaml",
+        ]
+    else:
+        repo_root = local_path
+        if not (repo_root / ".git").exists():
+            return None
+        try:
+            git.fetch(str(repo_root), remote="origin")
+        except Exception:
+            pass
+        candidates = [
+            "origin/HEAD:skill.yaml",
+            "origin/HEAD:manifest.yaml",
+            "origin/HEAD:adaos.skill.yaml",
+        ]
+
+    for spec in candidates:
+        try:
+            raw = git.show(str(repo_root), spec)
+        except Exception:
+            continue
+        try:
+            data = yaml.safe_load(raw) or {}
+        except Exception:
+            continue
+        ver = data.get("version")
+        if ver is None:
+            continue
+        s = str(ver).strip()
+        if s:
+            return s
+    return None
+
+
+def _skills_items() -> list[dict[str, Any]]:
+    try:
+        ctx = get_ctx()
+    except Exception:
+        return []
+
+    mgr = SkillManager(
+        repo=ctx.skills_repo,
+        registry=SqliteSkillRegistry(ctx.sql),
+        git=ctx.git,
+        paths=ctx.paths,
+        bus=getattr(ctx, "bus", None),
+        caps=ctx.caps,
+        settings=ctx.settings,
+    )
+
+    try:
+        metas = ctx.skills_repo.list() or []
+    except Exception:
+        metas = []
+
+    out: list[dict[str, Any]] = []
+    for meta in metas:
+        try:
+            name = str(getattr(meta, "id", None).value if getattr(meta, "id", None) else getattr(meta, "name", "") or "").strip()
+        except Exception:
+            name = ""
+        if not name:
+            continue
+        local_version = str(getattr(meta, "version", "") or "").strip()
+
+        slot = ""
+        try:
+            st = mgr.runtime_status(name)
+            slot = str(st.get("active_slot") or "").strip()
+        except Exception:
+            slot = ""
+
+        remote_version = str(_read_remote_manifest_version(skill_id=name) or "").strip()
+        update_available = False
+        lv = _safe_version(local_version)
+        rv = _safe_version(remote_version)
+        if lv is not None and rv is not None and rv > lv:
+            update_available = True
+
+        out.append(
+            {
+                "name": name,
+                "version": local_version,
+                "slot": slot,
+                "remote_version": remote_version,
+                "update_available": update_available,
+            }
+        )
+
+    out.sort(key=lambda x: x.get("name") or "")
+    return out
 
 
 def _route_info(conf) -> tuple[str | None, bool | None]:
@@ -622,6 +769,7 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     if route_incident:
         note += f" route_incident={route_incident}"
     protocol_assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
+    coverage = protocol.get("hardening_coverage") if isinstance(protocol.get("hardening_coverage"), dict) else {}
     control_authority = protocol.get("control_authority") if isinstance(protocol.get("control_authority"), dict) else {}
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
     route_flows = route_runtime.get("flows") if isinstance(route_runtime.get("flows"), dict) else {}
@@ -652,6 +800,8 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
         note += f" protocol={protocol_state}"
     if control_authority.get("state"):
         note += f" control_auth={control_authority.get('state')}"
+    if coverage:
+        note += f" coverage={coverage.get('covered_flows') or 0}/{coverage.get('total_flows') or 0}"
     if route_runtime.get("pending_events"):
         note += f" route_backlog={route_runtime.get('pending_events')}"
     if route_control_flow.get("state"):
@@ -660,6 +810,9 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
         note += f" route_frame={route_frame_flow.get('state')}"
     if tg_outbox.get("size"):
         note += f" tg_outbox={tg_outbox.get('size')}"
+    if tg_outbox.get("durable_store") is not None:
+        note += f" tg_durable={'yes' if tg_outbox.get('durable_store') else 'no'}"
+        note += f" tg_persisted={tg_outbox.get('persisted_size') or 0}"
     if tg_outbox.get("idempotency_mode"):
         note += f" tg_mode={tg_outbox.get('idempotency_mode')}"
     if llm_outbox.get("idempotency_mode"):
@@ -784,6 +937,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
 
     if protocol:
         assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
+        coverage = protocol.get("hardening_coverage") if isinstance(protocol.get("hardening_coverage"), dict) else {}
         classes = protocol.get("traffic_classes") if isinstance(protocol.get("traffic_classes"), dict) else {}
         control_cls = classes.get("control") if isinstance(classes.get("control"), dict) else {}
         route_cls = classes.get("route") if isinstance(classes.get("route"), dict) else {}
@@ -821,6 +975,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                 else "ok",
                 "description": (
                     f"{assessment.get('state') or 'unknown'} | "
+                    f"coverage={coverage.get('covered_flows') or 0}/{coverage.get('total_flows') or 0} | "
                     f"control_subs={control_cls.get('active_subscriptions') or 0} | "
                     f"route_subs={route_cls.get('active_subscriptions') or 0} | "
                     f"control_auth={control_authority.get('state') or '-'} | "
@@ -830,6 +985,8 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                 "subtitle": (
                     f"route_backlog={route_runtime.get('pending_events') or 0} | "
                     f"tg_outbox={tg_outbox.get('size') or 0} | "
+                    f"tg_durable={'yes' if tg_outbox.get('durable_store') else 'no'} | "
+                    f"tg_persisted={tg_outbox.get('persisted_size') or 0} | "
                     f"tg_mode={tg_outbox.get('idempotency_mode') or '-'} | "
                     f"llm_mode={llm_outbox.get('idempotency_mode') or '-'} | "
                     f"llm_cache={llm_outbox.get('cache_hit_total') or 0}/{llm_outbox.get('cache_miss_total') or 0} | "
@@ -936,6 +1093,7 @@ def _summary(
     strategy = _hub_root_strategy(reliability, transport_diag)
     strategy_assessment = strategy.get("assessment") if isinstance(strategy.get("assessment"), dict) else {}
     protocol_assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
+    coverage = protocol.get("hardening_coverage") if isinstance(protocol.get("hardening_coverage"), dict) else {}
     control_authority = protocol.get("control_authority") if isinstance(protocol.get("control_authority"), dict) else {}
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
     route_flows = route_runtime.get("flows") if isinstance(route_runtime.get("flows"), dict) else {}
@@ -1008,6 +1166,9 @@ def _summary(
         "hub_root_transport_server": str(strategy.get("selected_server") or ""),
         "hub_root_protocol_state": str(protocol_assessment.get("state") or ""),
         "hub_root_protocol_reason": str(protocol_assessment.get("reason") or ""),
+        "hub_root_hardening_coverage_state": str(coverage.get("state") or ""),
+        "hub_root_hardening_covered_flows": int(coverage.get("covered_flows") or 0),
+        "hub_root_hardening_total_flows": int(coverage.get("total_flows") or 0),
         "hub_root_control_authority_state": str(control_authority.get("state") or ""),
         "hub_root_control_authority_reason": str(control_authority.get("reason") or ""),
         "hub_root_route_control_state": str(route_control_flow.get("state") or ""),
@@ -1016,6 +1177,9 @@ def _summary(
         "hub_root_route_frame_reason": str(route_frame_flow.get("reason") or ""),
         "hub_root_route_backlog": int(route_runtime.get("pending_events") or 0),
         "hub_root_tg_outbox": int(tg_outbox.get("size") or 0),
+        "hub_root_tg_durable_store": bool(tg_outbox.get("durable_store")),
+        "hub_root_tg_persisted_size": int(tg_outbox.get("persisted_size") or 0),
+        "hub_root_tg_persist_path": str(tg_outbox.get("persist_path") or ""),
         "hub_root_tg_idempotency_mode": str(tg_outbox.get("idempotency_mode") or ""),
         "hub_root_llm_idempotency_mode": str(llm_outbox.get("idempotency_mode") or ""),
         "hub_root_llm_cache_hit_total": int(llm_outbox.get("cache_hit_total") or 0),
@@ -1152,6 +1316,7 @@ def _snapshot() -> dict[str, Any]:
         "steps": _step_items(status, slots_payload, lifecycle, build),
         "realtime": _realtime_items(reliability, transport_diag),
         "slots": _slot_items(slots_payload),
+        "skills": _skills_items(),
         "logs": _status_log_items(effective_report),
         "events": list(reversed(_event_state())),
         "status": status,
@@ -1246,6 +1411,12 @@ def on_skill_activated(evt: Any) -> None:
     skill_name = str(payload.get("skill_name") or "")
     if skill_name and skill_name != "infrastate_skill":
         return
+    refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
+
+
+@subscribe("skills.updated")
+def on_skill_updated(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
     refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
 
 

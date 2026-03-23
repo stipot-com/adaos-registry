@@ -150,9 +150,8 @@
 							"area": "main",
 							"title": "Installed skills",
 							"dataSource": {
-								"kind": "api",
-								"url": "/api/skills/installed-status",
-								"method": "GET"
+								"kind": "y",
+								"path": "data/infrastate/skills"
 							},
 							"inputs": {
 								"emptyText": "No installed skills",
@@ -250,6 +249,7 @@
 			"steps": [],
 			"realtime": [],
 			"slots": [],
+			"skills": [],
 			"logs": []
 			,
 			"events": []
