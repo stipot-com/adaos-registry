@@ -624,6 +624,9 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     protocol_assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
     control_authority = protocol.get("control_authority") if isinstance(protocol.get("control_authority"), dict) else {}
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
+    route_flows = route_runtime.get("flows") if isinstance(route_runtime.get("flows"), dict) else {}
+    route_control_flow = route_flows.get("control") if isinstance(route_flows.get("control"), dict) else {}
+    route_frame_flow = route_flows.get("frame") if isinstance(route_flows.get("frame"), dict) else {}
     outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
     tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
     llm_outbox = outboxes.get("llm") if isinstance(outboxes.get("llm"), dict) else {}
@@ -651,6 +654,10 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
         note += f" control_auth={control_authority.get('state')}"
     if route_runtime.get("pending_events"):
         note += f" route_backlog={route_runtime.get('pending_events')}"
+    if route_control_flow.get("state"):
+        note += f" route_ctrl={route_control_flow.get('state')}"
+    if route_frame_flow.get("state"):
+        note += f" route_frame={route_frame_flow.get('state')}"
     if tg_outbox.get("size"):
         note += f" tg_outbox={tg_outbox.get('size')}"
     if tg_outbox.get("idempotency_mode"):
@@ -781,6 +788,9 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         control_cls = classes.get("control") if isinstance(classes.get("control"), dict) else {}
         route_cls = classes.get("route") if isinstance(classes.get("route"), dict) else {}
         route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
+        route_flows = route_runtime.get("flows") if isinstance(route_runtime.get("flows"), dict) else {}
+        route_control_flow = route_flows.get("control") if isinstance(route_flows.get("control"), dict) else {}
+        route_frame_flow = route_flows.get("frame") if isinstance(route_flows.get("frame"), dict) else {}
         outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
         control_authority = protocol.get("control_authority") if isinstance(protocol.get("control_authority"), dict) else {}
         tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
@@ -813,7 +823,9 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"{assessment.get('state') or 'unknown'} | "
                     f"control_subs={control_cls.get('active_subscriptions') or 0} | "
                     f"route_subs={route_cls.get('active_subscriptions') or 0} | "
-                    f"control_auth={control_authority.get('state') or '-'}"
+                    f"control_auth={control_authority.get('state') or '-'} | "
+                    f"route_ctrl={route_control_flow.get('state') or '-'} | "
+                    f"route_frame={route_frame_flow.get('state') or '-'}"
                 ),
                 "subtitle": (
                     f"route_backlog={route_runtime.get('pending_events') or 0} | "
@@ -926,6 +938,9 @@ def _summary(
     protocol_assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
     control_authority = protocol.get("control_authority") if isinstance(protocol.get("control_authority"), dict) else {}
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
+    route_flows = route_runtime.get("flows") if isinstance(route_runtime.get("flows"), dict) else {}
+    route_control_flow = route_flows.get("control") if isinstance(route_flows.get("control"), dict) else {}
+    route_frame_flow = route_flows.get("frame") if isinstance(route_flows.get("frame"), dict) else {}
     outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
     tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
     llm_outbox = outboxes.get("llm") if isinstance(outboxes.get("llm"), dict) else {}
@@ -995,6 +1010,10 @@ def _summary(
         "hub_root_protocol_reason": str(protocol_assessment.get("reason") or ""),
         "hub_root_control_authority_state": str(control_authority.get("state") or ""),
         "hub_root_control_authority_reason": str(control_authority.get("reason") or ""),
+        "hub_root_route_control_state": str(route_control_flow.get("state") or ""),
+        "hub_root_route_control_reason": str(route_control_flow.get("reason") or ""),
+        "hub_root_route_frame_state": str(route_frame_flow.get("state") or ""),
+        "hub_root_route_frame_reason": str(route_frame_flow.get("reason") or ""),
         "hub_root_route_backlog": int(route_runtime.get("pending_events") or 0),
         "hub_root_tg_outbox": int(tg_outbox.get("size") or 0),
         "hub_root_tg_idempotency_mode": str(tg_outbox.get("idempotency_mode") or ""),
