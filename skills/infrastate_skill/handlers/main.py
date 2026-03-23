@@ -622,6 +622,7 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     if route_incident:
         note += f" route_incident={route_incident}"
     protocol_assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
+    control_authority = protocol.get("control_authority") if isinstance(protocol.get("control_authority"), dict) else {}
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
     outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
     tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
@@ -646,6 +647,8 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     protocol_state = str(protocol_assessment.get("state") or "").strip()
     if protocol_state:
         note += f" protocol={protocol_state}"
+    if control_authority.get("state"):
+        note += f" control_auth={control_authority.get('state')}"
     if route_runtime.get("pending_events"):
         note += f" route_backlog={route_runtime.get('pending_events')}"
     if tg_outbox.get("size"):
@@ -664,6 +667,8 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
             f"{control_lifecycle_stream.get('last_acked_cursor') or 0}/"
             f"{control_lifecycle_stream.get('last_issued_cursor') or 0}"
         )
+        if control_lifecycle_stream.get("last_ack_ago_s") is not None:
+            note += f" control_ack_age={control_lifecycle_stream.get('last_ack_ago_s')}"
     if core_update_stream:
         note += (
             f" core_update_cursor="
@@ -777,6 +782,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         route_cls = classes.get("route") if isinstance(classes.get("route"), dict) else {}
         route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
         outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
+        control_authority = protocol.get("control_authority") if isinstance(protocol.get("control_authority"), dict) else {}
         tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
         llm_outbox = outboxes.get("llm") if isinstance(outboxes.get("llm"), dict) else {}
         streams = protocol.get("streams") if isinstance(protocol.get("streams"), dict) else {}
@@ -806,7 +812,8 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                 "description": (
                     f"{assessment.get('state') or 'unknown'} | "
                     f"control_subs={control_cls.get('active_subscriptions') or 0} | "
-                    f"route_subs={route_cls.get('active_subscriptions') or 0}"
+                    f"route_subs={route_cls.get('active_subscriptions') or 0} | "
+                    f"control_auth={control_authority.get('state') or '-'}"
                 ),
                 "subtitle": (
                     f"route_backlog={route_runtime.get('pending_events') or 0} | "
@@ -817,6 +824,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"pending_acks={protocol.get('pending_ack_streams') or 0} | "
                     f"control_cursor={control_lifecycle_stream.get('last_acked_cursor') or 0}/"
                     f"{control_lifecycle_stream.get('last_issued_cursor') or 0} | "
+                    f"control_ack_age={control_lifecycle_stream.get('last_ack_ago_s') if control_lifecycle_stream.get('last_ack_ago_s') is not None else '-'} | "
                     f"core_update_cursor={core_update_stream.get('last_acked_cursor') or 0}/"
                     f"{core_update_stream.get('last_issued_cursor') or 0}"
                 ),
@@ -916,6 +924,7 @@ def _summary(
     strategy = _hub_root_strategy(reliability, transport_diag)
     strategy_assessment = strategy.get("assessment") if isinstance(strategy.get("assessment"), dict) else {}
     protocol_assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
+    control_authority = protocol.get("control_authority") if isinstance(protocol.get("control_authority"), dict) else {}
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
     outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
     tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
@@ -984,6 +993,8 @@ def _summary(
         "hub_root_transport_server": str(strategy.get("selected_server") or ""),
         "hub_root_protocol_state": str(protocol_assessment.get("state") or ""),
         "hub_root_protocol_reason": str(protocol_assessment.get("reason") or ""),
+        "hub_root_control_authority_state": str(control_authority.get("state") or ""),
+        "hub_root_control_authority_reason": str(control_authority.get("reason") or ""),
         "hub_root_route_backlog": int(route_runtime.get("pending_events") or 0),
         "hub_root_tg_outbox": int(tg_outbox.get("size") or 0),
         "hub_root_tg_idempotency_mode": str(tg_outbox.get("idempotency_mode") or ""),
@@ -994,6 +1005,7 @@ def _summary(
         "hub_root_control_issued_cursor": int(control_lifecycle_stream.get("last_issued_cursor") or 0),
         "hub_root_control_acked_cursor": int(control_lifecycle_stream.get("last_acked_cursor") or 0),
         "hub_root_control_duplicate_total": int(control_lifecycle_stream.get("duplicate_total") or 0),
+        "hub_root_control_ack_age_s": control_lifecycle_stream.get("last_ack_ago_s"),
         "hub_root_core_update_issued_cursor": int(core_update_stream.get("last_issued_cursor") or 0),
         "hub_root_core_update_acked_cursor": int(core_update_stream.get("last_acked_cursor") or 0),
         "hub_root_core_update_duplicate_total": int(core_update_stream.get("duplicate_total") or 0),
@@ -1013,7 +1025,7 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any]) -> list[dict
         {
             "id": "start_update",
             "title": "Start update",
-            "status": "ok" if state in {"idle", "failed", "succeeded", "cancelled", "rolled_back"} else "idle",
+            "status": "ok" if state in {"idle", "failed", "succeeded", "validated", "cancelled", "rolled_back"} else "idle",
             "description": "Schedule core update with current target rev",
             "subtitle": last_action if last_action == "start_update" else "",
         },

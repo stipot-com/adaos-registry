@@ -145,6 +145,36 @@
 							}
 						},
 						{
+							"id": "infrastate-skills",
+							"type": "ui.table",
+							"area": "main",
+							"title": "Installed skills",
+							"dataSource": {
+								"kind": "api",
+								"url": "/api/skills/installed-status",
+								"method": "GET"
+							},
+							"inputs": {
+								"emptyText": "No installed skills",
+								"columns": [
+									{ "key": "name", "label": "Name" },
+									{ "key": "version", "label": "Version", "mono": true, "width": "160px" },
+									{ "key": "slot", "label": "Slot", "mono": true, "width": "90px" }
+								],
+								"buttons": [
+									{ "id": "update", "label": "Update", "whenKey": "update_available", "whenEquals": true }
+								]
+							},
+							"actions": [
+								{
+									"on": "click:update",
+									"type": "callHost",
+									"target": "skills.update",
+									"params": { "name": "$event.name" }
+								}
+							]
+						},
+						{
 							"id": "infrastate-logs",
 							"type": "ui.list",
 							"area": "main",
