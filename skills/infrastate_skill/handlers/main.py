@@ -625,6 +625,7 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
     outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
     tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
+    llm_outbox = outboxes.get("llm") if isinstance(outboxes.get("llm"), dict) else {}
     streams = protocol.get("streams") if isinstance(protocol.get("streams"), dict) else {}
     control_lifecycle_stream = next(
         (
@@ -651,6 +652,10 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
         note += f" tg_outbox={tg_outbox.get('size')}"
     if tg_outbox.get("idempotency_mode"):
         note += f" tg_mode={tg_outbox.get('idempotency_mode')}"
+    if llm_outbox.get("idempotency_mode"):
+        note += f" llm_mode={llm_outbox.get('idempotency_mode')}"
+    if llm_outbox.get("cache_hit_total") or llm_outbox.get("cache_miss_total"):
+        note += f" llm_cache={llm_outbox.get('cache_hit_total') or 0}/{llm_outbox.get('cache_miss_total') or 0}"
     if protocol.get("pending_ack_streams"):
         note += f" pending_acks={protocol.get('pending_ack_streams')}"
     if control_lifecycle_stream:
@@ -773,6 +778,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
         outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
         tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
+        llm_outbox = outboxes.get("llm") if isinstance(outboxes.get("llm"), dict) else {}
         streams = protocol.get("streams") if isinstance(protocol.get("streams"), dict) else {}
         control_lifecycle_stream = next(
             (
@@ -806,6 +812,8 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"route_backlog={route_runtime.get('pending_events') or 0} | "
                     f"tg_outbox={tg_outbox.get('size') or 0} | "
                     f"tg_mode={tg_outbox.get('idempotency_mode') or '-'} | "
+                    f"llm_mode={llm_outbox.get('idempotency_mode') or '-'} | "
+                    f"llm_cache={llm_outbox.get('cache_hit_total') or 0}/{llm_outbox.get('cache_miss_total') or 0} | "
                     f"pending_acks={protocol.get('pending_ack_streams') or 0} | "
                     f"control_cursor={control_lifecycle_stream.get('last_acked_cursor') or 0}/"
                     f"{control_lifecycle_stream.get('last_issued_cursor') or 0} | "
@@ -911,6 +919,7 @@ def _summary(
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
     outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
     tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
+    llm_outbox = outboxes.get("llm") if isinstance(outboxes.get("llm"), dict) else {}
     streams = protocol.get("streams") if isinstance(protocol.get("streams"), dict) else {}
     control_lifecycle_stream = next(
         (
@@ -977,6 +986,10 @@ def _summary(
         "hub_root_protocol_reason": str(protocol_assessment.get("reason") or ""),
         "hub_root_route_backlog": int(route_runtime.get("pending_events") or 0),
         "hub_root_tg_outbox": int(tg_outbox.get("size") or 0),
+        "hub_root_tg_idempotency_mode": str(tg_outbox.get("idempotency_mode") or ""),
+        "hub_root_llm_idempotency_mode": str(llm_outbox.get("idempotency_mode") or ""),
+        "hub_root_llm_cache_hit_total": int(llm_outbox.get("cache_hit_total") or 0),
+        "hub_root_llm_cache_miss_total": int(llm_outbox.get("cache_miss_total") or 0),
         "hub_root_pending_ack_streams": int(protocol.get("pending_ack_streams") or 0),
         "hub_root_control_issued_cursor": int(control_lifecycle_stream.get("last_issued_cursor") or 0),
         "hub_root_control_acked_cursor": int(control_lifecycle_stream.get("last_acked_cursor") or 0),
