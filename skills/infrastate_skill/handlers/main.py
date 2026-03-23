@@ -750,6 +750,7 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
     diagnostics = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
+    sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     root = overview.get("hub_root") if isinstance(overview.get("hub_root"), dict) else {}
     route = overview.get("hub_root_browser") if isinstance(overview.get("hub_root_browser"), dict) else {}
     root_diag = diagnostics.get("root_control") if isinstance(diagnostics.get("root_control"), dict) else {}
@@ -835,6 +836,14 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
             f"{core_update_stream.get('last_acked_cursor') or 0}/"
             f"{core_update_stream.get('last_issued_cursor') or 0}"
         )
+    if sidecar_runtime:
+        note += (
+            f" sidecar={sidecar_runtime.get('status') or 'unknown'}/"
+            f"{sidecar_runtime.get('control_ready') or '-'}"
+        )
+        process = sidecar_runtime.get("process") if isinstance(sidecar_runtime.get("process"), dict) else {}
+        if process.get("listener_pid"):
+            note += f" sidecar_pid={process.get('listener_pid')}"
     return note
 
 
@@ -844,6 +853,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
     channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
     channel_overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
+    sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     signals = runtime.get("signals") if isinstance(runtime.get("signals"), dict) else {}
     strategy = _hub_root_strategy(reliability, transport_diag)
     transport_assessment = strategy.get("assessment") if isinstance(strategy.get("assessment"), dict) else {}
@@ -998,6 +1008,42 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"{core_update_stream.get('last_issued_cursor') or 0}"
                 ),
                 "content": _safe_json_text(protocol),
+            }
+        )
+
+    if sidecar_runtime:
+        provenance = (
+            sidecar_runtime.get("transport_provenance")
+            if isinstance(sidecar_runtime.get("transport_provenance"), dict)
+            else {}
+        )
+        process = sidecar_runtime.get("process") if isinstance(sidecar_runtime.get("process"), dict) else {}
+        items.append(
+            {
+                "id": "realtime_sidecar",
+                "title": "Realtime sidecar",
+                "status": "warn"
+                if str(sidecar_runtime.get("status") or "") in {"degraded", "unknown"}
+                else "ok"
+                if sidecar_runtime.get("enabled")
+                else "idle",
+                "description": (
+                    f"{sidecar_runtime.get('phase') or 'unknown'} | "
+                    f"transport={sidecar_runtime.get('local_listener_state') or '-'}"
+                    f"/{sidecar_runtime.get('remote_session_state') or '-'} | "
+                    f"control={sidecar_runtime.get('control_ready') or '-'} | "
+                    f"route={sidecar_runtime.get('route_ready') or '-'}"
+                ),
+                "subtitle": (
+                    f"remote={provenance.get('remote_url') or provenance.get('selected_server') or '-'} | "
+                    f"connects={provenance.get('remote_connect_total') or 0}/"
+                    f"{provenance.get('remote_connect_fail_total') or 0} | "
+                    f"quarantine={provenance.get('remote_quarantine_total') or 0} | "
+                    f"superseded={provenance.get('superseded_total') or 0} | "
+                    f"pid={process.get('listener_pid') or '-'} | "
+                    f"adopted={'yes' if process.get('adopted_listener') else 'no'}"
+                ),
+                "content": _safe_json_text(sidecar_runtime),
             }
         )
 
@@ -1200,10 +1246,12 @@ def _summary(
     }
 
 
-def _action_items(status: dict[str, Any], ui_state: dict[str, Any]) -> list[dict[str, Any]]:
+def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability: dict[str, Any]) -> list[dict[str, Any]]:
     last_refresh = float(ui_state.get("last_refresh_ts") or 0.0)
     last_action = str(ui_state.get("last_action") or "").strip()
     state = str(status.get("state") or "idle")
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     items = [
         {
             "id": "start_update",
@@ -1241,6 +1289,16 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any]) -> list[dict
             "subtitle": last_action if last_action == "drain" else "",
         },
     ]
+    if bool(sidecar_runtime.get("enabled")):
+        items.append(
+            {
+                "id": "restart_sidecar",
+                "title": "Restart sidecar",
+                "status": "warn" if str(sidecar_runtime.get("status") or "") in {"degraded", "unknown"} else "ok",
+                "description": "Restart realtime sidecar transport runtime",
+                "subtitle": last_action if last_action == "restart_sidecar" else "",
+            }
+        )
     reason = str(status.get("reason") or "").strip().lower()
     if state in {"countdown", "draining", "stopping"} and (
         reason.startswith("github.push:") or reason.startswith("root.release:")
@@ -1284,6 +1342,12 @@ def _perform_action(action_id: str, conf) -> dict[str, Any]:
         result = _post_local_admin(conf, "/api/admin/update/rollback", {"reason": "infrastate.rollback"})
     elif action_id == "drain":
         result = _post_local_admin(conf, "/api/admin/drain", {"reason": "infrastate.drain"})
+    elif action_id == "restart_sidecar":
+        result = _post_local_admin(
+            conf,
+            "/api/node/sidecar/restart",
+            {"reconnect_hub_root": True},
+        )
     else:
         raise ValueError(f"unsupported infrastate action: {action_id}")
     _write_ui_state(
@@ -1311,7 +1375,7 @@ def _snapshot() -> dict[str, Any]:
     effective_report = _effective_update_log_report(report, last_result)
     snapshot = {
         "summary": _summary(status, last_result, slots_payload, lifecycle, conf, build, ui_state, reliability, transport_diag),
-        "actions": _action_items(status, ui_state),
+        "actions": _action_items(status, ui_state, reliability),
         "build": _build_items(build),
         "steps": _step_items(status, slots_payload, lifecycle, build),
         "realtime": _realtime_items(reliability, transport_diag),
