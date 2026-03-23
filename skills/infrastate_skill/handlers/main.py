@@ -16,6 +16,7 @@ from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet, skill_memory_get, skill_memory_set
 from adaos.services.agent_context import get_ctx
 from adaos.services.core_slots import active_slot_manifest, slot_status
+from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.node_config import load_config
 from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime_sidecar_enabled
@@ -451,6 +452,16 @@ def _status_log_items(status: dict[str, Any]) -> list[dict[str, Any]]:
     return items
 
 
+def _effective_update_log_report(current: dict[str, Any], last_result: dict[str, Any]) -> dict[str, Any]:
+    current_state = str(current.get("state") or "").strip().lower()
+    last_state = str(last_result.get("state") or "").strip().lower()
+    if current_state and current_state != "idle":
+        return current
+    if last_state and last_state != "idle":
+        return last_result
+    return current or last_result
+
+
 def _build_items(build: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {
@@ -614,6 +625,23 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
     outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
     tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
+    streams = protocol.get("streams") if isinstance(protocol.get("streams"), dict) else {}
+    control_lifecycle_stream = next(
+        (
+            entry
+            for entry in streams.values()
+            if isinstance(entry, dict) and str(entry.get("flow_id") or "") == "hub_root.control.lifecycle"
+        ),
+        {},
+    )
+    core_update_stream = next(
+        (
+            entry
+            for entry in streams.values()
+            if isinstance(entry, dict) and str(entry.get("flow_id") or "") == "hub_root.integration.github_core_update"
+        ),
+        {},
+    )
     protocol_state = str(protocol_assessment.get("state") or "").strip()
     if protocol_state:
         note += f" protocol={protocol_state}"
@@ -621,6 +649,22 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
         note += f" route_backlog={route_runtime.get('pending_events')}"
     if tg_outbox.get("size"):
         note += f" tg_outbox={tg_outbox.get('size')}"
+    if tg_outbox.get("idempotency_mode"):
+        note += f" tg_mode={tg_outbox.get('idempotency_mode')}"
+    if protocol.get("pending_ack_streams"):
+        note += f" pending_acks={protocol.get('pending_ack_streams')}"
+    if control_lifecycle_stream:
+        note += (
+            f" control_cursor="
+            f"{control_lifecycle_stream.get('last_acked_cursor') or 0}/"
+            f"{control_lifecycle_stream.get('last_issued_cursor') or 0}"
+        )
+    if core_update_stream:
+        note += (
+            f" core_update_cursor="
+            f"{core_update_stream.get('last_acked_cursor') or 0}/"
+            f"{core_update_stream.get('last_issued_cursor') or 0}"
+        )
     return note
 
 
@@ -729,6 +773,23 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
         outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
         tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
+        streams = protocol.get("streams") if isinstance(protocol.get("streams"), dict) else {}
+        control_lifecycle_stream = next(
+            (
+                entry
+                for entry in streams.values()
+                if isinstance(entry, dict) and str(entry.get("flow_id") or "") == "hub_root.control.lifecycle"
+            ),
+            {},
+        )
+        core_update_stream = next(
+            (
+                entry
+                for entry in streams.values()
+                if isinstance(entry, dict) and str(entry.get("flow_id") or "") == "hub_root.integration.github_core_update"
+            ),
+            {},
+        )
         items.append(
             {
                 "id": "hub_root_protocol",
@@ -743,7 +804,13 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                 ),
                 "subtitle": (
                     f"route_backlog={route_runtime.get('pending_events') or 0} | "
-                    f"tg_outbox={tg_outbox.get('size') or 0}"
+                    f"tg_outbox={tg_outbox.get('size') or 0} | "
+                    f"tg_mode={tg_outbox.get('idempotency_mode') or '-'} | "
+                    f"pending_acks={protocol.get('pending_ack_streams') or 0} | "
+                    f"control_cursor={control_lifecycle_stream.get('last_acked_cursor') or 0}/"
+                    f"{control_lifecycle_stream.get('last_issued_cursor') or 0} | "
+                    f"core_update_cursor={core_update_stream.get('last_acked_cursor') or 0}/"
+                    f"{core_update_stream.get('last_issued_cursor') or 0}"
                 ),
                 "content": _safe_json_text(protocol),
             }
@@ -786,6 +853,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
 
 def _summary(
     status: dict[str, Any],
+    last_result: dict[str, Any],
     slots_payload: dict[str, Any],
     lifecycle: dict[str, Any],
     conf,
@@ -798,6 +866,20 @@ def _summary(
     phase = str(status.get("phase") or "")
     state = str(status.get("state") or "idle")
     message = str(status.get("message") or lifecycle.get("reason") or "No update in progress")
+    last_result_state = str(last_result.get("state") or "").strip()
+    last_result_phase = str(last_result.get("phase") or "").strip()
+    last_result_message = str(
+        last_result.get("validation_error_summary")
+        or last_result.get("message")
+        or ""
+    ).strip()
+    if state == "idle" and last_result_state and last_result_state != "idle":
+        suffix = f"last={last_result_state}"
+        if last_result_phase:
+            suffix += f"/{last_result_phase}"
+        if last_result_message:
+            suffix += f": {last_result_message}"
+        message += f" | {suffix}"
     validation_summary = str(status.get("validation_error_summary") or "").strip()
     restored_slot = str(status.get("restored_slot") or "").strip()
     if state == "failed" and phase == "validate":
@@ -829,6 +911,23 @@ def _summary(
     route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
     outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
     tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
+    streams = protocol.get("streams") if isinstance(protocol.get("streams"), dict) else {}
+    control_lifecycle_stream = next(
+        (
+            entry
+            for entry in streams.values()
+            if isinstance(entry, dict) and str(entry.get("flow_id") or "") == "hub_root.control.lifecycle"
+        ),
+        {},
+    )
+    core_update_stream = next(
+        (
+            entry
+            for entry in streams.values()
+            if isinstance(entry, dict) and str(entry.get("flow_id") or "") == "hub_root.integration.github_core_update"
+        ),
+        {},
+    )
     root_status, root_state, root_stability = _effective_channel_view(
         "root_control",
         tree_item=root_tree,
@@ -862,6 +961,8 @@ def _summary(
         "target_rev": str(status.get("target_rev") or ""),
         "target_version": str(status.get("target_version") or ""),
         "reason": str(status.get("reason") or ""),
+        "last_result_state": last_result_state,
+        "last_result_phase": last_result_phase,
         "root_control_status": root_status,
         "root_control_stability": root_state,
         "root_control_score": root_stability.get("score"),
@@ -876,6 +977,13 @@ def _summary(
         "hub_root_protocol_reason": str(protocol_assessment.get("reason") or ""),
         "hub_root_route_backlog": int(route_runtime.get("pending_events") or 0),
         "hub_root_tg_outbox": int(tg_outbox.get("size") or 0),
+        "hub_root_pending_ack_streams": int(protocol.get("pending_ack_streams") or 0),
+        "hub_root_control_issued_cursor": int(control_lifecycle_stream.get("last_issued_cursor") or 0),
+        "hub_root_control_acked_cursor": int(control_lifecycle_stream.get("last_acked_cursor") or 0),
+        "hub_root_control_duplicate_total": int(control_lifecycle_stream.get("duplicate_total") or 0),
+        "hub_root_core_update_issued_cursor": int(core_update_stream.get("last_issued_cursor") or 0),
+        "hub_root_core_update_acked_cursor": int(core_update_stream.get("last_acked_cursor") or 0),
+        "hub_root_core_update_duplicate_total": int(core_update_stream.get("duplicate_total") or 0),
         "scheduled_for": float(status.get("scheduled_for") or 0.0),
         "countdown_remaining_sec": _countdown_remaining_sec(status),
         "drain_timeout_sec": float(status.get("drain_timeout_sec") or 0.0),
@@ -984,6 +1092,7 @@ def _snapshot() -> dict[str, Any]:
     _ensure_skill_data_projections()
     conf = load_config()
     status = read_core_update_status()
+    last_result = read_core_update_last_result() or {}
     slots_payload = slot_status()
     lifecycle = runtime_lifecycle_snapshot()
     build = _build_meta()
@@ -991,16 +1100,18 @@ def _snapshot() -> dict[str, Any]:
     reliability = _reliability_snapshot(conf, lifecycle)
     transport_diag = _transport_diag_snapshot()
     report = _read_json(_base_dir() / "state" / "core_update" / "status.json") or {}
+    effective_report = _effective_update_log_report(report, last_result)
     snapshot = {
-        "summary": _summary(status, slots_payload, lifecycle, conf, build, ui_state, reliability, transport_diag),
+        "summary": _summary(status, last_result, slots_payload, lifecycle, conf, build, ui_state, reliability, transport_diag),
         "actions": _action_items(status, ui_state),
         "build": _build_items(build),
         "steps": _step_items(status, slots_payload, lifecycle, build),
         "realtime": _realtime_items(reliability, transport_diag),
         "slots": _slot_items(slots_payload),
-        "logs": _status_log_items(report),
+        "logs": _status_log_items(effective_report),
         "events": list(reversed(_event_state())),
         "status": status,
+        "last_result": last_result,
         "lifecycle": lifecycle,
         "reliability": reliability,
         "transport_diag": transport_diag,
