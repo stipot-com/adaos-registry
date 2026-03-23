@@ -750,6 +750,7 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
     diagnostics = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
+    hub_member_channels = runtime.get("hub_member_channels") if isinstance(runtime.get("hub_member_channels"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     root = overview.get("hub_root") if isinstance(overview.get("hub_root"), dict) else {}
     route = overview.get("hub_root_browser") if isinstance(overview.get("hub_root_browser"), dict) else {}
@@ -844,6 +845,16 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
         process = sidecar_runtime.get("process") if isinstance(sidecar_runtime.get("process"), dict) else {}
         if process.get("listener_pid"):
             note += f" sidecar_pid={process.get('listener_pid')}"
+    if hub_member_channels:
+        member_assessment = hub_member_channels.get("assessment") if isinstance(hub_member_channels.get("assessment"), dict) else {}
+        channels = hub_member_channels.get("channels") if isinstance(hub_member_channels.get("channels"), dict) else {}
+        member_command = channels.get("hub_member.command") if isinstance(channels.get("hub_member.command"), dict) else {}
+        member_sync = channels.get("hub_member.sync") if isinstance(channels.get("hub_member.sync"), dict) else {}
+        note += f" member={member_assessment.get('state') or 'unknown'}"
+        if member_command.get("active_path"):
+            note += f" member_cmd={member_command.get('active_path')}:{member_command.get('state') or '-'}"
+        if member_sync.get("active_path"):
+            note += f" member_sync={member_sync.get('active_path')}:{member_sync.get('state') or '-'}"
     return note
 
 
@@ -853,6 +864,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
     channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
     channel_overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
+    hub_member_channels = runtime.get("hub_member_channels") if isinstance(runtime.get("hub_member_channels"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     signals = runtime.get("signals") if isinstance(runtime.get("signals"), dict) else {}
     strategy = _hub_root_strategy(reliability, transport_diag)
@@ -1008,6 +1020,39 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"{core_update_stream.get('last_issued_cursor') or 0}"
                 ),
                 "content": _safe_json_text(protocol),
+            }
+        )
+
+    if hub_member_channels:
+        assessment = hub_member_channels.get("assessment") if isinstance(hub_member_channels.get("assessment"), dict) else {}
+        channels = hub_member_channels.get("channels") if isinstance(hub_member_channels.get("channels"), dict) else {}
+        command = channels.get("hub_member.command") if isinstance(channels.get("hub_member.command"), dict) else {}
+        event = channels.get("hub_member.event") if isinstance(channels.get("hub_member.event"), dict) else {}
+        sync = channels.get("hub_member.sync") if isinstance(channels.get("hub_member.sync"), dict) else {}
+        presence = channels.get("hub_member.presence") if isinstance(channels.get("hub_member.presence"), dict) else {}
+        route_channel = channels.get("hub_member.route") if isinstance(channels.get("hub_member.route"), dict) else {}
+        items.append(
+            {
+                "id": "hub_member_semantics",
+                "title": "Hub-member semantic channels",
+                "status": "warn"
+                if str(assessment.get("state") or "") in {"degraded", "fallback", "transitioning"}
+                else "ok",
+                "description": (
+                    f"{assessment.get('state') or 'unknown'} | "
+                    f"cmd={command.get('active_path') or '-'}:{command.get('state') or '-'} | "
+                    f"evt={event.get('active_path') or '-'}:{event.get('state') or '-'} | "
+                    f"sync={sync.get('active_path') or '-'}:{sync.get('state') or '-'} | "
+                    f"presence={presence.get('active_path') or '-'}:{presence.get('state') or '-'} | "
+                    f"route={route_channel.get('active_path') or '-'}:{route_channel.get('state') or '-'}"
+                ),
+                "subtitle": (
+                    f"reason={assessment.get('reason') or '-'} | "
+                    f"cmd_freeze={command.get('freeze_remaining_s') or 0}s | "
+                    f"sync_freeze={sync.get('freeze_remaining_s') or 0}s | "
+                    f"one active authority path per channel"
+                ),
+                "content": _safe_json_text(hub_member_channels),
             }
         )
 
