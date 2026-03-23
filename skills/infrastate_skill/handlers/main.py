@@ -152,6 +152,25 @@ def _safe_json_text(value: Any) -> str:
         return str(value)
 
 
+def _tail_text_file(path: Path, *, limit: int = 4000) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    return text[-limit:].strip()
+
+
+def _log_item(log_id: str, title: str, content: Any, *, status: str = "idle", preview_limit: int = 400) -> dict[str, Any]:
+    text = _safe_json_text(content).strip()
+    return {
+        "id": log_id,
+        "title": title,
+        "status": status,
+        "preview": text[-preview_limit:].strip(),
+        "content": text[-4000:].strip(),
+    }
+
+
 def _ui_level_from_channel_status(status: str, *, stability_state: str = "") -> str:
     if status == "ready":
         if stability_state in {"flapping", "unstable"}:
@@ -222,6 +241,23 @@ def _transport_diag_snapshot() -> dict[str, Any]:
         "hub_ws_diag_recent": hub_diag_recent[-12:],
         "root_transport_assessment": transport_assessment,
     }
+
+
+def _hub_root_strategy(reliability: dict[str, Any], transport_diag: dict[str, Any]) -> dict[str, Any]:
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    strategy = (
+        runtime.get("hub_root_transport_strategy")
+        if isinstance(runtime.get("hub_root_transport_strategy"), dict)
+        else {}
+    )
+    merged = dict(strategy) if isinstance(strategy, dict) else {}
+    if not isinstance(merged.get("assessment"), dict):
+        merged["assessment"] = (
+            transport_diag.get("root_transport_assessment")
+            if isinstance(transport_diag.get("root_transport_assessment"), dict)
+            else {}
+        )
+    return merged
 
 
 def _reliability_snapshot(conf, lifecycle: dict[str, Any]) -> dict[str, Any]:
@@ -376,39 +412,42 @@ def _status_log_items(status: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     command = str(status.get("command") or "").strip()
     if command:
-        items.append(
-            {
-                "id": "command",
-                "title": "command",
-                "status": "idle",
-                "preview": command[:400].strip(),
-                "content": command,
-            }
-        )
+        items.append(_log_item("command", "command", command, status="idle"))
+    validation_error = status.get("validation_error")
+    if validation_error:
+        items.append(_log_item("validation-error", "validation-error", validation_error, status="warn"))
+    rollback = status.get("rollback")
+    if rollback:
+        items.append(_log_item("rollback", "rollback", rollback, status="warn"))
+    for key, title, state in (
+        ("manifest", "manifest", "idle"),
+        ("plan", "plan", "idle"),
+    ):
+        value = status.get(key)
+        if value:
+            items.append(_log_item(key, title, value, status=state))
     for key, title in (("stdout", "stdout"), ("stderr", "stderr")):
         text = str(status.get(key) or "").strip()
         if not text:
             continue
-        items.append(
-            {
-                "id": key,
-                "title": title,
-                "status": "ok" if key == "stdout" else "warn",
-                "preview": text[-400:].strip(),
-                "content": text[-4000:].strip(),
-            }
-        )
+        items.append(_log_item(key, title, text[-4000:].strip(), status="ok" if key == "stdout" else "warn"))
+    for key, title in (("validation_stdout", "validation-stdout"), ("validation_stderr", "validation-stderr")):
+        text = str(status.get(key) or "").strip()
+        if not text:
+            continue
+        items.append(_log_item(key, title, text[-4000:].strip(), status="warn"))
+    validation_logs = status.get("validation_logs") if isinstance(status.get("validation_logs"), dict) else {}
+    for key, title in (("stdout_path", "validation-log-stdout"), ("stderr_path", "validation-log-stderr")):
+        raw_path = str(validation_logs.get(key) or "").strip()
+        if not raw_path:
+            continue
+        path = Path(raw_path).expanduser()
+        tail = _tail_text_file(path)
+        payload = {"path": str(path), "tail": tail}
+        items.append(_log_item(f"validation-{key}", title, payload, status="warn"))
     last_error = str(_ui_state().get("last_error") or "").strip()
     if last_error:
-        items.append(
-            {
-                "id": "ui-error",
-                "title": "ui-error",
-                "status": "warn",
-                "preview": last_error[-400:].strip(),
-                "content": last_error[-4000:].strip(),
-            }
-        )
+        items.append(_log_item("ui-error", "ui-error", last_error[-4000:].strip(), status="warn"))
     return items
 
 
@@ -550,60 +589,69 @@ def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[str, Any]) -> str:
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
-    tree = runtime.get("readiness_tree") if isinstance(runtime.get("readiness_tree"), dict) else {}
-    channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
-    transport_assessment = (
-        transport_diag.get("root_transport_assessment")
-        if isinstance(transport_diag.get("root_transport_assessment"), dict)
-        else {}
+    overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
+    diagnostics = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
+    protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
+    root = overview.get("hub_root") if isinstance(overview.get("hub_root"), dict) else {}
+    route = overview.get("hub_root_browser") if isinstance(overview.get("hub_root_browser"), dict) else {}
+    root_diag = diagnostics.get("root_control") if isinstance(diagnostics.get("root_control"), dict) else {}
+    route_diag = diagnostics.get("route") if isinstance(diagnostics.get("route"), dict) else {}
+    root_status = str(root.get("effective_status") or "unknown")
+    root_state = str(root.get("effective_state") or "unknown")
+    route_status = str(route.get("effective_status") or "unknown")
+    route_state = str(route.get("effective_state") or "unknown")
+    note = (
+        f"realtime hub-root={root_status}/{root_state}"
+        f" hub-root-browser={route_status}/{route_state}"
     )
-
-    root = tree.get("root_control") if isinstance(tree.get("root_control"), dict) else {}
-    root_diag = channel_diag.get("root_control") if isinstance(channel_diag.get("root_control"), dict) else {}
-    route = tree.get("route") if isinstance(tree.get("route"), dict) else {}
-    route_diag = channel_diag.get("route") if isinstance(channel_diag.get("route"), dict) else {}
-
-    root_status = str(root.get("status") or "unknown")
-    root_status, root_state, _root_stability = _effective_channel_view(
-        "root_control",
-        tree_item=root,
-        diag_item=root_diag,
-        transport_assessment=transport_assessment,
-    )
-    route_status = str(route.get("status") or "unknown")
-    route_status, route_state, _route_stability = _effective_channel_view(
-        "route",
-        tree_item=route,
-        diag_item=route_diag,
-        transport_assessment=transport_assessment,
-    )
-    return (
-        f"realtime root={root_status}/{root_state}"
-        f" route={route_status}/{route_state}"
-    )
+    root_incident = str(root_diag.get("last_incident_class") or "").strip()
+    route_incident = str(route_diag.get("last_incident_class") or "").strip()
+    if root_incident:
+        note += f" root_incident={root_incident}"
+    if route_incident:
+        note += f" route_incident={route_incident}"
+    protocol_assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
+    route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
+    outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
+    tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
+    protocol_state = str(protocol_assessment.get("state") or "").strip()
+    if protocol_state:
+        note += f" protocol={protocol_state}"
+    if route_runtime.get("pending_events"):
+        note += f" route_backlog={route_runtime.get('pending_events')}"
+    if tg_outbox.get("size"):
+        note += f" tg_outbox={tg_outbox.get('size')}"
+    return note
 
 
 def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any]) -> list[dict[str, Any]]:
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
     tree = runtime.get("readiness_tree") if isinstance(runtime.get("readiness_tree"), dict) else {}
     channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
+    channel_overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
+    protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
     signals = runtime.get("signals") if isinstance(runtime.get("signals"), dict) else {}
-    transport_assessment = (
-        transport_diag.get("root_transport_assessment")
-        if isinstance(transport_diag.get("root_transport_assessment"), dict)
-        else {}
-    )
+    strategy = _hub_root_strategy(reliability, transport_diag)
+    transport_assessment = strategy.get("assessment") if isinstance(strategy.get("assessment"), dict) else {}
 
     def _channel_item(channel_id: str, title: str, note: str = "") -> dict[str, Any]:
         tree_item = tree.get(channel_id) if isinstance(tree.get(channel_id), dict) else {}
         diag_item = channel_diag.get(channel_id) if isinstance(channel_diag.get(channel_id), dict) else {}
         signal_item = signals.get(channel_id) if isinstance(signals.get(channel_id), dict) else {}
+        overview_item = None
+        for item in channel_overview.values():
+            if isinstance(item, dict) and str(item.get("channel_id") or "") == channel_id:
+                overview_item = item
+                break
         status, effective_state, stability = _effective_channel_view(
             channel_id,
             tree_item=tree_item,
             diag_item=diag_item,
             transport_assessment=transport_assessment,
         )
+        if isinstance(overview_item, dict):
+            status = str(overview_item.get("effective_status") or status)
+            effective_state = str(overview_item.get("effective_state") or effective_state)
         if stability:
             description = (
                 f"{status} | {effective_state} "
@@ -612,6 +660,9 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         else:
             description = status
         subtitle = str(tree_item.get("summary") or diag_item.get("summary") or note or "").strip()
+        incident_class = str(diag_item.get("last_incident_class") or "").strip()
+        if incident_class:
+            subtitle = f"{subtitle} | incident={incident_class}" if subtitle else f"incident={incident_class}"
         if note:
             subtitle = f"{subtitle} | {note}" if subtitle else note
         content = {
@@ -636,15 +687,67 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         ),
         _channel_item(
             "route",
-            "Root relay route",
+            "Hub -> Root -> Browser relay",
             note="This path matters for root-proxied browser traffic; direct browser -> hub still keeps this panel visible through local Yjs.",
         ),
         _channel_item(
             "sync",
-            "Browser -> Hub Yjs projection",
+            "Browser -> Hub sync",
             note="This panel is projected via local Yjs. If it updates while hub -> root is down, the browser-hub realtime path is healthy.",
         ),
     ]
+
+    if strategy:
+        assessment_state = str(transport_assessment.get("state") or "unknown")
+        strategy_parts = [
+            strategy.get("effective_transport") or strategy.get("requested_transport") or "unknown",
+            assessment_state,
+        ]
+        subtitle_parts = [
+            f"server={strategy.get('selected_server')}" if strategy.get("selected_server") else "",
+            f"last={strategy.get('last_event')}" if strategy.get("last_event") else "",
+            f"error={strategy.get('last_error')}" if strategy.get("last_error") else "",
+        ]
+        items.append(
+            {
+                "id": "hub_root_strategy",
+                "title": "Hub-root strategy",
+                "status": "warn"
+                if assessment_state in {"unstable", "flapping", "down"}
+                else "ok" if strategy.get("effective_transport") else "idle",
+                "description": " | ".join([part for part in strategy_parts if part]),
+                "subtitle": " | ".join([part for part in subtitle_parts if part]) or "current transport hypothesis",
+                "content": _safe_json_text(strategy),
+            }
+        )
+
+    if protocol:
+        assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
+        classes = protocol.get("traffic_classes") if isinstance(protocol.get("traffic_classes"), dict) else {}
+        control_cls = classes.get("control") if isinstance(classes.get("control"), dict) else {}
+        route_cls = classes.get("route") if isinstance(classes.get("route"), dict) else {}
+        route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
+        outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
+        tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
+        items.append(
+            {
+                "id": "hub_root_protocol",
+                "title": "Hub-root protocol",
+                "status": "warn"
+                if str(assessment.get("state") or "") in {"pressure", "degraded"}
+                else "ok",
+                "description": (
+                    f"{assessment.get('state') or 'unknown'} | "
+                    f"control_subs={control_cls.get('active_subscriptions') or 0} | "
+                    f"route_subs={route_cls.get('active_subscriptions') or 0}"
+                ),
+                "subtitle": (
+                    f"route_backlog={route_runtime.get('pending_events') or 0} | "
+                    f"tg_outbox={tg_outbox.get('size') or 0}"
+                ),
+                "content": _safe_json_text(protocol),
+            }
+        )
 
     sidecar_diag = transport_diag.get("sidecar_diag") if isinstance(transport_diag.get("sidecar_diag"), dict) else None
     hub_ws_diag = transport_diag.get("hub_ws_diag") if isinstance(transport_diag.get("hub_ws_diag"), dict) else None
@@ -695,6 +798,13 @@ def _summary(
     phase = str(status.get("phase") or "")
     state = str(status.get("state") or "idle")
     message = str(status.get("message") or lifecycle.get("reason") or "No update in progress")
+    validation_summary = str(status.get("validation_error_summary") or "").strip()
+    restored_slot = str(status.get("restored_slot") or "").strip()
+    if state == "failed" and phase == "validate":
+        if validation_summary:
+            message += f" | validation: {validation_summary}"
+        if restored_slot:
+            message += f" | restored slot {restored_slot}"
     last_action = str(ui_state.get("last_action") or "").strip()
     last_action_at = float(ui_state.get("last_action_ts") or 0.0)
     if last_action:
@@ -708,25 +818,28 @@ def _summary(
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
     tree = runtime.get("readiness_tree") if isinstance(runtime.get("readiness_tree"), dict) else {}
     channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
+    protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
     root_tree = tree.get("root_control") if isinstance(tree.get("root_control"), dict) else {}
     route_tree = tree.get("route") if isinstance(tree.get("route"), dict) else {}
     root_diag = channel_diag.get("root_control") if isinstance(channel_diag.get("root_control"), dict) else {}
     route_diag = channel_diag.get("route") if isinstance(channel_diag.get("route"), dict) else {}
+    strategy = _hub_root_strategy(reliability, transport_diag)
+    strategy_assessment = strategy.get("assessment") if isinstance(strategy.get("assessment"), dict) else {}
+    protocol_assessment = protocol.get("assessment") if isinstance(protocol.get("assessment"), dict) else {}
+    route_runtime = protocol.get("route_runtime") if isinstance(protocol.get("route_runtime"), dict) else {}
+    outboxes = protocol.get("integration_outboxes") if isinstance(protocol.get("integration_outboxes"), dict) else {}
+    tg_outbox = outboxes.get("telegram") if isinstance(outboxes.get("telegram"), dict) else {}
     root_status, root_state, root_stability = _effective_channel_view(
         "root_control",
         tree_item=root_tree,
         diag_item=root_diag,
-        transport_assessment=transport_diag.get("root_transport_assessment")
-        if isinstance(transport_diag.get("root_transport_assessment"), dict)
-        else {},
+        transport_assessment=strategy_assessment,
     )
     route_status, route_state, route_stability = _effective_channel_view(
         "route",
         tree_item=route_tree,
         diag_item=route_diag,
-        transport_assessment=transport_diag.get("root_transport_assessment")
-        if isinstance(transport_diag.get("root_transport_assessment"), dict)
-        else {},
+        transport_assessment=strategy_assessment,
     )
     return {
         "label": "Core update",
@@ -752,8 +865,17 @@ def _summary(
         "root_control_status": root_status,
         "root_control_stability": root_state,
         "root_control_score": root_stability.get("score"),
+        "root_control_incident_class": str(root_diag.get("last_incident_class") or ""),
         "route_status": route_status,
         "route_stability": route_state,
+        "route_incident_class": str(route_diag.get("last_incident_class") or ""),
+        "hub_root_transport": str(strategy.get("effective_transport") or strategy.get("requested_transport") or ""),
+        "hub_root_transport_state": str(strategy_assessment.get("state") or ""),
+        "hub_root_transport_server": str(strategy.get("selected_server") or ""),
+        "hub_root_protocol_state": str(protocol_assessment.get("state") or ""),
+        "hub_root_protocol_reason": str(protocol_assessment.get("reason") or ""),
+        "hub_root_route_backlog": int(route_runtime.get("pending_events") or 0),
+        "hub_root_tg_outbox": int(tg_outbox.get("size") or 0),
         "scheduled_for": float(status.get("scheduled_for") or 0.0),
         "countdown_remaining_sec": _countdown_remaining_sec(status),
         "drain_timeout_sec": float(status.get("drain_timeout_sec") or 0.0),

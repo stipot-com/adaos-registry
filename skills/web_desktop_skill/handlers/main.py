@@ -82,12 +82,11 @@ async def on_toggle_install(evt) -> None:
         )
 
 
-@subscribe("desktop.webspace.reload")
-def on_webspace_reload(evt) -> None:
+@subscribe("desktop.webspace.reloaded")
+def on_webspace_reloaded(evt) -> None:
     """
-    After a YJS reload the installed apps/widgets set in the webspace
-    is rebuilt from scenario defaults. Restore the last known installed
-    snapshot from skill-local memory so user choices survive reseeding.
+    After a YJS reload completes, restore the last known installed
+    apps/widgets snapshot so user choices survive reseeding.
     """
     payload = _payload(evt)
     webspace_id = _webspace_id(payload)
