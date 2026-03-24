@@ -175,29 +175,52 @@
 								"emptyText": "No realtime diagnostics yet"
 							}
 						},
-						{
-							"id": "infrastate-slots",
-							"type": "ui.list",
-							"area": "main",
-							"title": "Core slots",
-							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/slots"
-							},
-							"inputs": {
-								"titleKey": "title",
-								"subtitleKey": "subtitle",
-								"detailsPath": "",
-								"showDetails": false,
-								"itemAccordion": false,
-								"emptyText": "No slot manifests yet"
-							}
-						},
-						{
-							"id": "infrastate-skills",
-							"type": "ui.table",
-							"area": "main",
-							"title": "Installed skills",
+    {
+      "id": "infrastate-slots",
+      "type": "ui.list",
+      "area": "main",
+      "title": "Core slots",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/infrastate/slots"
+      },
+      "inputs": {
+        "titleKey": "title",
+        "subtitleKey": "subtitle",
+        "detailsPath": "",
+        "showDetails": false,
+        "itemAccordion": false,
+        "emptyText": "No slot manifests yet"
+      }
+    },
+    {
+      "id": "infrastate-update-actions",
+      "type": "ui.actions",
+      "area": "main",
+      "title": "Update",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/infrastate/update_actions"
+      },
+      "inputs": {
+        "size": "small"
+      },
+      "actions": [
+        {
+          "on": "click",
+          "type": "callHost",
+          "target": "infrastate.action",
+          "params": {
+            "id": "$event.id"
+          }
+        }
+      ]
+    },
+    {
+      "id": "infrastate-skills",
+      "type": "ui.table",
+      "area": "main",
+      "title": "Installed skills",
 							"dataSource": {
 								"kind": "y",
 								"path": "data/infrastate/skills"
@@ -211,8 +234,8 @@
 								],
 								"buttons": [
 									{ "id": "update", "label": "Update", "whenKey": "update_available", "whenEquals": true }
-								]
-							},
+      ]
+    },
 							"actions": [
 								{
 									"on": "click:update",
@@ -265,19 +288,27 @@
 		"widgets": {}
 	},
 	"ydoc_defaults": {
-		"data/infrastate": {
-			"summary": {
-				"label": "Core update",
-				"value": "idle",
-				"subtitle": "slot —",
-				"description": "No update in progress"
-			},
-			"actions": [
-				{
-					"id": "refresh",
-					"title": "Refresh snapshot",
-					"description": "Reload current local update state"
-				},
+    "data/infrastate": {
+      "summary": {
+        "label": "Core update",
+        "value": "idle",
+        "subtitle": "slot —",
+        "description": "No update in progress"
+      },
+      "update_actions": [
+        {
+          "id": "adaos_update",
+          "title": "Update skills & scenarios",
+          "status": "ok",
+          "description": "Run workspace sync on the selected node"
+        }
+      ],
+      "actions": [
+        {
+          "id": "refresh",
+          "title": "Refresh snapshot",
+          "description": "Reload current local update state"
+        },
 				{
 					"id": "cancel_update",
 					"title": "Cancel update",

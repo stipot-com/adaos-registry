@@ -269,6 +269,124 @@ def _skills_items() -> list[dict[str, Any]]:
     return out
 
 
+def _update_actions(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> list[dict[str, Any]]:
+    selected_node_id = str(ui_state.get("selected_node_id") or getattr(conf, "node_id", "") or "").strip()
+    local_node_id = str(getattr(conf, "node_id", "") or "").strip()
+    role = str(getattr(conf, "role", "") or "").strip().lower()
+    target_kind = "local" if not selected_node_id or selected_node_id == local_node_id else "member"
+    title = "Update skills & scenarios"
+    if target_kind == "member":
+        title = f"Update skills & scenarios ({selected_node_id[:8]})"
+    description = "Sync workspace sources for skills and scenarios and refresh runtime projections."
+    if target_kind == "member" and role != "hub":
+        return [
+            {
+                "id": "adaos_update",
+                "title": title,
+                "status": "warn",
+                "description": "Remote update is available only from hub",
+            }
+        ]
+    return [
+        {
+            "id": "adaos_update",
+            "title": title,
+            "status": "ok",
+            "description": description,
+        }
+    ]
+
+
+def _adaos_update_local(*, dry_run: bool = False) -> dict[str, Any]:
+    """
+    Best-effort "adaos update" for workspace artifacts:
+      - sync skills repo sparse checkout
+      - sync scenarios repo sparse checkout
+      - refresh runtime projections for installed skills
+    """
+    try:
+        ctx = get_ctx()
+    except Exception as exc:
+        return {"ok": False, "error": f"no_ctx: {exc}"}
+
+    errors: dict[str, str] = {}
+    payload: dict[str, Any] = {"ok": True, "dry_run": bool(dry_run)}
+
+    if dry_run:
+        payload["note"] = "dry_run"
+        return payload
+
+    skill_mgr = SkillManager(
+        repo=ctx.skills_repo,
+        registry=SqliteSkillRegistry(ctx.sql),
+        git=ctx.git,
+        paths=ctx.paths,
+        bus=getattr(ctx, "bus", None),
+        caps=ctx.caps,
+        settings=ctx.settings,
+    )
+    try:
+        from adaos.adapters.db import SqliteScenarioRegistry
+        from adaos.services.scenario.manager import ScenarioManager
+
+        scenario_mgr = ScenarioManager(
+            repo=ctx.scenarios_repo,
+            registry=SqliteScenarioRegistry(ctx.sql),
+            git=ctx.git,
+            paths=ctx.paths,
+            bus=getattr(ctx, "bus", None),
+            caps=ctx.caps,
+        )
+    except Exception as exc:
+        scenario_mgr = None
+        errors["scenario_mgr"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        skill_mgr.sync()
+        payload["skills_synced"] = True
+    except Exception as exc:
+        payload["skills_synced"] = False
+        errors["skills_sync"] = f"{type(exc).__name__}: {exc}"
+
+    if scenario_mgr is not None:
+        try:
+            scenario_mgr.sync()
+            payload["scenarios_synced"] = True
+        except Exception as exc:
+            payload["scenarios_synced"] = False
+            errors["scenarios_sync"] = f"{type(exc).__name__}: {exc}"
+
+    runtime_updated: list[str] = []
+    runtime_errors: dict[str, str] = {}
+    try:
+        metas = ctx.skills_repo.list() or []
+    except Exception:
+        metas = []
+    for meta in metas:
+        try:
+            name = str(getattr(meta, "id", None).value if getattr(meta, "id", None) else getattr(meta, "name", "") or "").strip()
+        except Exception:
+            name = ""
+        if not name:
+            continue
+        try:
+            res = skill_mgr.runtime_update(name, space="workspace")
+            if isinstance(res, dict) and res.get("ok"):
+                runtime_updated.append(name)
+        except Exception as exc:
+            runtime_errors[name] = f"{type(exc).__name__}: {exc}"
+
+    payload["runtime_updated"] = sorted(set(runtime_updated))
+    if runtime_errors:
+        errors["runtime_update"] = f"{len(runtime_errors)} skills failed"
+        payload["runtime_update_errors"] = runtime_errors
+
+    if errors:
+        payload["ok"] = False
+        payload["errors"] = errors
+    return payload
+
+
 def _route_info(conf) -> tuple[str | None, bool | None]:
     role = str(getattr(conf, "role", "") or "").strip().lower()
     if role == "hub":
@@ -1943,6 +2061,59 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             last_error="",
         )
         return result
+    if action_id == "adaos_update":
+        local_node_id = str(getattr(conf, "node_id", "") or "")
+        role = str(getattr(conf, "role", "") or "").strip().lower()
+        if selected_node_id and selected_node_id != local_node_id:
+            if role != "hub":
+                raise ValueError("remote update can only be requested from hub")
+            try:
+                from adaos.services.subnet.link_manager import get_hub_link_manager
+
+                async def _request_remote_update() -> dict[str, Any]:
+                    result = await get_hub_link_manager().rpc_tools_call(
+                        selected_node_id,
+                        tool="infrastate_skill:adaos_update",
+                        arguments={"dry_run": False},
+                        timeout=180.0,
+                        dev=False,
+                    )
+                    return result if isinstance(result, dict) else {"ok": True, "result": result}
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    async def _runner() -> None:
+                        try:
+                            final = await _request_remote_update()
+                        except Exception as exc:
+                            final = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                        _write_ui_state(
+                            selected_node_id=selected_node_id,
+                            last_action="adaos_update",
+                            last_action_ts=time.time(),
+                            last_refresh_ts=time.time(),
+                            last_result=final,
+                            last_error="" if bool(final.get("ok", False)) else str(final.get("error") or ""),
+                        )
+
+                    loop.create_task(_runner())
+                    result = {"ok": True, "accepted": True, "node_id": selected_node_id, "action": "adaos_update"}
+                except RuntimeError:
+                    result = asyncio.run(_request_remote_update())
+            except Exception as exc:
+                raise RuntimeError(f"failed to request remote node update for {selected_node_id}: {exc}") from exc
+        else:
+            result = _adaos_update_local(dry_run=False)
+
+        _write_ui_state(
+            selected_node_id=selected_node_id or local_node_id,
+            last_action="adaos_update",
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_result=result,
+            last_error="",
+        )
+        return result
     if action_id in {"member_start_update", "member_cancel_update", "member_rollback"}:
         if not selected_node_id or selected_node_id == str(getattr(conf, "node_id", "") or ""):
             raise ValueError("remote member action requires selected remote member")
@@ -2065,6 +2236,7 @@ def _snapshot() -> dict[str, Any]:
     snapshot = {
         "summary": _summary(display_status, display_last_result, display_slots_payload, display_lifecycle, conf, display_build, ui_state, reliability, transport_diag, selected_member=selected_member),
         "actions": _action_items(display_status, ui_state, reliability),
+        "update_actions": _update_actions(conf, ui_state, reliability),
         "nodes": node_tabs,
         "node_editor": node_editor,
         "build": _build_items(display_build),
@@ -2156,6 +2328,15 @@ def on_action(evt: Any) -> None:
         _write_ui_state(last_action=action_id, last_action_ts=time.time(), last_error=str(exc))
         _log.warning("infrastate action failed: %s", action_id, exc_info=True)
     refresh_snapshot(webspace_id=webspace_id)
+
+
+@tool("adaos_update")
+def adaos_update(dry_run: bool = False) -> dict[str, Any]:
+    """
+    Update skills and scenarios on the current node.
+    This is used by hub->member RPC and can also be called locally.
+    """
+    return _adaos_update_local(dry_run=bool(dry_run))
 
 
 @subscribe("skills.activated")

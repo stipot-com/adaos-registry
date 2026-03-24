@@ -55,3 +55,13 @@ tools:
     output_schema:
       type: object
       required: [ok, summary]
+  - name: 'adaos_update'
+    description: Update skills and scenarios sources on this node (git sync) and refresh runtime projections.
+    entry: 'handlers.main:adaos_update'
+    input_schema:
+      type: object
+      properties:
+        dry_run: { type: boolean }
+    output_schema:
+      type: object
+      properties: {}
