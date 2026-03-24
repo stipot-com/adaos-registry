@@ -983,6 +983,8 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     root = overview.get("hub_root") if isinstance(overview.get("hub_root"), dict) else {}
     route = overview.get("hub_root_browser") if isinstance(overview.get("hub_root_browser"), dict) else {}
+    member_link = overview.get("hub_member") if isinstance(overview.get("hub_member"), dict) else {}
+    member_sync = overview.get("member_hub_sync") if isinstance(overview.get("member_hub_sync"), dict) else {}
     root_diag = diagnostics.get("root_control") if isinstance(diagnostics.get("root_control"), dict) else {}
     route_diag = diagnostics.get("route") if isinstance(diagnostics.get("route"), dict) else {}
     root_status = str(root.get("effective_status") or "unknown")
@@ -993,6 +995,14 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
         f"realtime hub-root={root_status}/{root_state}"
         f" hub-root-browser={route_status}/{route_state}"
     )
+    member_link_status = str(member_link.get("effective_status") or "").strip()
+    member_link_state = str(member_link.get("effective_state") or "").strip()
+    if member_link_status:
+        note += f" hub-member={member_link_status}/{member_link_state or 'unknown'}"
+    member_sync_status = str(member_sync.get("effective_status") or "").strip()
+    member_sync_state = str(member_sync.get("effective_state") or "").strip()
+    if member_sync_status:
+        note += f" member-sync={member_sync_status}/{member_sync_state or 'unknown'}"
     root_incident = str(root_diag.get("last_incident_class") or "").strip()
     route_incident = str(route_diag.get("last_incident_class") or "").strip()
     if root_incident:
@@ -1089,6 +1099,16 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
         note += f" member_link={assessment.get('state') or 'unknown'}"
         if hub_member_connection_state.get("member_total") is not None:
             note += f" members={hub_member_connection_state.get('member_total') or 0}"
+        rollout = hub_member_connection_state.get("update_rollout") if isinstance(hub_member_connection_state.get("update_rollout"), dict) else {}
+        rollout_counts = rollout.get("rollout_counts") if isinstance(rollout.get("rollout_counts"), dict) else {}
+        snapshot_counts = rollout.get("snapshot_counts") if isinstance(rollout.get("snapshot_counts"), dict) else {}
+        if rollout:
+            note += f" member_rollout={rollout.get('state') or 'unknown'}"
+            note += f" member_fresh={snapshot_counts.get('fresh') or 0}"
+            note += f" member_pending={snapshot_counts.get('pending') or 0}"
+            note += f" member_stale={snapshot_counts.get('stale') or 0}"
+            note += f" member_progress={rollout_counts.get('in_progress') or 0}"
+            note += f" member_failed={rollout_counts.get('failed') or 0}"
         if str(hub_member_connection_state.get("role") or "") == "member":
             hub = hub_member_connection_state.get("hub") if isinstance(hub_member_connection_state.get("hub"), dict) else {}
             if hub.get("last_hub_core_update"):
@@ -1171,6 +1191,16 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
             "sync",
             "Browser -> Hub sync",
             note="This panel is projected via local Yjs. If it updates while hub -> root is down, the browser-hub realtime path is healthy.",
+        ),
+        _channel_item(
+            "hub_member",
+            "Hub <-> Member control",
+            note="This path carries member link control, mirrored update signals, node names, and remote runtime snapshots.",
+        ),
+        _channel_item(
+            "member_hub_sync",
+            "Member <-> Hub sync",
+            note="This path reflects the active sync authority between member and hub instead of assuming fallback transport is healthy.",
         ),
     ]
 
@@ -1302,15 +1332,24 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         role = str(hub_member_connection_state.get("role") or "").strip()
         if role == "hub":
             members = hub_member_connection_state.get("members") if isinstance(hub_member_connection_state.get("members"), list) else []
+            rollout = hub_member_connection_state.get("update_rollout") if isinstance(hub_member_connection_state.get("update_rollout"), dict) else {}
+            rollout_counts = rollout.get("rollout_counts") if isinstance(rollout.get("rollout_counts"), dict) else {}
+            snapshot_counts = rollout.get("snapshot_counts") if isinstance(rollout.get("snapshot_counts"), dict) else {}
             member_titles = [
-                f"{str(item.get('label') or item.get('node_id') or 'member')}:{str(item.get('state') or 'connected')}"
+                f"{str(item.get('label') or item.get('node_id') or 'member')}:{str(item.get('snapshot_state') or item.get('state') or 'connected')}/{str(item.get('snapshot_update_state') or '-')}"
                 for item in members[:4]
                 if isinstance(item, dict)
             ]
             description = (
                 f"{assessment.get('state') or 'unknown'} | "
                 f"members={hub_member_connection_state.get('member_total') or 0} | "
-                f"broadcasts={hub_member_connection_state.get('hub_core_update_broadcast_total') or 0}"
+                f"broadcasts={hub_member_connection_state.get('hub_core_update_broadcast_total') or 0} | "
+                f"rollout={rollout.get('state') or '-'} | "
+                f"fresh={snapshot_counts.get('fresh') or 0} | "
+                f"pending={snapshot_counts.get('pending') or 0} | "
+                f"stale={snapshot_counts.get('stale') or 0} | "
+                f"in_progress={rollout_counts.get('in_progress') or 0} | "
+                f"failed={rollout_counts.get('failed') or 0}"
             )
             subtitle = " | ".join(member_titles) if member_titles else "No connected members"
         else:
@@ -1524,9 +1563,11 @@ def _summary(
         message = (
             f"hub-member link={selected_member.get('state') or 'connected'}"
             f" last_msg_ago={selected_member.get('last_message_ago_s') if selected_member.get('last_message_ago_s') is not None else '-'}"
+            f" snapshot={selected_member.get('snapshot_state') or '-'}"
             f" node={lifecycle.get('node_state') or '-'}"
             f" update={status.get('state') or selected_member.get('snapshot_update_state') or selected_member.get('last_hub_core_update_state') or '-'}"
             f" action={status.get('action') or selected_member.get('last_hub_core_update_action') or '-'}"
+            f" rollout={selected_member.get('rollout_state') or '-'}"
         )
         if build_ref:
             message += f" runtime={build_ref}"
@@ -1620,7 +1661,7 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                 "id": "refresh",
                 "title": "Refresh snapshot",
                 "status": "ok",
-                "description": "Reload current remote member projection",
+                "description": "Request fresh member snapshot from hub link",
                 "subtitle": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_refresh)) if last_refresh else "",
             }
         ]
@@ -1698,10 +1739,61 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
     ):
         raise ValueError("remote member tabs are read-only for update and transport actions")
     if action_id == "refresh":
+        if selected_node_id and selected_node_id != str(getattr(conf, "node_id", "") or ""):
+            if str(getattr(conf, "role", "") or "").strip().lower() != "hub":
+                raise ValueError("remote member snapshot refresh can only be requested from hub")
+            try:
+                from adaos.services.subnet.link_manager import get_hub_link_manager
+
+                async def _request_remote_snapshot() -> dict[str, Any]:
+                    return await get_hub_link_manager().request_member_snapshot(
+                        selected_node_id,
+                        reason="infrastate.refresh",
+                    )
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(_request_remote_snapshot())
+                    result = {
+                        "ok": True,
+                        "accepted": True,
+                        "node_id": selected_node_id,
+                        "reason": "infrastate.refresh",
+                    }
+                except RuntimeError:
+                    result = asyncio.run(_request_remote_snapshot())
+            except Exception as exc:
+                raise RuntimeError(f"failed to request remote member snapshot for {selected_node_id}: {exc}") from exc
+            _write_ui_state(
+                selected_node_id=selected_node_id,
+                last_action="refresh",
+                last_action_ts=time.time(),
+                last_refresh_ts=time.time(),
+                last_result=result,
+                last_error="",
+            )
+            return result
         _write_ui_state(last_action="refresh", last_action_ts=time.time(), last_refresh_ts=time.time(), last_error="")
         return {"ok": True, "action": action_id}
     if action_id == "select_node":
         node_id = str(_extract_param(payload, "node_id") or "").strip()
+        if node_id and node_id != str(getattr(conf, "node_id", "") or "") and str(getattr(conf, "role", "") or "").strip().lower() == "hub":
+            try:
+                from adaos.services.subnet.link_manager import get_hub_link_manager
+
+                async def _request_remote_snapshot_on_select() -> None:
+                    await get_hub_link_manager().request_member_snapshot(
+                        node_id,
+                        reason="infrastate.select_node",
+                    )
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(_request_remote_snapshot_on_select())
+                except RuntimeError:
+                    asyncio.run(_request_remote_snapshot_on_select())
+            except Exception:
+                _log.debug("failed to request member snapshot on node tab select", exc_info=True)
         _write_ui_state(
             selected_node_id=node_id or str(getattr(conf, "node_id", "") or ""),
             last_action="select_node",
@@ -1945,6 +2037,7 @@ def on_webspace_reload(evt: Any) -> None:
 @subscribe("subnet.member.link.down")
 @subscribe("subnet.member.meta.changed")
 @subscribe("subnet.member.snapshot.changed")
+@subscribe("subnet.member.snapshot.requested")
 @subscribe("subnet.stopping")
 @subscribe("subnet.stopped")
 @subscribe("core.update.status")

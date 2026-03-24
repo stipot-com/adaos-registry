@@ -19,6 +19,7 @@ events:
     - 'subnet.member.link.down'
     - 'subnet.member.meta.changed'
     - 'subnet.member.snapshot.changed'
+    - 'subnet.member.snapshot.requested'
     - 'subnet.stopping'
     - 'subnet.stopped'
     - 'core.update.status'
