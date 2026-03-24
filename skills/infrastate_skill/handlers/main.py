@@ -573,6 +573,141 @@ def _selected_node_editor(conf, selected_node: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _selected_member_entry(reliability: dict[str, Any], node_id: str) -> dict[str, Any]:
+    conn_state = _hub_member_connection_state(reliability)
+    members = conn_state.get("members") if isinstance(conn_state.get("members"), list) else []
+    for item in members:
+        if isinstance(item, dict) and str(item.get("node_id") or "") == node_id:
+            return item
+    return {}
+
+
+def _remote_build_meta(snapshot: dict[str, Any]) -> dict[str, Any]:
+    build = snapshot.get("build") if isinstance(snapshot.get("build"), dict) else {}
+    return {
+        "version": str(build.get("version") or "unknown"),
+        "build_date": str(build.get("build_date") or ""),
+        "git_sha": "",
+        "git_short_sha": "",
+        "git_branch": "",
+        "git_subject": "",
+        "repo_root": "",
+        "runtime_version": str(build.get("runtime_version") or build.get("version") or "unknown"),
+        "runtime_git_commit": str(build.get("runtime_git_commit") or ""),
+        "runtime_git_short_commit": str(build.get("runtime_git_short_commit") or ""),
+        "runtime_git_branch": str(build.get("runtime_git_branch") or ""),
+        "runtime_git_subject": str(build.get("runtime_git_subject") or ""),
+    }
+
+
+def _remote_status_payload(snapshot: dict[str, Any], member: dict[str, Any]) -> dict[str, Any]:
+    update = snapshot.get("update_status") if isinstance(snapshot.get("update_status"), dict) else {}
+    state = str(update.get("state") or member.get("snapshot_update_state") or member.get("last_hub_core_update_state") or member.get("state") or "connected")
+    phase = str(update.get("phase") or member.get("snapshot_update_phase") or "")
+    message = str(update.get("message") or "")
+    if not message and snapshot:
+        message = "remote member snapshot"
+    if not message:
+        message = "remote snapshot pending"
+    return {
+        "state": state,
+        "phase": phase,
+        "action": str(update.get("action") or member.get("last_hub_core_update_action") or ""),
+        "message": message,
+        "reason": str(update.get("reason") or ("subnet.member.snapshot" if snapshot else "subnet.member.snapshot.pending")),
+        "target_rev": str(update.get("target_rev") or ""),
+        "target_version": str(update.get("target_version") or ""),
+        "target_slot": str(update.get("target_slot") or ""),
+        "scheduled_for": update.get("scheduled_for"),
+        "updated_at": update.get("updated_at") or snapshot.get("captured_at"),
+        "finished_at": update.get("finished_at"),
+    }
+
+
+def _remote_last_result_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
+    last = snapshot.get("last_result") if isinstance(snapshot.get("last_result"), dict) else {}
+    return {
+        "state": str(last.get("state") or ""),
+        "phase": str(last.get("phase") or ""),
+        "message": str(last.get("message") or ""),
+        "target_slot": str(last.get("target_slot") or ""),
+        "finished_at": last.get("finished_at"),
+        "validated_at": last.get("validated_at"),
+    }
+
+
+def _remote_slots_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
+    slots = snapshot.get("slots") if isinstance(snapshot.get("slots"), dict) else {}
+    active_slot = str(slots.get("active_slot") or "")
+    previous_slot = str(slots.get("previous_slot") or "")
+    active_manifest = slots.get("active_manifest") if isinstance(slots.get("active_manifest"), dict) else {}
+    slot_items: dict[str, Any] = {}
+    if active_slot:
+        slot_items[active_slot] = {
+            "manifest": {
+                "slot": str(active_manifest.get("slot") or active_slot),
+                "target_rev": str(active_manifest.get("target_rev") or ""),
+                "target_version": str(active_manifest.get("target_version") or ""),
+                "git_commit": str(active_manifest.get("git_commit") or ""),
+                "git_short_commit": str(active_manifest.get("git_short_commit") or ""),
+                "git_branch": str(active_manifest.get("git_branch") or ""),
+                "git_subject": str(active_manifest.get("git_subject") or ""),
+            },
+            "path": "",
+        }
+    if previous_slot and previous_slot not in slot_items:
+        slot_items[previous_slot] = {"manifest": {"slot": previous_slot}, "path": ""}
+    return {
+        "active_slot": active_slot,
+        "previous_slot": previous_slot,
+        "slots": slot_items,
+        "active_manifest": active_manifest,
+    }
+
+
+def _remote_lifecycle_payload(snapshot: dict[str, Any], member: dict[str, Any]) -> dict[str, Any]:
+    node_state = str(snapshot.get("node_state") or member.get("snapshot_node_state") or member.get("state") or "connected")
+    reason = str(snapshot.get("reason") or ("remote member snapshot" if snapshot else "remote snapshot pending"))
+    return {
+        "node_state": node_state,
+        "reason": reason,
+        "draining": bool(snapshot.get("draining")),
+    }
+
+
+def _selected_node_projection(
+    selected_node: dict[str, Any],
+    *,
+    reliability: dict[str, Any],
+    status: dict[str, Any],
+    last_result: dict[str, Any],
+    slots_payload: dict[str, Any],
+    lifecycle: dict[str, Any],
+    build: dict[str, Any],
+) -> dict[str, Any]:
+    if str(selected_node.get("kind") or "local") == "local":
+        return {
+            "status": status,
+            "last_result": last_result,
+            "slots_payload": slots_payload,
+            "lifecycle": lifecycle,
+            "build": build,
+            "selected_member": {},
+            "selected_snapshot": {},
+        }
+    member = _selected_member_entry(reliability, str(selected_node.get("node_id") or ""))
+    snapshot = member.get("node_snapshot") if isinstance(member.get("node_snapshot"), dict) else {}
+    return {
+        "status": _remote_status_payload(snapshot, member),
+        "last_result": _remote_last_result_payload(snapshot),
+        "slots_payload": _remote_slots_payload(snapshot),
+        "lifecycle": _remote_lifecycle_payload(snapshot, member),
+        "build": _remote_build_meta(snapshot),
+        "selected_member": member,
+        "selected_snapshot": snapshot,
+    }
+
+
 def _event_state() -> list[dict[str, Any]]:
     raw = skill_memory_get(_EVENTS_STATE_KEY, [])
     return raw if isinstance(raw, list) else []
@@ -1285,6 +1420,7 @@ def _summary(
     ui_state: dict[str, Any],
     reliability: dict[str, Any],
     transport_diag: dict[str, Any],
+    selected_member: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     node_tabs, selected_node = _node_tabs(conf, ui_state, reliability)
     selected_kind = str(selected_node.get("kind") or "local")
@@ -1377,26 +1513,25 @@ def _summary(
     summary_label = "Core update"
     summary_value = state
     summary_subtitle = f"slot {active} | {build.get('runtime_git_short_commit') or build.get('git_short_sha') or build.get('version') or 'unknown'}"
+    selected_member = selected_member if isinstance(selected_member, dict) else {}
     if selected_kind != "local":
-        connection_state = _hub_member_connection_state(reliability)
-        members = connection_state.get("members") if isinstance(connection_state.get("members"), list) else []
-        selected_member = next(
-            (
-                item
-                for item in members
-                if isinstance(item, dict) and str(item.get("node_id") or "") == selected_node_id
-            ),
-            {},
-        )
         summary_label = "Node state"
-        summary_value = str(selected_member.get("last_hub_core_update_state") or selected_member.get("state") or "connected")
+        summary_value = str(status.get("state") or lifecycle.get("node_state") or selected_member.get("state") or "connected")
+        build_ref = str(build.get("runtime_git_short_commit") or build.get("runtime_version") or build.get("version") or "").strip()
         summary_subtitle = f"{selected_label} | {selected_node_id[:8]}"
+        if build_ref:
+            summary_subtitle += f" | {build_ref}"
         message = (
             f"hub-member link={selected_member.get('state') or 'connected'}"
             f" last_msg_ago={selected_member.get('last_message_ago_s') if selected_member.get('last_message_ago_s') is not None else '-'}"
-            f" update={selected_member.get('last_hub_core_update_state') or '-'}"
-            f" action={selected_member.get('last_hub_core_update_action') or '-'}"
+            f" node={lifecycle.get('node_state') or '-'}"
+            f" update={status.get('state') or selected_member.get('snapshot_update_state') or selected_member.get('last_hub_core_update_state') or '-'}"
+            f" action={status.get('action') or selected_member.get('last_hub_core_update_action') or '-'}"
         )
+        if build_ref:
+            message += f" runtime={build_ref}"
+        if selected_member.get("last_snapshot_ago_s") is not None:
+            message += f" snapshot_ago={selected_member.get('last_snapshot_ago_s')}"
     return {
         "label": summary_label,
         "value": summary_value,
@@ -1467,7 +1602,7 @@ def _summary(
         "countdown_remaining_sec": _countdown_remaining_sec(status),
         "drain_timeout_sec": float(status.get("drain_timeout_sec") or 0.0),
         "signal_delay_sec": float(status.get("signal_delay_sec") or 0.0),
-        "buttons": _summary_buttons(status),
+        "buttons": [] if selected_kind != "local" else _summary_buttons(status),
     }
 
 
@@ -1475,8 +1610,20 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     last_refresh = float(ui_state.get("last_refresh_ts") or 0.0)
     last_action = str(ui_state.get("last_action") or "").strip()
     state = str(status.get("state") or "idle")
+    selected_node_id = str(ui_state.get("selected_node_id") or "").strip()
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
+    local_node_id = str(load_config().node_id or "")
+    if selected_node_id and selected_node_id != local_node_id:
+        return [
+            {
+                "id": "refresh",
+                "title": "Refresh snapshot",
+                "status": "ok",
+                "description": "Reload current remote member projection",
+                "subtitle": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_refresh)) if last_refresh else "",
+            }
+        ]
     items = [
         {
             "id": "start_update",
@@ -1543,6 +1690,13 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
 
 def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[str, Any]:
     status = read_core_update_status()
+    selected_node_id = str(_ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "")
+    if (
+        action_id in {"start_update", "cancel_update", "refuse_update", "rollback", "drain", "restart_sidecar"}
+        and selected_node_id
+        and selected_node_id != str(getattr(conf, "node_id", "") or "")
+    ):
+        raise ValueError("remote member tabs are read-only for update and transport actions")
     if action_id == "refresh":
         _write_ui_state(last_action="refresh", last_action_ts=time.time(), last_refresh_ts=time.time(), last_error="")
         return {"ok": True, "action": action_id}
@@ -1645,29 +1799,44 @@ def _snapshot() -> dict[str, Any]:
     reliability = _reliability_snapshot(conf, lifecycle)
     node_tabs, selected_node = _node_tabs(conf, ui_state, reliability)
     node_editor = _selected_node_editor(conf, selected_node)
+    selected_projection = _selected_node_projection(
+        selected_node,
+        reliability=reliability,
+        status=status,
+        last_result=last_result,
+        slots_payload=slots_payload,
+        lifecycle=lifecycle,
+        build=build,
+    )
+    display_status = selected_projection["status"] if isinstance(selected_projection.get("status"), dict) else status
+    display_last_result = selected_projection["last_result"] if isinstance(selected_projection.get("last_result"), dict) else last_result
+    display_slots_payload = selected_projection["slots_payload"] if isinstance(selected_projection.get("slots_payload"), dict) else slots_payload
+    display_lifecycle = selected_projection["lifecycle"] if isinstance(selected_projection.get("lifecycle"), dict) else lifecycle
+    display_build = selected_projection["build"] if isinstance(selected_projection.get("build"), dict) else build
+    selected_member = selected_projection["selected_member"] if isinstance(selected_projection.get("selected_member"), dict) else {}
     transport_diag = _transport_diag_snapshot()
     report = _read_json(_base_dir() / "state" / "core_update" / "status.json") or {}
-    effective_report = _effective_update_log_report(report, last_result)
+    effective_report = _effective_update_log_report(report, display_last_result)
     snapshot = {
-        "summary": _summary(status, last_result, slots_payload, lifecycle, conf, build, ui_state, reliability, transport_diag),
-        "actions": _action_items(status, ui_state, reliability),
+        "summary": _summary(display_status, display_last_result, display_slots_payload, display_lifecycle, conf, display_build, ui_state, reliability, transport_diag, selected_member=selected_member),
+        "actions": _action_items(display_status, ui_state, reliability),
         "nodes": node_tabs,
         "node_editor": node_editor,
-        "build": _build_items(build),
-        "steps": _step_items(status, slots_payload, lifecycle, build),
+        "build": _build_items(display_build),
+        "steps": _step_items(display_status, display_slots_payload, display_lifecycle, display_build),
         "realtime": _realtime_items(reliability, transport_diag),
-        "slots": _slot_items(slots_payload),
+        "slots": _slot_items(display_slots_payload),
         "skills": _skills_items(),
         "logs": _status_log_items(effective_report),
         "events": list(reversed(_event_state())),
-        "status": status,
-        "last_result": last_result,
-        "lifecycle": lifecycle,
+        "status": display_status,
+        "last_result": display_last_result,
+        "lifecycle": display_lifecycle,
         "reliability": reliability,
         "transport_diag": transport_diag,
-        "build_meta": build,
+        "build_meta": display_build,
         "ui_state": ui_state,
-        "slots_meta": slots_payload,
+        "slots_meta": display_slots_payload,
         "last_refresh_ts": time.time(),
     }
     return snapshot
@@ -1775,6 +1944,7 @@ def on_webspace_reload(evt: Any) -> None:
 @subscribe("subnet.member.link.up")
 @subscribe("subnet.member.link.down")
 @subscribe("subnet.member.meta.changed")
+@subscribe("subnet.member.snapshot.changed")
 @subscribe("subnet.stopping")
 @subscribe("subnet.stopped")
 @subscribe("core.update.status")
