@@ -675,6 +675,42 @@ def _remote_lifecycle_payload(snapshot: dict[str, Any], member: dict[str, Any]) 
     }
 
 
+def _remote_control_payload(snapshot: dict[str, Any], member: dict[str, Any]) -> dict[str, Any]:
+    control = snapshot.get("hub_control_request") if isinstance(snapshot.get("hub_control_request"), dict) else {}
+    request = control.get("request") if isinstance(control.get("request"), dict) else {}
+    result = control.get("result") if isinstance(control.get("result"), dict) else {}
+    member_result = member.get("last_control_result") if isinstance(member.get("last_control_result"), dict) else {}
+    effective_result = result or member_result
+    ok_value: Any = None
+    if isinstance(effective_result, dict) and "ok" in effective_result:
+        ok_value = effective_result.get("ok")
+    return {
+        "request_id": str(
+            request.get("request_id")
+            or member.get("last_control_request_id")
+            or effective_result.get("request_id")
+            or ""
+        ).strip(),
+        "action": str(
+            request.get("action")
+            or member.get("last_control_action")
+            or effective_result.get("action")
+            or ""
+        ).strip(),
+        "reason": str(request.get("reason") or member.get("last_control_reason") or "").strip(),
+        "state": str(
+            request.get("state")
+            or ("completed" if ok_value is not None else ("requested" if request or member.get("last_control_request_id") else ""))
+        ).strip(),
+        "ok": ok_value,
+        "error": str(control.get("error") or effective_result.get("error") or "").strip(),
+        "requested_at": control.get("requested_at"),
+        "completed_at": control.get("completed_at"),
+        "result": effective_result if isinstance(effective_result, dict) else {},
+        "request": request if isinstance(request, dict) else {},
+    }
+
+
 def _selected_node_projection(
     selected_node: dict[str, Any],
     *,
@@ -1554,6 +1590,10 @@ def _summary(
     summary_subtitle = f"slot {active} | {build.get('runtime_git_short_commit') or build.get('git_short_sha') or build.get('version') or 'unknown'}"
     selected_member = selected_member if isinstance(selected_member, dict) else {}
     if selected_kind != "local":
+        remote_control = _remote_control_payload(
+            selected_member.get("node_snapshot") if isinstance(selected_member.get("node_snapshot"), dict) else {},
+            selected_member,
+        )
         summary_label = "Node state"
         summary_value = str(status.get("state") or lifecycle.get("node_state") or selected_member.get("state") or "connected")
         build_ref = str(build.get("runtime_git_short_commit") or build.get("runtime_version") or build.get("version") or "").strip()
@@ -1569,6 +1609,12 @@ def _summary(
             f" action={status.get('action') or selected_member.get('last_hub_core_update_action') or '-'}"
             f" rollout={selected_member.get('rollout_state') or '-'}"
         )
+        if remote_control.get("action"):
+            message += f" control={remote_control.get('action')}:{remote_control.get('ok') if remote_control.get('ok') is not None else '-'}"
+        if remote_control.get("error"):
+            message += f" control_error={remote_control.get('error')}"
+        elif remote_control.get("request_id"):
+            message += f" control_req={remote_control.get('request_id')}"
         if build_ref:
             message += f" runtime={build_ref}"
         if selected_member.get("last_snapshot_ago_s") is not None:
@@ -1656,6 +1702,13 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     local_node_id = str(load_config().node_id or "")
     if selected_node_id and selected_node_id != local_node_id:
+        member = _selected_member_entry(reliability, selected_node_id)
+        snapshot = member.get("node_snapshot") if isinstance(member.get("node_snapshot"), dict) else {}
+        remote_status = _remote_status_payload(snapshot, member)
+        remote_control = _remote_control_payload(snapshot, member)
+        remote_state = str(remote_status.get("state") or member.get("snapshot_update_state") or "connected").strip().lower()
+        control_subtitle = str(remote_control.get("request_id") or remote_control.get("action") or "").strip()
+        cancelable_states = {"countdown", "draining", "stopping", "restarting", "applying", "validate", "validated"}
         return [
             {
                 "id": "refresh",
@@ -1663,7 +1716,28 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                 "status": "ok",
                 "description": "Request fresh member snapshot from hub link",
                 "subtitle": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_refresh)) if last_refresh else "",
-            }
+            },
+            {
+                "id": "member_start_update",
+                "title": "Start member update",
+                "status": "ok" if remote_state in {"idle", "failed", "succeeded", "validated", "cancelled", "rolled_back", "connected"} else "idle",
+                "description": "Request core update on selected member via hub link",
+                "subtitle": control_subtitle if remote_control.get("action") == "update" else "",
+            },
+            {
+                "id": "member_cancel_update",
+                "title": "Cancel member update",
+                "status": "warn" if remote_state in cancelable_states else "idle",
+                "description": "Request cancel of selected member update countdown",
+                "subtitle": control_subtitle if remote_control.get("action") == "cancel" else "",
+            },
+            {
+                "id": "member_rollback",
+                "title": "Rollback member",
+                "status": "warn",
+                "description": "Request slot rollback on selected member",
+                "subtitle": control_subtitle if remote_control.get("action") == "rollback" else "",
+            },
         ]
     items = [
         {
@@ -1834,6 +1908,56 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
         _write_ui_state(
             selected_node_id=node_id,
             last_action="set_node_names",
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_result=result,
+            last_error="",
+        )
+        return result
+    if action_id in {"member_start_update", "member_cancel_update", "member_rollback"}:
+        if not selected_node_id or selected_node_id == str(getattr(conf, "node_id", "") or ""):
+            raise ValueError("remote member action requires selected remote member")
+        if str(getattr(conf, "role", "") or "").strip().lower() != "hub":
+            raise ValueError("remote member control can only be requested from hub")
+        current_rev = str(status.get("target_rev") or os.getenv("ADAOS_REV") or "").strip()
+        current_version = str(status.get("target_version") or BUILD_INFO.version or "").strip()
+        request_action = {
+            "member_start_update": "update",
+            "member_cancel_update": "cancel",
+            "member_rollback": "rollback",
+        }[action_id]
+        try:
+            from adaos.services.subnet.link_manager import get_hub_link_manager
+
+            async def _request_remote_update() -> dict[str, Any]:
+                return await get_hub_link_manager().request_member_update(
+                    selected_node_id,
+                    action=request_action,
+                    target_rev=current_rev if request_action == "update" else "",
+                    target_version=current_version if request_action == "update" else "",
+                    countdown_sec=60.0 if request_action == "update" else 15.0,
+                    drain_timeout_sec=10.0,
+                    signal_delay_sec=0.25,
+                    reason=f"infrastate.{action_id}",
+                )
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_request_remote_update())
+                result = {
+                    "ok": True,
+                    "accepted": True,
+                    "node_id": selected_node_id,
+                    "action": request_action,
+                    "reason": f"infrastate.{action_id}",
+                }
+            except RuntimeError:
+                result = asyncio.run(_request_remote_update())
+        except Exception as exc:
+            raise RuntimeError(f"failed to request remote member update for {selected_node_id}: {exc}") from exc
+        _write_ui_state(
+            selected_node_id=selected_node_id,
+            last_action=action_id,
             last_action_ts=time.time(),
             last_refresh_ts=time.time(),
             last_result=result,
@@ -2038,6 +2162,8 @@ def on_webspace_reload(evt: Any) -> None:
 @subscribe("subnet.member.meta.changed")
 @subscribe("subnet.member.snapshot.changed")
 @subscribe("subnet.member.snapshot.requested")
+@subscribe("subnet.member.update.requested")
+@subscribe("subnet.member.update.result")
 @subscribe("subnet.stopping")
 @subscribe("subnet.stopped")
 @subscribe("core.update.status")

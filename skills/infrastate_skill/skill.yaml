@@ -20,6 +20,8 @@ events:
     - 'subnet.member.meta.changed'
     - 'subnet.member.snapshot.changed'
     - 'subnet.member.snapshot.requested'
+    - 'subnet.member.update.requested'
+    - 'subnet.member.update.result'
     - 'subnet.stopping'
     - 'subnet.stopped'
     - 'core.update.status'
