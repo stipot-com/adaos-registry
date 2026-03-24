@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ from adaos.services.agent_context import get_ctx
 from adaos.services.core_slots import active_slot_manifest, slot_status
 from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
-from adaos.services.node_config import load_config
+from adaos.services.node_config import load_config, normalize_node_names, set_node_names as persist_node_names
 from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime_sidecar_enabled
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
@@ -414,6 +415,7 @@ def _reliability_snapshot(conf, lifecycle: dict[str, Any]) -> dict[str, Any]:
         node_id=str(getattr(conf, "node_id", "") or ""),
         subnet_id=str(getattr(conf, "subnet_id", "") or ""),
         role=str(getattr(conf, "role", "") or ""),
+        node_names=list(getattr(conf, "node_names", []) or []),
         local_ready=_local_ready(),
         node_state=str(lifecycle.get("node_state") or "ready"),
         draining=bool(lifecycle.get("draining")),
@@ -491,6 +493,86 @@ def _write_ui_state(**updates: Any) -> dict[str, Any]:
     return payload
 
 
+def _hub_member_connection_state(reliability: dict[str, Any]) -> dict[str, Any]:
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    state = runtime.get("hub_member_connection_state")
+    return state if isinstance(state, dict) else {}
+
+
+def _node_label(node_names: Any, *, fallback: str) -> str:
+    if isinstance(node_names, list):
+        for item in node_names:
+            token = str(item or "").strip()
+            if token:
+                return token
+    return fallback
+
+
+def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    selected_node_id = str(ui_state.get("selected_node_id") or "").strip()
+    local_node_id = str(getattr(conf, "node_id", "") or "")
+    role = str(getattr(conf, "role", "") or "").strip().lower()
+    local_names = list(getattr(conf, "node_names", []) or [])
+    items: list[dict[str, Any]] = [
+        {
+            "id": local_node_id,
+            "label": _node_label(local_names, fallback="hub" if role == "hub" else "member"),
+            "title": "Local node",
+            "role": role,
+            "node_id": local_node_id,
+            "node_names": local_names,
+            "kind": "local",
+        }
+    ]
+    conn_state = _hub_member_connection_state(reliability)
+    members = conn_state.get("members") if isinstance(conn_state.get("members"), list) else []
+    if role == "hub":
+        for index, member in enumerate(members, start=1):
+            if not isinstance(member, dict):
+                continue
+            node_id = str(member.get("node_id") or "").strip()
+            if not node_id:
+                continue
+            member_names = member.get("node_names") if isinstance(member.get("node_names"), list) else []
+            items.append(
+                {
+                    "id": node_id,
+                    "label": _node_label(member_names, fallback="member" if index == 1 else f"member {index}"),
+                    "title": "Connected member",
+                    "role": "member",
+                    "node_id": node_id,
+                    "node_names": member_names,
+                    "kind": "member",
+                    "state": str(member.get("state") or "connected"),
+                }
+            )
+    valid_ids = {str(item.get("id") or "") for item in items}
+    if not selected_node_id or selected_node_id not in valid_ids:
+        selected_node_id = local_node_id
+    selected = next((item for item in items if str(item.get("id") or "") == selected_node_id), items[0])
+    tabs: list[dict[str, Any]] = []
+    for item in items:
+        label = str(item.get("label") or "")
+        if str(item.get("id") or "") == selected_node_id:
+            label = f"{label} *"
+        tabs.append({**item, "label": label, "selected": str(item.get("id") or "") == selected_node_id})
+    return tabs, selected
+
+
+def _selected_node_editor(conf, selected_node: dict[str, Any]) -> dict[str, Any]:
+    local_node_id = str(getattr(conf, "node_id", "") or "")
+    selected_node_id = str(selected_node.get("node_id") or "")
+    is_local = selected_node_id == local_node_id
+    names = selected_node.get("node_names") if isinstance(selected_node.get("node_names"), list) else []
+    return {
+        "names_csv": ", ".join(str(item or "").strip() for item in names if str(item or "").strip()),
+        "editable": bool(is_local or str(getattr(conf, "role", "") or "").strip().lower() == "hub"),
+        "scope": "local" if is_local else "remote-member",
+        "node_id": selected_node_id,
+        "label": str(selected_node.get("label") or ""),
+    }
+
+
 def _event_state() -> list[dict[str, Any]]:
     raw = skill_memory_get(_EVENTS_STATE_KEY, [])
     return raw if isinstance(raw, list) else []
@@ -554,6 +636,17 @@ def _extract_action_id(payload: Any) -> str:
                 if found:
                     return found
     return ""
+
+
+def _extract_param(payload: Any, key: str) -> Any:
+    if isinstance(payload, dict):
+        if key in payload:
+            return payload.get(key)
+        for nested_key in ("item", "selected"):
+            nested = payload.get(nested_key)
+            if isinstance(nested, dict) and key in nested:
+                return nested.get(key)
+    return None
 
 
 def _status_log_items(status: dict[str, Any]) -> list[dict[str, Any]]:
@@ -751,6 +844,7 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     diagnostics = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
     hub_member_channels = runtime.get("hub_member_channels") if isinstance(runtime.get("hub_member_channels"), dict) else {}
+    hub_member_connection_state = runtime.get("hub_member_connection_state") if isinstance(runtime.get("hub_member_connection_state"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     root = overview.get("hub_root") if isinstance(overview.get("hub_root"), dict) else {}
     route = overview.get("hub_root_browser") if isinstance(overview.get("hub_root_browser"), dict) else {}
@@ -855,6 +949,17 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
             note += f" member_cmd={member_command.get('active_path')}:{member_command.get('state') or '-'}"
         if member_sync.get("active_path"):
             note += f" member_sync={member_sync.get('active_path')}:{member_sync.get('state') or '-'}"
+    if hub_member_connection_state:
+        assessment = hub_member_connection_state.get("assessment") if isinstance(hub_member_connection_state.get("assessment"), dict) else {}
+        note += f" member_link={assessment.get('state') or 'unknown'}"
+        if hub_member_connection_state.get("member_total") is not None:
+            note += f" members={hub_member_connection_state.get('member_total') or 0}"
+        if str(hub_member_connection_state.get("role") or "") == "member":
+            hub = hub_member_connection_state.get("hub") if isinstance(hub_member_connection_state.get("hub"), dict) else {}
+            if hub.get("last_hub_core_update"):
+                mirrored = hub.get("last_hub_core_update") if isinstance(hub.get("last_hub_core_update"), dict) else {}
+                if mirrored.get("state"):
+                    note += f" hub_update={mirrored.get('state')}"
     return note
 
 
@@ -865,6 +970,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
     channel_overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
     hub_member_channels = runtime.get("hub_member_channels") if isinstance(runtime.get("hub_member_channels"), dict) else {}
+    hub_member_connection_state = runtime.get("hub_member_connection_state") if isinstance(runtime.get("hub_member_connection_state"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     signals = runtime.get("signals") if isinstance(runtime.get("signals"), dict) else {}
     strategy = _hub_root_strategy(reliability, transport_diag)
@@ -1056,6 +1162,48 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
             }
         )
 
+    if hub_member_connection_state:
+        assessment = hub_member_connection_state.get("assessment") if isinstance(hub_member_connection_state.get("assessment"), dict) else {}
+        role = str(hub_member_connection_state.get("role") or "").strip()
+        if role == "hub":
+            members = hub_member_connection_state.get("members") if isinstance(hub_member_connection_state.get("members"), list) else []
+            member_titles = [
+                f"{str(item.get('label') or item.get('node_id') or 'member')}:{str(item.get('state') or 'connected')}"
+                for item in members[:4]
+                if isinstance(item, dict)
+            ]
+            description = (
+                f"{assessment.get('state') or 'unknown'} | "
+                f"members={hub_member_connection_state.get('member_total') or 0} | "
+                f"broadcasts={hub_member_connection_state.get('hub_core_update_broadcast_total') or 0}"
+            )
+            subtitle = " | ".join(member_titles) if member_titles else "No connected members"
+        else:
+            hub = hub_member_connection_state.get("hub") if isinstance(hub_member_connection_state.get("hub"), dict) else {}
+            mirrored = hub.get("last_hub_core_update") if isinstance(hub.get("last_hub_core_update"), dict) else {}
+            follow = hub.get("last_follow_result") if isinstance(hub.get("last_follow_result"), dict) else {}
+            description = (
+                f"{assessment.get('state') or 'unknown'} | "
+                f"state={hub_member_connection_state.get('state') or '-'} | "
+                f"hub_update={mirrored.get('state') or '-'} | "
+                f"follow_ok={follow.get('ok') if isinstance(follow, dict) and 'ok' in follow else '-'}"
+            )
+            subtitle = (
+                f"hub={hub.get('hub_node_id') or '-'} | "
+                f"last_msg_ago={hub.get('last_message_ago_s') if hub.get('last_message_ago_s') is not None else '-'} | "
+                f"follow_err={hub.get('last_follow_error') or '-'}"
+            )
+        items.append(
+            {
+                "id": "hub_member_connection_state",
+                "title": "Hub-member connections",
+                "status": "warn" if str(assessment.get("state") or "") in {"degraded", "fallback"} else "ok",
+                "description": description,
+                "subtitle": subtitle,
+                "content": _safe_json_text(hub_member_connection_state),
+            }
+        )
+
     if sidecar_runtime:
         provenance = (
             sidecar_runtime.get("transport_provenance")
@@ -1138,6 +1286,10 @@ def _summary(
     reliability: dict[str, Any],
     transport_diag: dict[str, Any],
 ) -> dict[str, Any]:
+    node_tabs, selected_node = _node_tabs(conf, ui_state, reliability)
+    selected_kind = str(selected_node.get("kind") or "local")
+    selected_node_id = str(selected_node.get("node_id") or getattr(conf, "node_id", "") or "")
+    selected_label = str(selected_node.get("label") or ("hub" if str(getattr(conf, "role", "") or "") == "hub" else "member"))
     active = str(slots_payload.get("active_slot") or "--")
     phase = str(status.get("phase") or "")
     state = str(status.get("state") or "idle")
@@ -1222,14 +1374,42 @@ def _summary(
         diag_item=route_diag,
         transport_assessment=strategy_assessment,
     )
+    summary_label = "Core update"
+    summary_value = state
+    summary_subtitle = f"slot {active} | {build.get('runtime_git_short_commit') or build.get('git_short_sha') or build.get('version') or 'unknown'}"
+    if selected_kind != "local":
+        connection_state = _hub_member_connection_state(reliability)
+        members = connection_state.get("members") if isinstance(connection_state.get("members"), list) else []
+        selected_member = next(
+            (
+                item
+                for item in members
+                if isinstance(item, dict) and str(item.get("node_id") or "") == selected_node_id
+            ),
+            {},
+        )
+        summary_label = "Node state"
+        summary_value = str(selected_member.get("last_hub_core_update_state") or selected_member.get("state") or "connected")
+        summary_subtitle = f"{selected_label} | {selected_node_id[:8]}"
+        message = (
+            f"hub-member link={selected_member.get('state') or 'connected'}"
+            f" last_msg_ago={selected_member.get('last_message_ago_s') if selected_member.get('last_message_ago_s') is not None else '-'}"
+            f" update={selected_member.get('last_hub_core_update_state') or '-'}"
+            f" action={selected_member.get('last_hub_core_update_action') or '-'}"
+        )
     return {
-        "label": "Core update",
-        "value": state,
-        "subtitle": f"slot {active} | {build.get('runtime_git_short_commit') or build.get('git_short_sha') or build.get('version') or 'unknown'}",
+        "label": summary_label,
+        "value": summary_value,
+        "subtitle": summary_subtitle,
         "description": message,
         "phase": phase,
         "role": str(getattr(conf, "role", "") or ""),
         "node_id": str(getattr(conf, "node_id", "") or ""),
+        "selected_node_id": selected_node_id,
+        "selected_node_kind": selected_kind,
+        "selected_node_label": selected_label,
+        "selected_node_names": selected_node.get("node_names") if isinstance(selected_node.get("node_names"), list) else [],
+        "node_tab_total": len(node_tabs),
         "subnet_id": str(getattr(conf, "subnet_id", "") or ""),
         "root_url": str(getattr(getattr(conf, "root_settings", None), "base_url", "") or ""),
         "updated_at": float(status.get("updated_at") or time.time()),
@@ -1361,11 +1541,59 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     return items
 
 
-def _perform_action(action_id: str, conf) -> dict[str, Any]:
+def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[str, Any]:
     status = read_core_update_status()
     if action_id == "refresh":
         _write_ui_state(last_action="refresh", last_action_ts=time.time(), last_refresh_ts=time.time(), last_error="")
         return {"ok": True, "action": action_id}
+    if action_id == "select_node":
+        node_id = str(_extract_param(payload, "node_id") or "").strip()
+        _write_ui_state(
+            selected_node_id=node_id or str(getattr(conf, "node_id", "") or ""),
+            last_action="select_node",
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_error="",
+        )
+        return {"ok": True, "selected_node_id": node_id}
+    if action_id == "set_node_names":
+        node_id = str(_extract_param(payload, "node_id") or _ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "").strip()
+        value = _extract_param(payload, "value")
+        node_names = normalize_node_names(value)
+        if not node_id or node_id == str(getattr(conf, "node_id", "") or ""):
+            updated = persist_node_names(node_names)
+            result = {
+                "ok": True,
+                "node_id": str(getattr(updated, "node_id", "") or ""),
+                "node_names": list(getattr(updated, "node_names", []) or []),
+                "scope": "local",
+            }
+        elif str(getattr(conf, "role", "") or "").strip().lower() == "hub":
+            try:
+                from adaos.services.subnet.link_manager import get_hub_link_manager
+
+                async def _push_remote_names() -> None:
+                    await get_hub_link_manager().set_member_node_names(node_id, node_names=node_names)
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(_push_remote_names())
+                except RuntimeError:
+                    asyncio.run(_push_remote_names())
+                result = {"ok": True, "accepted": True, "node_id": node_id, "node_names": node_names, "scope": "remote-member"}
+            except Exception as exc:
+                raise RuntimeError(f"failed to propagate node names to member {node_id}: {exc}") from exc
+        else:
+            raise ValueError("remote member names can only be edited from hub")
+        _write_ui_state(
+            selected_node_id=node_id,
+            last_action="set_node_names",
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_result=result,
+            last_error="",
+        )
+        return result
     if action_id == "start_update":
         current_rev = str(status.get("target_rev") or os.getenv("ADAOS_REV") or "").strip()
         current_version = str(status.get("target_version") or BUILD_INFO.version or "").strip()
@@ -1415,12 +1643,16 @@ def _snapshot() -> dict[str, Any]:
     build = _build_meta()
     ui_state = _ui_state()
     reliability = _reliability_snapshot(conf, lifecycle)
+    node_tabs, selected_node = _node_tabs(conf, ui_state, reliability)
+    node_editor = _selected_node_editor(conf, selected_node)
     transport_diag = _transport_diag_snapshot()
     report = _read_json(_base_dir() / "state" / "core_update" / "status.json") or {}
     effective_report = _effective_update_log_report(report, last_result)
     snapshot = {
         "summary": _summary(status, last_result, slots_payload, lifecycle, conf, build, ui_state, reliability, transport_diag),
         "actions": _action_items(status, ui_state, reliability),
+        "nodes": node_tabs,
+        "node_editor": node_editor,
         "build": _build_items(build),
         "steps": _step_items(status, slots_payload, lifecycle, build),
         "realtime": _realtime_items(reliability, transport_diag),
@@ -1505,7 +1737,7 @@ def on_action(evt: Any) -> None:
     webspace_id = _webspace_id_from_payload(payload)
     try:
         if action_id:
-            _perform_action(action_id, conf)
+            _perform_action(action_id, conf, payload)
     except Exception as exc:
         _write_ui_state(last_action=action_id, last_action_ts=time.time(), last_error=str(exc))
         _log.warning("infrastate action failed: %s", action_id, exc_info=True)
@@ -1540,9 +1772,14 @@ def on_webspace_reload(evt: Any) -> None:
 @subscribe("subnet.nats.up")
 @subscribe("subnet.nats.down")
 @subscribe("subnet.nats.reconnect")
+@subscribe("subnet.member.link.up")
+@subscribe("subnet.member.link.down")
+@subscribe("subnet.member.meta.changed")
 @subscribe("subnet.stopping")
 @subscribe("subnet.stopped")
 @subscribe("core.update.status")
+@subscribe("hub.core_update.status")
+@subscribe("node.names.changed")
 def on_runtime_event(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     try:

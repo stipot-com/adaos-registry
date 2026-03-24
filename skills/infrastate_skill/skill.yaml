@@ -15,9 +15,14 @@ events:
     - 'subnet.nats.up'
     - 'subnet.nats.down'
     - 'subnet.nats.reconnect'
+    - 'subnet.member.link.up'
+    - 'subnet.member.link.down'
+    - 'subnet.member.meta.changed'
     - 'subnet.stopping'
     - 'subnet.stopped'
     - 'core.update.status'
+    - 'hub.core_update.status'
+    - 'node.names.changed'
 data_projections:
   - scope: subnet
     slot: infrastate.snapshot

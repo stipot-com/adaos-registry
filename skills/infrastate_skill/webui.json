@@ -51,6 +51,55 @@
 							}
 						},
 						{
+							"id": "infrastate-nodes",
+							"type": "input.commandBar",
+							"area": "main",
+							"title": "Nodes",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/nodes"
+							},
+							"inputs": {
+								"size": "small"
+							},
+							"actions": [
+								{
+									"on": "click",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": {
+										"id": "select_node",
+										"node_id": "$event.id"
+									}
+								}
+							]
+						},
+						{
+							"id": "infrastate-node-editor",
+							"type": "input.text",
+							"area": "main",
+							"title": "Node names",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/node_editor"
+							},
+							"inputs": {
+								"bindField": "names_csv",
+								"placeholder": "hub, alias"
+							},
+							"actions": [
+								{
+									"on": "change",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": {
+										"id": "set_node_names",
+										"value": "$event.value"
+									}
+								}
+							]
+						},
+						{
 							"id": "infrastate-actions",
 							"type": "ui.actions",
 							"area": "main",
@@ -245,6 +294,15 @@
 					"description": "Reject new tool calls and enter draining state"
 				}
 			],
+			"nodes": [
+				{
+					"id": "local",
+					"label": "hub"
+				}
+			],
+			"node_editor": {
+				"names_csv": ""
+			},
 			"build": [],
 			"steps": [],
 			"realtime": [],
