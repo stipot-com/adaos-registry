@@ -525,7 +525,9 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
         }
     ]
     conn_state = _hub_member_connection_state(reliability)
-    members = conn_state.get("members") if isinstance(conn_state.get("members"), list) else []
+    members = conn_state.get("known_members") if isinstance(conn_state.get("known_members"), list) else []
+    if not members:
+        members = conn_state.get("members") if isinstance(conn_state.get("members"), list) else []
     if role == "hub":
         for index, member in enumerate(members, start=1):
             if not isinstance(member, dict):
@@ -534,16 +536,20 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
             if not node_id:
                 continue
             member_names = member.get("node_names") if isinstance(member.get("node_names"), list) else []
+            connected = bool(member.get("connected"))
+            observed_via = str(member.get("observed_via") or "").strip()
             items.append(
                 {
                     "id": node_id,
                     "label": _node_label(member_names, fallback="member" if index == 1 else f"member {index}"),
-                    "title": "Connected member",
+                    "title": "Connected member" if connected else ("Observed member" if observed_via == "subnet_directory" else "Member"),
                     "role": "member",
                     "node_id": node_id,
                     "node_names": member_names,
                     "kind": "member",
                     "state": str(member.get("state") or "connected"),
+                    "connected": connected,
+                    "observed_via": observed_via,
                 }
             )
     valid_ids = {str(item.get("id") or "") for item in items}
@@ -575,7 +581,9 @@ def _selected_node_editor(conf, selected_node: dict[str, Any]) -> dict[str, Any]
 
 def _selected_member_entry(reliability: dict[str, Any], node_id: str) -> dict[str, Any]:
     conn_state = _hub_member_connection_state(reliability)
-    members = conn_state.get("members") if isinstance(conn_state.get("members"), list) else []
+    members = conn_state.get("known_members") if isinstance(conn_state.get("known_members"), list) else []
+    if not members:
+        members = conn_state.get("members") if isinstance(conn_state.get("members"), list) else []
     for item in members:
         if isinstance(item, dict) and str(item.get("node_id") or "") == node_id:
             return item
@@ -1615,6 +1623,10 @@ def _summary(
             message += f" control_error={remote_control.get('error')}"
         elif remote_control.get("request_id"):
             message += f" control_req={remote_control.get('request_id')}"
+        if selected_member.get("observed_via"):
+            message += f" via={selected_member.get('observed_via')}"
+        if selected_member.get("last_seen_ago_s") is not None:
+            message += f" last_seen_ago={selected_member.get('last_seen_ago_s')}"
         if build_ref:
             message += f" runtime={build_ref}"
         if selected_member.get("last_snapshot_ago_s") is not None:
@@ -1704,6 +1716,23 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     if selected_node_id and selected_node_id != local_node_id:
         member = _selected_member_entry(reliability, selected_node_id)
         snapshot = member.get("node_snapshot") if isinstance(member.get("node_snapshot"), dict) else {}
+        connected = bool(member.get("connected"))
+        observed_via = str(member.get("observed_via") or "").strip()
+        if not connected:
+            last_seen_ago = member.get("last_seen_ago_s")
+            return [
+                {
+                    "id": "refresh",
+                    "title": "Refresh snapshot",
+                    "status": "idle",
+                    "description": "Member is only observed via heartbeat/directory; no active hub-member link yet",
+                    "subtitle": (
+                        f"{observed_via or 'directory'} | last_seen_ago={last_seen_ago}"
+                        if last_seen_ago is not None
+                        else (observed_via or "directory")
+                    ),
+                }
+            ]
         remote_status = _remote_status_payload(snapshot, member)
         remote_control = _remote_control_payload(snapshot, member)
         remote_state = str(remote_status.get("state") or member.get("snapshot_update_state") or "connected").strip().lower()
