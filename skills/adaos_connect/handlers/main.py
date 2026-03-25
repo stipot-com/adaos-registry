@@ -7,7 +7,6 @@ from adaos.sdk.core.decorators import subscribe
 from adaos.services.agent_context import get_ctx
 from adaos.services.node_config import _expand_path, load_config
 from adaos.services.root.client import RootHttpClient
-from adaos.services.root.service import RootDeveloperService
 from adaos.services.yjs.doc import async_get_ydoc
 from adaos.services.yjs.webspace import default_webspace_id
 
@@ -53,6 +52,14 @@ def _root_client() -> tuple[RootHttpClient, str]:
     return RootHttpClient(base_url=base, verify=verify, cert=cert_tuple), hub_id
 
 
+def _app_base_url() -> str:
+    ctx = get_ctx()
+    app_base = str(getattr(ctx.settings, "app_base", "") or "").strip()
+    if app_base:
+        return app_base.rstrip("/")
+    return "https://app.inimatic.com"
+
+
 async def _write_current(webspace_id: str, current: Dict[str, Any]) -> None:
     async with async_get_ydoc(webspace_id) as ydoc:
         data_map = ydoc.get_map("data")
@@ -87,20 +94,26 @@ def _base_current(mode: str) -> Dict[str, Any]:
 
 
 def _browser_current() -> Dict[str, Any]:
-    auth = RootDeveloperService().device_authorize()
+    client, _hub_id = _root_client()
+    data = client.request("POST", "/v1/browser/pair/create", json={"ttl": 600})
+    code = str((data or {}).get("pair_code") or "").strip()
+    if not code:
+        raise RuntimeError("browser pair code is empty")
     current = _base_current("browser")
-    link = str(auth.verification_uri_complete or auth.verification_uri or "").strip()
-    current["summary"] = "Scan this QR code to connect another browser to the owner login flow."
+    link = f"{_app_base_url()}/?pair_code={code}"
+    current["summary"] = "Scan this QR code to connect another browser to the current web workspace."
     current["qr_text"] = link
     current["link"] = link
-    current["code"] = str(auth.user_code or "").strip()
+    current["code"] = code
     return current
 
 
 def _telegram_current(client: RootHttpClient, hub_id: str) -> Dict[str, Any]:
     data = client.request("POST", "/io/tg/pair/create", json={"hub_id": hub_id, "ttl": 600})
-    code = str((data or {}).get("pair_code") or "").strip()
-    deep_link = str((data or {}).get("deep_link") or "").strip()
+    code = str((data or {}).get("pair_code") or (data or {}).get("code") or "").strip()
+    if not code:
+        raise RuntimeError("telegram pair code is empty")
+    deep_link = str((data or {}).get("deep_link") or "").strip() or f"https://t.me/adaos_home_bot?start={code}"
     current = _base_current("telegram")
     current["summary"] = "Scan this QR code to open the Telegram join link for the current hub."
     current["qr_text"] = deep_link
