@@ -1,0 +1,71 @@
+{
+  "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "apps": [
+    {
+      "id": "mediaserver_app",
+      "title": "Media Server",
+      "icon": "videocam-outline",
+      "launchModal": "mediaserver_modal"
+    }
+  ],
+  "widgets": [
+    {
+      "id": "mediaserver_widget",
+      "title": "Media Server",
+      "type": "media.videoBrowser",
+      "inputs": {
+        "compact": true,
+        "modalId": "mediaserver_modal",
+        "showDiagnostics": true
+      }
+    }
+  ],
+  "registry": {
+    "modals": {
+      "mediaserver_modal": {
+        "title": "Media Server",
+        "schema": {
+          "id": "mediaserver_modal",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "mediaserver-modal-widget",
+              "type": "media.videoBrowser",
+              "area": "main",
+              "title": "Media Library",
+              "inputs": {
+                "compact": false,
+                "modalId": "mediaserver_modal",
+                "showDiagnostics": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    "widgets": {}
+  },
+  "ydoc_defaults": {},
+  "contributions": [
+    {
+      "extensionPoint": "desktop.apps",
+      "type": "app",
+      "id": "mediaserver_app",
+      "autoInstall": true
+    },
+    {
+      "extensionPoint": "desktop.widgets",
+      "type": "widget",
+      "id": "mediaserver_widget",
+      "autoInstall": true
+    }
+  ]
+}

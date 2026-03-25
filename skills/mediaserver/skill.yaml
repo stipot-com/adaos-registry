@@ -1,0 +1,26 @@
+name: mediaserver
+version: 0.2.0
+entry: handlers/main.py
+runtime:
+  python: '3.11'
+description: Local MVP media debugging skill for upload/playback diagnostics and media-channel
+  readiness checks.
+dependencies: []
+events: {}
+default_tool: get_snapshot
+tools:
+- name: get_snapshot
+  description: Return current media library snapshot and media-channel capability
+    diagnostics.
+  entry: handlers.main:get_snapshot
+  input_schema:
+    type: object
+    additionalProperties: true
+  output_schema:
+    type: object
+    required:
+    - ok
+    - items
+    - capabilities
+updated_at: '2026-03-25T06:16:13+00:00'
+
