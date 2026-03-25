@@ -19,7 +19,7 @@ from adaos.services.agent_context import get_ctx
 from adaos.services.core_slots import active_slot_manifest, slot_status
 from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
-from adaos.services.node_config import load_config, normalize_node_names, set_node_names as persist_node_names
+from adaos.services.node_config import load_config, set_node_names as persist_node_names
 from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime_sidecar_enabled
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
@@ -33,6 +33,31 @@ from packaging.version import Version, InvalidVersion
 _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
 _EVENTS_STATE_KEY = "infrastate.events"
+
+def _normalize_node_names(value: Any, *, limit: int = 8) -> list[str]:
+    # Local copy for backward/forward compatibility with core.
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items = [item.strip() for item in value.replace("\n", ",").split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = [str(item or "").strip() for item in value]
+    else:
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        token = str(item or "").strip()
+        if not token:
+            continue
+        folded = token.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        result.append(token[:80])
+        if len(result) >= limit:
+            break
+    return result
 
 
 def lang_res() -> dict[str, str]:
@@ -2026,7 +2051,7 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
     if action_id == "set_node_names":
         node_id = str(_extract_param(payload, "node_id") or _ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "").strip()
         value = _extract_param(payload, "value")
-        node_names = normalize_node_names(value)
+        node_names = _normalize_node_names(value)
         if not node_id or node_id == str(getattr(conf, "node_id", "") or ""):
             updated = persist_node_names(node_names)
             result = {
