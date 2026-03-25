@@ -1586,16 +1586,21 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         )
 
     if sync_runtime:
+        assessment = sync_runtime.get("assessment") if isinstance(sync_runtime.get("assessment"), dict) else {}
+        recovery_playbook = sync_runtime.get("recovery_playbook") if isinstance(sync_runtime.get("recovery_playbook"), dict) else {}
+        recovery_guidance = sync_runtime.get("recovery_guidance") if isinstance(sync_runtime.get("recovery_guidance"), dict) else {}
+        recovery_order = recovery_playbook.get("action_order") if isinstance(recovery_playbook.get("action_order"), list) else []
         webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
         selected_ws_id = str(sync_runtime.get("selected_webspace_id") or "").strip() or default_webspace_id()
         selected_ws = webspaces.get(selected_ws_id) if isinstance(webspaces.get(selected_ws_id), dict) else {}
+        recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
         items.append(
             {
                 "id": "yjs_sync_runtime",
                 "title": "Yjs sync runtime",
-                "status": "warn" if str(sync_runtime.get("state") or "") in {"pressure", "degraded"} else "ok",
+                "status": "warn" if str(assessment.get("state") or "") in {"pressure", "degraded"} else "ok",
                 "description": (
-                    f"{sync_runtime.get('state') or 'unknown'} | "
+                    f"{assessment.get('state') or 'unknown'} | "
                     f"webspaces={sync_runtime.get('webspace_total') or 0} | "
                     f"active={sync_runtime.get('active_webspace_total') or 0} | "
                     f"compacted={sync_runtime.get('compacted_webspace_total') or 0}"
@@ -1605,7 +1610,9 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"replay={selected_ws.get('replay_window_entries') or 0}/"
                     f"{selected_ws.get('replay_window_limit') or 0} | "
                     f"backups={selected_ws.get('backup_total') or 0} | "
-                    f"snapshot={'yes' if selected_ws.get('snapshot_exists') else 'no'} | "
+                    f"snapshot={'yes' if selected_ws.get('snapshot_file_exists') else 'no'} | "
+                    f"next={recommended_action or '-'} | "
+                    f"policy={'>'.join(str(item) for item in recovery_order) if recovery_order else '-'} | "
                     f"last_backup_ago={selected_ws.get('last_backup_ago_s') if selected_ws.get('last_backup_ago_s') is not None else '-'}"
                 ),
                 "content": _safe_json_text(sync_runtime),
@@ -1872,10 +1879,12 @@ def _summary(
     summary_subtitle = f"slot {active} | {build.get('runtime_git_short_commit') or build.get('git_short_sha') or build.get('version') or 'unknown'}"
     sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
     sync_webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
+    recovery_guidance = sync_runtime.get("recovery_guidance") if isinstance(sync_runtime.get("recovery_guidance"), dict) else {}
     selected_yjs_webspace_id = _selected_yjs_webspace_id(ui_state, reliability)
     selected_sync_webspace = sync_webspaces.get(selected_yjs_webspace_id) if isinstance(sync_webspaces.get(selected_yjs_webspace_id), dict) else {}
     selected_member = selected_member if isinstance(selected_member, dict) else {}
     if selected_kind == "local" and selected_yjs_webspace_id:
+        recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
         message += (
             f" | yjs_ws={selected_yjs_webspace_id}"
             f" {selected_sync_webspace.get('log_mode') or '-'}"
@@ -1884,6 +1893,8 @@ def _summary(
         )
         if selected_sync_webspace:
             message += f" snapshot={'yes' if selected_sync_webspace.get('snapshot_file_exists') else 'no'}"
+        if recommended_action:
+            message += f" next={recommended_action}"
     if selected_kind != "local":
         remote_control = _remote_control_payload(
             selected_member.get("node_snapshot") if isinstance(selected_member.get("node_snapshot"), dict) else {},
@@ -2011,12 +2022,14 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
     sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
     action_overrides = sync_runtime.get("action_overrides") if isinstance(sync_runtime.get("action_overrides"), dict) else {}
+    recovery_guidance = sync_runtime.get("recovery_guidance") if isinstance(sync_runtime.get("recovery_guidance"), dict) else {}
     backup_override = action_overrides.get("backup") if isinstance(action_overrides.get("backup"), dict) else {}
     reload_override = action_overrides.get("reload") if isinstance(action_overrides.get("reload"), dict) else {}
     restore_override = action_overrides.get("restore") if isinstance(action_overrides.get("restore"), dict) else {}
     reset_override = action_overrides.get("reset") if isinstance(action_overrides.get("reset"), dict) else {}
     sync_webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
     selected_sync_webspace = sync_webspaces.get(selected_yjs_webspace_id) if isinstance(sync_webspaces.get(selected_yjs_webspace_id), dict) else {}
+    recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     local_node_id = str(load_config().node_id or "")
     if selected_node_id and selected_node_id != local_node_id:
@@ -2126,14 +2139,18 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                     "id": "yjs_backup",
                     "title": "Yjs backup",
                     "status": "ok" if bool(backup_override.get("enabled", True)) else "idle",
-                    "description": str(backup_override.get("reason") or f"Persist Yjs snapshot for webspace {selected_yjs_webspace_id}"),
+                    "description": (
+                        "Recommended first step. " if recommended_action == "backup" else ""
+                    ) + str(backup_override.get("reason") or f"Persist Yjs snapshot for webspace {selected_yjs_webspace_id}"),
                     "subtitle": last_action if last_action == "yjs_backup" else "",
                 },
                 {
                     "id": "yjs_reload",
                     "title": "Yjs reload",
                     "status": "ok" if bool(reload_override.get("enabled", True)) else "idle",
-                    "description": str(reload_override.get("reason") or f"Reseed webspace {selected_yjs_webspace_id} from its current scenario"),
+                    "description": (
+                        "Recommended first step. " if recommended_action == "reload" else ""
+                    ) + str(reload_override.get("reason") or f"Reseed webspace {selected_yjs_webspace_id} from its current scenario"),
                     "subtitle": last_action if last_action == "yjs_reload" else "",
                 },
                 {
@@ -2141,7 +2158,8 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                     "title": "Yjs restore",
                     "status": "ok" if bool(restore_override.get("enabled")) else "idle",
                     "description": (
-                        str(restore_override.get("reason") or f"Restore webspace {selected_yjs_webspace_id} from its latest disk snapshot")
+                        ("Recommended first step. " if recommended_action == "restore" else "")
+                        + str(restore_override.get("reason") or f"Restore webspace {selected_yjs_webspace_id} from its latest disk snapshot")
                         if bool(restore_override.get("enabled"))
                         else str(restore_override.get("reason") or f"No disk snapshot available for webspace {selected_yjs_webspace_id}")
                     ),
@@ -2151,7 +2169,9 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                     "id": "yjs_reset",
                     "title": "Yjs reset",
                     "status": "warn" if bool(reset_override.get("enabled", True)) else "idle",
-                    "description": str(reset_override.get("reason") or f"Hard-reset webspace {selected_yjs_webspace_id} from its current scenario"),
+                    "description": (
+                        "Recommended first step. " if recommended_action == "reset" else ""
+                    ) + str(reset_override.get("reason") or f"Hard-reset webspace {selected_yjs_webspace_id} from its current scenario"),
                     "subtitle": last_action if last_action == "yjs_reset" else "",
                 },
             ]
