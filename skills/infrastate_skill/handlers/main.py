@@ -1371,6 +1371,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
     hub_member_channels = runtime.get("hub_member_channels") if isinstance(runtime.get("hub_member_channels"), dict) else {}
     hub_member_connection_state = runtime.get("hub_member_connection_state") if isinstance(runtime.get("hub_member_connection_state"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
+    sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
     signals = runtime.get("signals") if isinstance(runtime.get("signals"), dict) else {}
     strategy = _hub_root_strategy(reliability, transport_diag)
     transport_assessment = strategy.get("assessment") if isinstance(strategy.get("assessment"), dict) else {}
@@ -1535,6 +1536,32 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"{core_update_stream.get('last_issued_cursor') or 0}"
                 ),
                 "content": _safe_json_text(protocol),
+            }
+        )
+
+    if sync_runtime:
+        webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
+        default_ws = webspaces.get("default") if isinstance(webspaces.get("default"), dict) else {}
+        items.append(
+            {
+                "id": "yjs_sync_runtime",
+                "title": "Yjs sync runtime",
+                "status": "warn" if str(sync_runtime.get("state") or "") in {"pressure", "degraded"} else "ok",
+                "description": (
+                    f"{sync_runtime.get('state') or 'unknown'} | "
+                    f"webspaces={sync_runtime.get('webspace_total') or 0} | "
+                    f"active={sync_runtime.get('active_webspace_total') or 0} | "
+                    f"compacted={sync_runtime.get('compacted_webspace_total') or 0}"
+                ),
+                "subtitle": (
+                    f"default={default_ws.get('log_mode') or '-'} | "
+                    f"replay={default_ws.get('replay_window_entries') or 0}/"
+                    f"{default_ws.get('replay_window_limit') or 0} | "
+                    f"backups={default_ws.get('backup_total') or 0} | "
+                    f"snapshot={'yes' if default_ws.get('snapshot_exists') else 'no'} | "
+                    f"last_backup_ago={default_ws.get('last_backup_ago_s') if default_ws.get('last_backup_ago_s') is not None else '-'}"
+                ),
+                "content": _safe_json_text(sync_runtime),
             }
         )
 
@@ -2017,6 +2044,32 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
             "subtitle": last_action if last_action == "drain" else "",
         },
     ]
+    if str(getattr(load_config(), "role", "") or "").strip().lower() == "hub":
+        items.extend(
+            [
+                {
+                    "id": "yjs_backup",
+                    "title": "Yjs backup",
+                    "status": "ok",
+                    "description": "Persist current default webspace Yjs snapshot to disk",
+                    "subtitle": last_action if last_action == "yjs_backup" else "",
+                },
+                {
+                    "id": "yjs_reload",
+                    "title": "Yjs reload",
+                    "status": "ok",
+                    "description": "Reseed the default webspace from its current scenario",
+                    "subtitle": last_action if last_action == "yjs_reload" else "",
+                },
+                {
+                    "id": "yjs_reset",
+                    "title": "Yjs reset",
+                    "status": "warn",
+                    "description": "Hard-reset the default webspace from its current scenario",
+                    "subtitle": last_action if last_action == "yjs_reset" else "",
+                },
+            ]
+        )
     if bool(sidecar_runtime.get("enabled")):
         items.append(
             {
@@ -2048,7 +2101,7 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
     status = read_core_update_status()
     selected_node_id = str(_ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "")
     if (
-        action_id in {"start_update", "cancel_update", "refuse_update", "rollback", "drain", "restart_sidecar"}
+        action_id in {"start_update", "cancel_update", "refuse_update", "rollback", "drain", "restart_sidecar", "yjs_backup", "yjs_reload", "yjs_reset"}
         and selected_node_id
         and selected_node_id != str(getattr(conf, "node_id", "") or "")
     ):
@@ -2286,6 +2339,24 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             conf,
             "/api/node/sidecar/restart",
             {"reconnect_hub_root": True},
+        )
+    elif action_id == "yjs_backup":
+        result = _post_local_admin(
+            conf,
+            f"/api/node/yjs/webspaces/{default_webspace_id()}/backup",
+            {},
+        )
+    elif action_id == "yjs_reload":
+        result = _post_local_admin(
+            conf,
+            f"/api/node/yjs/webspaces/{default_webspace_id()}/reload",
+            {},
+        )
+    elif action_id == "yjs_reset":
+        result = _post_local_admin(
+            conf,
+            f"/api/node/yjs/webspaces/{default_webspace_id()}/reset",
+            {},
         )
     else:
         raise ValueError(f"unsupported infrastate action: {action_id}")
