@@ -750,6 +750,52 @@ def _selected_node_editor(conf, selected_node: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _selected_yjs_webspace_id(ui_state: dict[str, Any], reliability: dict[str, Any]) -> str:
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
+    webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
+    selected = str(ui_state.get("selected_yjs_webspace_id") or "").strip()
+    if selected and selected in webspaces:
+        return selected
+    default_id = default_webspace_id()
+    if default_id in webspaces:
+        return default_id
+    if webspaces:
+        return sorted(str(key) for key in webspaces.keys())[0]
+    return default_id
+
+
+def _yjs_webspace_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any], selected_node: dict[str, Any]) -> list[dict[str, Any]]:
+    if str(selected_node.get("kind") or "local") != "local":
+        return []
+    if str(getattr(conf, "role", "") or "").strip().lower() != "hub":
+        return []
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    sync_runtime = runtime.get("sync_runtime") if isinstance(sync_runtime.get("sync_runtime"), dict) else {}
+    webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
+    selected_id = _selected_yjs_webspace_id(ui_state, reliability)
+    items: list[dict[str, Any]] = []
+    for index, webspace_id in enumerate(sorted(str(key) for key in webspaces.keys()), start=1):
+        entry = webspaces.get(webspace_id) if isinstance(webspaces.get(webspace_id), dict) else {}
+        label = "default" if webspace_id == default_webspace_id() else webspace_id
+        if webspace_id == selected_id:
+            label = f"{label} *"
+        items.append(
+            {
+                "id": webspace_id,
+                "label": label,
+                "title": "Selected Yjs webspace" if webspace_id == selected_id else f"Yjs webspace {index}",
+                "subtitle": (
+                    f"{entry.get('log_mode') or '-'} | "
+                    f"replay={entry.get('replay_window_entries') or 0}/"
+                    f"{entry.get('replay_window_limit') or 0}"
+                ),
+                "selected": webspace_id == selected_id,
+            }
+        )
+    return items
+
+
 def _selected_member_entry(reliability: dict[str, Any], node_id: str) -> dict[str, Any]:
     conn_state = _hub_member_connection_state(reliability)
     members = conn_state.get("known_members") if isinstance(conn_state.get("known_members"), list) else []
@@ -1541,7 +1587,8 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
 
     if sync_runtime:
         webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
-        default_ws = webspaces.get("default") if isinstance(webspaces.get("default"), dict) else {}
+        selected_ws_id = str(sync_runtime.get("selected_webspace_id") or "").strip() or default_webspace_id()
+        selected_ws = webspaces.get(selected_ws_id) if isinstance(webspaces.get(selected_ws_id), dict) else {}
         items.append(
             {
                 "id": "yjs_sync_runtime",
@@ -1554,12 +1601,12 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"compacted={sync_runtime.get('compacted_webspace_total') or 0}"
                 ),
                 "subtitle": (
-                    f"default={default_ws.get('log_mode') or '-'} | "
-                    f"replay={default_ws.get('replay_window_entries') or 0}/"
-                    f"{default_ws.get('replay_window_limit') or 0} | "
-                    f"backups={default_ws.get('backup_total') or 0} | "
-                    f"snapshot={'yes' if default_ws.get('snapshot_exists') else 'no'} | "
-                    f"last_backup_ago={default_ws.get('last_backup_ago_s') if default_ws.get('last_backup_ago_s') is not None else '-'}"
+                    f"selected={selected_ws_id}:{selected_ws.get('log_mode') or '-'} | "
+                    f"replay={selected_ws.get('replay_window_entries') or 0}/"
+                    f"{selected_ws.get('replay_window_limit') or 0} | "
+                    f"backups={selected_ws.get('backup_total') or 0} | "
+                    f"snapshot={'yes' if selected_ws.get('snapshot_exists') else 'no'} | "
+                    f"last_backup_ago={selected_ws.get('last_backup_ago_s') if selected_ws.get('last_backup_ago_s') is not None else '-'}"
                 ),
                 "content": _safe_json_text(sync_runtime),
             }
@@ -1823,7 +1870,18 @@ def _summary(
     summary_label = "Core update"
     summary_value = state
     summary_subtitle = f"slot {active} | {build.get('runtime_git_short_commit') or build.get('git_short_sha') or build.get('version') or 'unknown'}"
+    sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
+    sync_webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
+    selected_yjs_webspace_id = _selected_yjs_webspace_id(ui_state, reliability)
+    selected_sync_webspace = sync_webspaces.get(selected_yjs_webspace_id) if isinstance(sync_webspaces.get(selected_yjs_webspace_id), dict) else {}
     selected_member = selected_member if isinstance(selected_member, dict) else {}
+    if selected_kind == "local" and selected_yjs_webspace_id:
+        message += (
+            f" | yjs_ws={selected_yjs_webspace_id}"
+            f" {selected_sync_webspace.get('log_mode') or '-'}"
+            f" replay={selected_sync_webspace.get('replay_window_entries') or 0}/"
+            f"{selected_sync_webspace.get('replay_window_limit') or 0}"
+        )
     if selected_kind != "local":
         remote_control = _remote_control_payload(
             selected_member.get("node_snapshot") if isinstance(selected_member.get("node_snapshot"), dict) else {},
@@ -1871,6 +1929,11 @@ def _summary(
         "selected_node_label": selected_label,
         "selected_node_names": selected_node.get("node_names") if isinstance(selected_node.get("node_names"), list) else [],
         "node_tab_total": len(node_tabs),
+        "selected_yjs_webspace_id": selected_yjs_webspace_id,
+        "selected_yjs_log_mode": str(selected_sync_webspace.get("log_mode") or ""),
+        "selected_yjs_replay_window_entries": int(selected_sync_webspace.get("replay_window_entries") or 0),
+        "selected_yjs_replay_window_limit": int(selected_sync_webspace.get("replay_window_limit") or 0),
+        "selected_yjs_backup_total": int(selected_sync_webspace.get("backup_total") or 0),
         "subnet_id": str(getattr(conf, "subnet_id", "") or ""),
         "root_url": str(getattr(getattr(conf, "root_settings", None), "base_url", "") or ""),
         "updated_at": float(status.get("updated_at") or time.time()),
@@ -1941,6 +2004,7 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     last_action = str(ui_state.get("last_action") or "").strip()
     state = str(status.get("state") or "idle")
     selected_node_id = str(ui_state.get("selected_node_id") or "").strip()
+    selected_yjs_webspace_id = _selected_yjs_webspace_id(ui_state, reliability)
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     local_node_id = str(load_config().node_id or "")
@@ -2051,21 +2115,21 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                     "id": "yjs_backup",
                     "title": "Yjs backup",
                     "status": "ok",
-                    "description": "Persist current default webspace Yjs snapshot to disk",
+                    "description": f"Persist Yjs snapshot for webspace {selected_yjs_webspace_id}",
                     "subtitle": last_action if last_action == "yjs_backup" else "",
                 },
                 {
                     "id": "yjs_reload",
                     "title": "Yjs reload",
                     "status": "ok",
-                    "description": "Reseed the default webspace from its current scenario",
+                    "description": f"Reseed webspace {selected_yjs_webspace_id} from its current scenario",
                     "subtitle": last_action if last_action == "yjs_reload" else "",
                 },
                 {
                     "id": "yjs_reset",
                     "title": "Yjs reset",
                     "status": "warn",
-                    "description": "Hard-reset the default webspace from its current scenario",
+                    "description": f"Hard-reset webspace {selected_yjs_webspace_id} from its current scenario",
                     "subtitle": last_action if last_action == "yjs_reset" else "",
                 },
             ]
@@ -2170,6 +2234,16 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             last_error="",
         )
         return {"ok": True, "selected_node_id": node_id}
+    if action_id == "select_yjs_webspace":
+        selected = str(_extract_param(payload, "webspace_id") or "").strip()
+        _write_ui_state(
+            selected_yjs_webspace_id=selected or default_webspace_id(),
+            last_action="select_yjs_webspace",
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_error="",
+        )
+        return {"ok": True, "selected_yjs_webspace_id": selected or default_webspace_id()}
     if action_id == "set_node_names":
         node_id = str(_extract_param(payload, "node_id") or _ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "").strip()
         value = _extract_param(payload, "value")
@@ -2341,21 +2415,24 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             {"reconnect_hub_root": True},
         )
     elif action_id == "yjs_backup":
+        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
         result = _post_local_admin(
             conf,
-            f"/api/node/yjs/webspaces/{default_webspace_id()}/backup",
+            f"/api/node/yjs/webspaces/{selected_webspace}/backup",
             {},
         )
     elif action_id == "yjs_reload":
+        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
         result = _post_local_admin(
             conf,
-            f"/api/node/yjs/webspaces/{default_webspace_id()}/reload",
+            f"/api/node/yjs/webspaces/{selected_webspace}/reload",
             {},
         )
     elif action_id == "yjs_reset":
+        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
         result = _post_local_admin(
             conf,
-            f"/api/node/yjs/webspaces/{default_webspace_id()}/reset",
+            f"/api/node/yjs/webspaces/{selected_webspace}/reset",
             {},
         )
     else:
@@ -2381,6 +2458,7 @@ def _snapshot() -> dict[str, Any]:
     ui_state = _ui_state()
     reliability = _reliability_snapshot(conf, lifecycle)
     node_tabs, selected_node = _node_tabs(conf, ui_state, reliability)
+    yjs_webspace_tabs = _yjs_webspace_tabs(conf, ui_state, reliability, selected_node)
     node_editor = _selected_node_editor(conf, selected_node)
     selected_projection = _selected_node_projection(
         selected_node,
@@ -2405,6 +2483,7 @@ def _snapshot() -> dict[str, Any]:
         "actions": _action_items(display_status, ui_state, reliability),
         "update_actions": _update_actions(conf, ui_state, reliability),
         "nodes": node_tabs,
+        "yjs_webspaces": yjs_webspace_tabs,
         "node_editor": node_editor,
         "build": _build_items(display_build),
         "steps": _step_items(display_status, display_slots_payload, display_lifecycle, display_build),

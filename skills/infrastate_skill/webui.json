@@ -110,6 +110,30 @@
 							]
 						},
 						{
+							"id": "infrastate-yjs-webspaces",
+							"type": "input.commandBar",
+							"area": "main",
+							"title": "Yjs webspaces",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/yjs_webspaces"
+							},
+							"inputs": {
+								"size": "small"
+							},
+							"actions": [
+								{
+									"on": "click",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": {
+										"id": "select_yjs_webspace",
+										"webspace_id": "$event.id"
+									}
+								}
+							]
+						},
+						{
 							"id": "infrastate-actions",
 							"type": "ui.actions",
 							"area": "main",
@@ -339,6 +363,12 @@
 				{
 					"id": "local",
 					"label": "hub"
+				}
+			],
+			"yjs_webspaces": [
+				{
+					"id": "default",
+					"label": "default *"
 				}
 			],
 			"node_editor": {
