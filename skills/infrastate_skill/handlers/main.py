@@ -19,7 +19,7 @@ from adaos.services.agent_context import get_ctx
 from adaos.services.core_slots import active_slot_manifest, slot_status
 from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
-from adaos.services.node_config import load_config, set_node_names as persist_node_names
+from adaos.services import node_config as _node_config
 from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime_sidecar_enabled
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
@@ -58,6 +58,34 @@ def _normalize_node_names(value: Any, *, limit: int = 8) -> list[str]:
         if len(result) >= limit:
             break
     return result
+
+
+load_config = _node_config.load_config
+
+
+def persist_node_names(node_names: Any):
+    names = _normalize_node_names(node_names)
+    setter = getattr(_node_config, "set_node_names", None)
+    if callable(setter):
+        return setter(names)
+
+    conf = load_config()
+    node_settings = getattr(conf, "node_settings", None)
+    if node_settings is not None and hasattr(node_settings, "node_names"):
+        try:
+            setattr(node_settings, "node_names", names)
+        except Exception:
+            pass
+    elif hasattr(conf, "node_names"):
+        try:
+            setattr(conf, "node_names", names)
+        except Exception:
+            pass
+
+    save = getattr(_node_config, "save_config", None) or getattr(_node_config, "save_node", None)
+    if callable(save):
+        save(conf)
+    return conf
 
 
 def lang_res() -> dict[str, str]:
