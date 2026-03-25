@@ -1160,6 +1160,35 @@ def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
     return buttons
 
 
+def _member_summary_buttons(
+    status: dict[str, Any],
+    lifecycle: dict[str, Any],
+    selected_member: dict[str, Any],
+    conf,
+) -> list[dict[str, Any]]:
+    role = str(getattr(conf, "role", "") or "").strip().lower()
+    if role != "hub":
+        return []
+    if not bool(selected_member.get("connected")):
+        return []
+    state = str(status.get("state") or selected_member.get("snapshot_update_state") or "connected").strip().lower()
+    buttons: list[dict[str, Any]] = []
+    startable_states = {"idle", "failed", "succeeded", "validated", "cancelled", "rolled_back", "connected"}
+    cancelable_states = {"countdown", "draining", "stopping", "restarting", "applying", "validate", "validated"}
+    if state in startable_states:
+        buttons.append({"id": "member_start_update", "label": "Start update", "title": "Start update"})
+    if state in cancelable_states:
+        remaining_sec = _countdown_remaining_sec(status)
+        label = "Cancel update"
+        if remaining_sec > 0 and state == "countdown":
+            label = f"{label} ({remaining_sec}s)"
+        buttons.append({"id": "member_cancel_update", "label": label, "title": label, "kind": "danger"})
+    buttons.append({"id": "member_rollback", "label": "Rollback slot", "title": "Rollback slot", "kind": "danger"})
+    if not bool(lifecycle.get("draining")):
+        buttons.append({"id": "member_drain", "label": "Drain mode", "title": "Drain mode", "kind": "danger"})
+    return buttons
+
+
 def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[str, Any]) -> str:
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
     overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
@@ -1844,7 +1873,11 @@ def _summary(
         "countdown_remaining_sec": _countdown_remaining_sec(status),
         "drain_timeout_sec": float(status.get("drain_timeout_sec") or 0.0),
         "signal_delay_sec": float(status.get("signal_delay_sec") or 0.0),
-        "buttons": [] if selected_kind != "local" else _summary_buttons(status),
+        "buttons": (
+            _summary_buttons(status)
+            if selected_kind == "local"
+            else _member_summary_buttons(status, lifecycle, selected_member, conf)
+        ),
     }
 
 
@@ -1878,6 +1911,7 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
             ]
         remote_status = _remote_status_payload(snapshot, member)
         remote_control = _remote_control_payload(snapshot, member)
+        remote_draining = bool(snapshot.get("draining"))
         remote_state = str(remote_status.get("state") or member.get("snapshot_update_state") or "connected").strip().lower()
         control_subtitle = str(remote_control.get("request_id") or remote_control.get("action") or "").strip()
         cancelable_states = {"countdown", "draining", "stopping", "restarting", "applying", "validate", "validated"}
@@ -1909,6 +1943,13 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                 "status": "warn",
                 "description": "Request slot rollback on selected member",
                 "subtitle": control_subtitle if remote_control.get("action") == "rollback" else "",
+            },
+            {
+                "id": "member_drain",
+                "title": "Drain member",
+                "status": "warn" if not remote_draining else "idle",
+                "description": "Enter draining mode and reject new work",
+                "subtitle": control_subtitle if remote_control.get("action") == "drain" else "",
             },
         ]
     items = [
@@ -2139,7 +2180,7 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             last_error="",
         )
         return result
-    if action_id in {"member_start_update", "member_cancel_update", "member_rollback"}:
+    if action_id in {"member_start_update", "member_cancel_update", "member_rollback", "member_drain"}:
         if not selected_node_id or selected_node_id == str(getattr(conf, "node_id", "") or ""):
             raise ValueError("remote member action requires selected remote member")
         if str(getattr(conf, "role", "") or "").strip().lower() != "hub":
@@ -2150,7 +2191,9 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             "member_start_update": "update",
             "member_cancel_update": "cancel",
             "member_rollback": "rollback",
+            "member_drain": "drain",
         }[action_id]
+        countdown_sec = 60.0 if request_action == "update" else (0.0 if request_action == "drain" else 15.0)
         try:
             from adaos.services.subnet.link_manager import get_hub_link_manager
 
@@ -2160,7 +2203,7 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
                     action=request_action,
                     target_rev=current_rev if request_action == "update" else "",
                     target_version=current_version if request_action == "update" else "",
-                    countdown_sec=60.0 if request_action == "update" else 15.0,
+                    countdown_sec=countdown_sec,
                     drain_timeout_sec=10.0,
                     signal_delay_sec=0.25,
                     reason=f"infrastate.{action_id}",

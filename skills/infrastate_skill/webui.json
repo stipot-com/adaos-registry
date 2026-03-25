@@ -48,7 +48,17 @@
 							"dataSource": {
 								"kind": "y",
 								"path": "data/infrastate/summary"
-							}
+							},
+							"actions": [
+								{
+									"on": "click",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": {
+										"id": "$event.id"
+									}
+								}
+							]
 						},
 						{
 							"id": "infrastate-nodes",

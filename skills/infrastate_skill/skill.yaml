@@ -1,67 +1,79 @@
-# yaml-language-server: $schema=../../../../src/adaos/abi/skill.schema.json
 name: infrastate_skill
-version: '0.1.0'
-description: Локальный обзор состояния ядра, graceful update, A/B слотов и последнего результата обновления.
+version: 0.2.0
+description: Локальный обзор состояния ядра, graceful update, A/B слотов и последнего
+  результата обновления.
 runtime:
   python: '3.11'
 dependencies: []
 events:
   subscribe:
-    - 'infrastate.refresh'
-    - 'skills.activated'
-    - 'desktop.webspace.refresh'
-    - 'desktop.webspace.reload'
-    - 'sys.ready'
-    - 'subnet.nats.up'
-    - 'subnet.nats.down'
-    - 'subnet.nats.reconnect'
-    - 'subnet.member.link.up'
-    - 'subnet.member.link.down'
-    - 'subnet.member.meta.changed'
-    - 'subnet.member.snapshot.changed'
-    - 'subnet.member.snapshot.requested'
-    - 'subnet.member.update.requested'
-    - 'subnet.member.update.result'
-    - 'subnet.stopping'
-    - 'subnet.stopped'
-    - 'core.update.status'
-    - 'hub.core_update.status'
-    - 'node.names.changed'
+  - infrastate.refresh
+  - skills.activated
+  - desktop.webspace.refresh
+  - desktop.webspace.reload
+  - sys.ready
+  - subnet.nats.up
+  - subnet.nats.down
+  - subnet.nats.reconnect
+  - subnet.member.link.up
+  - subnet.member.link.down
+  - subnet.member.meta.changed
+  - subnet.member.snapshot.changed
+  - subnet.member.snapshot.requested
+  - subnet.member.update.requested
+  - subnet.member.update.result
+  - subnet.stopping
+  - subnet.stopped
+  - core.update.status
+  - hub.core_update.status
+  - node.names.changed
 data_projections:
-  - scope: subnet
-    slot: infrastate.snapshot
-    targets:
-      - backend: yjs
-        path: data/infrastate
-default_tool: 'get_snapshot'
+- scope: subnet
+  slot: infrastate.snapshot
+  targets:
+  - backend: yjs
+    path: data/infrastate
+default_tool: get_snapshot
 tools:
-  - name: 'get_snapshot'
-    description: Return current local infrastructure/update snapshot for the node.
-    entry: 'handlers.main:get_snapshot'
-    input_schema:
-      type: object
-      properties:
-        webspace_id: { type: string }
-    output_schema:
-      type: object
-      required: [summary, slots, steps, logs]
-  - name: 'refresh_snapshot'
-    description: Refresh infrastructure snapshot and project it into the active webspace.
-    entry: 'handlers.main:refresh_snapshot'
-    input_schema:
-      type: object
-      properties:
-        webspace_id: { type: string }
-    output_schema:
-      type: object
-      required: [ok, summary]
-  - name: 'adaos_update'
-    description: Update skills and scenarios sources on this node (git sync) and refresh runtime projections.
-    entry: 'handlers.main:adaos_update'
-    input_schema:
-      type: object
-      properties:
-        dry_run: { type: boolean }
-    output_schema:
-      type: object
-      properties: {}
+- name: get_snapshot
+  description: Return current local infrastructure/update snapshot for the node.
+  entry: handlers.main:get_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+  output_schema:
+    type: object
+    required:
+    - summary
+    - slots
+    - steps
+    - logs
+- name: refresh_snapshot
+  description: Refresh infrastructure snapshot and project it into the active webspace.
+  entry: handlers.main:refresh_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+  output_schema:
+    type: object
+    required:
+    - ok
+    - summary
+- name: adaos_update
+  description: Update skills and scenarios sources on this node (git sync) and refresh
+    runtime projections.
+  entry: handlers.main:adaos_update
+  input_schema:
+    type: object
+    properties:
+      dry_run:
+        type: boolean
+  output_schema:
+    type: object
+    properties: {}
+updated_at: '2026-03-25T06:23:50+00:00'
+
