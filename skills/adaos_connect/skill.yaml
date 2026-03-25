@@ -1,0 +1,19 @@
+name: adaos_connect
+version: 0.2.0
+entry: handlers/main.py
+description: Network expansion assistant for browser, Telegram, and node join flows
+  via YJS-driven modal UI.
+runtime:
+  python: '3.11'
+dependencies:
+- httpx>=0.27
+events:
+  subscribe:
+  - adaos_connect.prepare
+  publish: []
+tools: []
+exports:
+  tools: []
+prototype: default
+updated_at: '2026-03-25T13:54:25+00:00'
+

@@ -1,0 +1,269 @@
+{
+  "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "apps": [
+    {
+      "id": "adaos_connect_app",
+      "title": "AdaOS Connect",
+      "icon": "git-network-outline",
+      "launchModal": "adaos_connect_modal"
+    }
+  ],
+  "registry": {
+    "modals": {
+      "adaos_connect_modal": {
+        "title": "AdaOS Connect",
+        "schema": {
+          "id": "adaos_connect_modal",
+          "initialState": {
+            "adaosConnectMode": "browser"
+          },
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "adaos-connect-actions",
+              "type": "input.commandBar",
+              "area": "main",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "browser",
+                    "label": "Join browser"
+                  },
+                  {
+                    "id": "telegram",
+                    "label": "Join telegram"
+                  },
+                  {
+                    "id": "node",
+                    "label": "Join node"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:browser",
+                  "type": "updateState",
+                  "params": {
+                    "adaosConnectMode": "browser"
+                  }
+                },
+                {
+                  "on": "click:browser",
+                  "type": "callHost",
+                  "target": "adaos_connect.prepare",
+                  "params": {
+                    "mode": "browser"
+                  }
+                },
+                {
+                  "on": "click:telegram",
+                  "type": "updateState",
+                  "params": {
+                    "adaosConnectMode": "telegram"
+                  }
+                },
+                {
+                  "on": "click:telegram",
+                  "type": "callHost",
+                  "target": "adaos_connect.prepare",
+                  "params": {
+                    "mode": "telegram"
+                  }
+                },
+                {
+                  "on": "click:node",
+                  "type": "updateState",
+                  "params": {
+                    "adaosConnectMode": "node"
+                  }
+                },
+                {
+                  "on": "click:node",
+                  "type": "callHost",
+                  "target": "adaos_connect.prepare",
+                  "params": {
+                    "mode": "node"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "adaos-connect-summary",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Instructions",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "summary",
+                "languageField": "summary_language"
+              }
+            },
+            {
+              "id": "adaos-connect-qr",
+              "type": "visual.qrCode",
+              "area": "main",
+              "title": "QR code",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "qr_text",
+                "captionField": "code",
+                "emptyText": "Select an action to generate a QR code",
+                "width": 240
+              },
+              "visibleIf": "$state.adaosConnectMode === 'browser'"
+            },
+            {
+              "id": "adaos-connect-qr-tg",
+              "type": "visual.qrCode",
+              "area": "main",
+              "title": "QR code",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "qr_text",
+                "captionField": "code",
+                "emptyText": "Select an action to generate a QR code",
+                "width": 240
+              },
+              "visibleIf": "$state.adaosConnectMode === 'telegram'"
+            },
+            {
+              "id": "adaos-connect-link",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Link",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "link",
+                "languageField": "link_language"
+              },
+              "visibleIf": "$state.adaosConnectMode === 'browser'"
+            },
+            {
+              "id": "adaos-connect-link-tg",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Link",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "link",
+                "languageField": "link_language"
+              },
+              "visibleIf": "$state.adaosConnectMode === 'telegram'"
+            },
+            {
+              "id": "adaos-connect-code",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Code",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "code",
+                "languageField": "code_language"
+              }
+            },
+            {
+              "id": "adaos-connect-linux",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Linux",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "linux_command",
+                "languageField": "linux_language"
+              },
+              "visibleIf": "$state.adaosConnectMode === 'node'"
+            },
+            {
+              "id": "adaos-connect-windows-ps",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Windows (PowerShell)",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "windows_ps_command",
+                "languageField": "windows_ps_language"
+              },
+              "visibleIf": "$state.adaosConnectMode === 'node'"
+            },
+            {
+              "id": "adaos-connect-windows-cmd",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Windows (CMD / .bat)",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "windows_cmd_command",
+                "languageField": "windows_cmd_language"
+              },
+              "visibleIf": "$state.adaosConnectMode === 'node'"
+            }
+          ]
+        }
+      }
+    },
+    "widgets": {}
+  },
+  "ydoc_defaults": {
+    "data/adaos_connect": {
+      "current": {
+        "mode": "browser",
+        "summary": "Select Join browser, Join telegram, or Join node to generate connection data.",
+        "summary_language": "text",
+        "qr_text": "",
+        "link": "",
+        "link_language": "text",
+        "code": "",
+        "code_language": "text",
+        "linux_command": "",
+        "linux_language": "bash",
+        "windows_ps_command": "",
+        "windows_ps_language": "powershell",
+        "windows_cmd_command": "",
+        "windows_cmd_language": "bat"
+      }
+    }
+  },
+  "contributions": [
+    {
+      "extensionPoint": "desktop.apps",
+      "type": "app",
+      "id": "adaos_connect_app",
+      "autoInstall": true
+    }
+  ]
+}
