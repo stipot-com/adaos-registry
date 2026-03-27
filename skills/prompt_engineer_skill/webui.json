@@ -5,7 +5,8 @@
 			"id": "scenario:prompt_engineer_scenario",
 			"title": "Prompt IDE",
 			"icon": "desktop",
-			"scenario_id": "prompt_engineer_scenario"
+			"scenario_id": "prompt_engineer_scenario",
+			"dev": true
 		}
 	],
 	"widgets": [],
