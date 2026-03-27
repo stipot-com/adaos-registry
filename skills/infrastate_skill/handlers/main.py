@@ -895,7 +895,7 @@ def _yjs_webspace_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, An
     if str(getattr(conf, "role", "") or "").strip().lower() != "hub":
         return []
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
-    sync_runtime = runtime.get("sync_runtime") if isinstance(sync_runtime.get("sync_runtime"), dict) else {}
+    sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
     webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
     selected_id = _selected_yjs_webspace_id(ui_state, reliability)
     items: list[dict[str, Any]] = []
@@ -2678,6 +2678,86 @@ def _snapshot() -> dict[str, Any]:
     return snapshot
 
 
+def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None) -> dict[str, Any]:
+    error_text = f"{type(exc).__name__}: {exc}"
+    try:
+        lifecycle = runtime_lifecycle_snapshot()
+    except Exception:
+        lifecycle = {}
+    try:
+        conf = load_config()
+        reliability = _reliability_snapshot(conf, lifecycle if isinstance(lifecycle, dict) else {})
+    except Exception:
+        reliability = {}
+    runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+    sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
+    selected_ws = str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
+    yjs_runtime = dict(sync_runtime) if isinstance(sync_runtime, dict) else {}
+    yjs_runtime.setdefault("available", bool(sync_runtime))
+    yjs_runtime.setdefault("selected_webspace_id", selected_ws)
+    yjs_runtime.setdefault("assessment", {"state": "degraded", "reason": "fallback_snapshot"})
+    return {
+        "summary": {
+            "label": "Infra State",
+            "value": str((lifecycle if isinstance(lifecycle, dict) else {}).get("node_state") or "ready"),
+            "subtitle": f"webspace {selected_ws}",
+            "description": f"fallback snapshot: {error_text}",
+            "updated_at": time.time(),
+        },
+        "actions": [],
+        "update_actions": [],
+        "nodes": [],
+        "yjs_webspaces": [],
+        "node_editor": {
+            "names_csv": "",
+            "editable": False,
+            "scope": "fallback",
+        },
+        "build": [],
+        "steps": [
+            {
+                "id": "lifecycle",
+                "title": "Lifecycle",
+                "status": str((lifecycle if isinstance(lifecycle, dict) else {}).get("node_state") or "ready"),
+                "description": "runtime fallback snapshot",
+            },
+            {
+                "id": "yjs_runtime",
+                "title": "Yjs runtime",
+                "status": str((yjs_runtime.get("assessment") if isinstance(yjs_runtime.get("assessment"), dict) else {}).get("state") or "degraded"),
+                "description": str((yjs_runtime.get("assessment") if isinstance(yjs_runtime.get("assessment"), dict) else {}).get("reason") or "fallback snapshot"),
+            },
+        ],
+        "realtime": [],
+        "slots": [],
+        "skills": [],
+        "logs": [
+            {
+                "id": "snapshot-error",
+                "title": "snapshot-error",
+                "status": "warn",
+                "preview": error_text,
+                "content": error_text,
+            }
+        ],
+        "events": list(reversed(_event_state())),
+        "lifecycle": lifecycle if isinstance(lifecycle, dict) else {},
+        "reliability": reliability,
+        "yjs_runtime": yjs_runtime,
+        "last_refresh_ts": time.time(),
+        "fallback": True,
+        "errors": [error_text],
+    }
+
+
+def _snapshot_or_fallback(*, webspace_id: str | None = None) -> dict[str, Any]:
+    try:
+        return _snapshot()
+    except Exception as exc:
+        _log.warning("infrastate snapshot failed; projecting fallback snapshot", exc_info=True)
+        return _fallback_snapshot(exc, webspace_id=webspace_id)
+
+
 def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
     ids: set[str] = set()
     token = str(webspace_id or "").strip()
@@ -2715,7 +2795,7 @@ def _webspace_id_from_payload(payload: Any) -> str | None:
 
 @tool("get_snapshot")
 def get_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
-    snapshot = _snapshot()
+    snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
     _project(snapshot, webspace_id=webspace_id)
     return snapshot
 
@@ -2723,7 +2803,7 @@ def get_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
 @tool("refresh_snapshot")
 def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     _write_ui_state(last_refresh_ts=time.time())
-    snapshot = _snapshot()
+    snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
     _project(snapshot, webspace_id=webspace_id)
     return {"ok": True, **snapshot}
 
