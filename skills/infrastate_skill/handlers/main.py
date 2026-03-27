@@ -34,6 +34,7 @@ _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
 _EVENTS_STATE_KEY = "infrastate.events"
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
+_REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}
 _background_refresh_task: asyncio.Task[Any] | None = None
 _background_refresh_pending = False
 _background_refresh_webspace_id: str | None = None
@@ -308,7 +309,9 @@ def _skills_items() -> list[dict[str, Any]]:
         except Exception:
             slot = ""
 
-        remote_version = str(_read_remote_manifest_version(skill_id=name) or "").strip()
+        remote_version = ""
+        if _REMOTE_VERSION_PROBE_ENABLED:
+            remote_version = str(_read_remote_manifest_version(skill_id=name) or "").strip()
         update_available = False
         lv = _safe_version(local_version)
         rv = _safe_version(remote_version)
@@ -845,6 +848,9 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
     if not selected_node_id or selected_node_id not in valid_ids:
         selected_node_id = local_node_id
     selected = next((item for item in items if str(item.get("id") or "") == selected_node_id), items[0])
+    if str(selected.get("kind") or "") == "member" and not bool(selected.get("connected")):
+        selected_node_id = local_node_id
+        selected = items[0]
     tabs: list[dict[str, Any]] = []
     for item in items:
         label = str(item.get("label") or "")
