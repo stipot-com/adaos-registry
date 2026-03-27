@@ -1,5 +1,5 @@
 name: prompt_engineer_skill
-version: 0.3.0
+version: 0.4.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -14,9 +14,6 @@ tools:
   entry: handlers.main:prompt_load_state
   input_schema:
     type: object
-    required:
-    - object_type
-    - object_id
     properties:
       object_type:
         type: string
@@ -272,9 +269,6 @@ tools:
   entry: handlers.main:prompt_list_project_objects
   input_schema:
     type: object
-    required:
-    - project_type
-    - project_id
     properties:
       project_type:
         type: string
@@ -640,5 +634,5 @@ tools:
     type: object
     properties: {}
 exports: {}
-updated_at: '2026-03-27T11:20:56+00:00'
+updated_at: '2026-03-27T12:14:05+00:00'
 
