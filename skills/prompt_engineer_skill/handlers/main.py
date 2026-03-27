@@ -15,7 +15,6 @@ import yaml
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import tool
 from adaos.sdk.root.developer import RootDeveloperService, TemplateResolutionError, RootServiceError
-from adaos.sdk.llm.llm_client import request_ts_draft, list_llm_models
 
 _log = logging.getLogger("skills.prompt_engineer")
 
@@ -426,6 +425,8 @@ def tz_execute(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         }
 
     # Send request via Root LLM proxy and persist TS draft artifact for this project.
+    from adaos.sdk.llm.llm_client import request_ts_draft
+
     root = _project_root(object_type, object_id)
     artifact_path = _ts_artifact_path(root)
     result = request_ts_draft(ts_text, output_path=artifact_path)
@@ -445,6 +446,8 @@ def prompt_llm_list_models(payload: Optional[Dict[str, Any]] = None) -> Dict[str
     """
     List available LLM models from the Root LLM proxy.
     """
+    from adaos.sdk.llm.llm_client import list_llm_models
+
     payload = payload or {}
     timeout = payload.get("timeout")
     try:
