@@ -120,10 +120,12 @@ def _repo_root() -> Path | None:
     return None
 
 
-def _skill_root() -> Path | None:
+def _skill_manifest_path() -> Path | None:
     for parent in Path(__file__).resolve().parents:
-        if (parent / "skill.yaml").exists():
-            return parent
+        for name in ("skill.yaml", "resolved.manifest.json"):
+            candidate = parent / name
+            if candidate.exists():
+                return candidate
     return None
 
 
@@ -606,10 +608,9 @@ def _ensure_skill_data_projections() -> None:
         existing = ctx.projections.resolve("subnet", "infrastate.snapshot")
         if existing:
             return
-        skill_root = _skill_root()
-        if skill_root is None:
+        manifest_path = _skill_manifest_path()
+        if manifest_path is None:
             return
-        manifest_path = skill_root / "skill.yaml"
         payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
         if not isinstance(payload, dict):
             return
@@ -617,7 +618,7 @@ def _ensure_skill_data_projections() -> None:
         if not isinstance(entries, list) or not entries:
             return
         ctx.projections.load_entries(entries)
-        _log.debug("loaded infrastate data_projections entries=%d", len(entries))
+        _log.debug("loaded infrastate data_projections path=%s entries=%d", manifest_path, len(entries))
     except Exception:
         _log.debug("failed to load infrastate data_projections", exc_info=True)
 
