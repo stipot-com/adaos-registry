@@ -794,8 +794,15 @@ def _hub_member_connection_state(reliability: dict[str, Any]) -> dict[str, Any]:
 def _node_label(node_names: Any, *, fallback: str) -> str:
     if isinstance(node_names, list):
         for item in node_names:
+            if isinstance(item, dict):
+                continue
             token = str(item or "").strip()
             if token:
+                folded = token.casefold()
+                if folded in {"default", "desktop", "webspace", "workspace"}:
+                    continue
+                if token.startswith("{") and token.endswith("}"):
+                    continue
                 return token
     return fallback
 
@@ -848,9 +855,6 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
     if not selected_node_id or selected_node_id not in valid_ids:
         selected_node_id = local_node_id
     selected = next((item for item in items if str(item.get("id") or "") == selected_node_id), items[0])
-    if str(selected.get("kind") or "") == "member" and not bool(selected.get("connected")):
-        selected_node_id = local_node_id
-        selected = items[0]
     tabs: list[dict[str, Any]] = []
     for item in items:
         label = str(item.get("label") or "")
@@ -2327,6 +2331,20 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     return items
 
 
+def _core_action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability: dict[str, Any]) -> list[dict[str, Any]]:
+    items = list(_action_items(status, ui_state, reliability))
+    return [item for item in items if not str(item.get("id") or "").startswith("yjs_")]
+
+
+def _yjs_action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability: dict[str, Any]) -> list[dict[str, Any]]:
+    selected_node_id = str(ui_state.get("selected_node_id") or "").strip()
+    local_node_id = str(load_config().node_id or "")
+    if selected_node_id and selected_node_id != local_node_id:
+        return []
+    items = list(_action_items(status, ui_state, reliability))
+    return [item for item in items if str(item.get("id") or "").startswith("yjs_")]
+
+
 def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[str, Any]:
     status = read_core_update_status()
     selected_node_id = str(_ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "")
@@ -2654,6 +2672,8 @@ def _snapshot() -> dict[str, Any]:
     snapshot = {
         "summary": _summary(display_status, display_last_result, display_slots_payload, display_lifecycle, conf, display_build, ui_state, reliability, transport_diag, selected_member=selected_member),
         "actions": _action_items(display_status, ui_state, reliability),
+        "core_actions": _core_action_items(display_status, ui_state, reliability),
+        "yjs_actions": _yjs_action_items(display_status, ui_state, reliability),
         "update_actions": _update_actions(conf, ui_state, reliability),
         "nodes": node_tabs,
         "yjs_webspaces": yjs_webspace_tabs,
@@ -2705,6 +2725,8 @@ def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None) -> dic
             "updated_at": time.time(),
         },
         "actions": [],
+        "core_actions": [],
+        "yjs_actions": [],
         "update_actions": [],
         "nodes": [],
         "yjs_webspaces": [],

@@ -110,13 +110,13 @@
 							]
 						},
 						{
-							"id": "infrastate-yjs-webspaces",
-							"type": "input.commandBar",
+							"id": "infrastate-actions",
+							"type": "ui.actions",
 							"area": "main",
-							"title": "Yjs webspaces",
+							"title": "",
 							"dataSource": {
 								"kind": "y",
-								"path": "data/infrastate/yjs_webspaces"
+								"path": "data/infrastate/core_actions"
 							},
 							"inputs": {
 								"size": "small"
@@ -127,20 +127,19 @@
 									"type": "callHost",
 									"target": "infrastate.action",
 									"params": {
-										"id": "select_yjs_webspace",
-										"webspace_id": "$event.id"
+										"id": "$event.id"
 									}
 								}
 							]
 						},
 						{
-							"id": "infrastate-actions",
+							"id": "infrastate-yjs-actions",
 							"type": "ui.actions",
 							"area": "main",
-							"title": "Actions",
+							"title": "",
 							"dataSource": {
 								"kind": "y",
-								"path": "data/infrastate/actions"
+								"path": "data/infrastate/yjs_actions"
 							},
 							"inputs": {
 								"size": "small"
@@ -357,6 +356,50 @@
 					"id": "drain",
 					"title": "Drain node",
 					"description": "Reject new tool calls and enter draining state"
+				}
+			],
+			"core_actions": [
+				{
+					"id": "start_update",
+					"title": "Start update",
+					"description": "Schedule core update with current target rev"
+				},
+				{
+					"id": "refresh",
+					"title": "Refresh snapshot",
+					"description": "Reload current local update state"
+				},
+				{
+					"id": "cancel_update",
+					"title": "Cancel update",
+					"description": "Cancel current countdown/update task"
+				},
+				{
+					"id": "rollback",
+					"title": "Rollback slot",
+					"description": "Switch back to previous active core slot"
+				},
+				{
+					"id": "drain",
+					"title": "Drain node",
+					"description": "Reject new tool calls and enter draining state"
+				}
+			],
+			"yjs_actions": [
+				{
+					"id": "yjs_backup",
+					"title": "Yjs backup",
+					"description": "Persist current in-memory Yjs state to disk snapshot"
+				},
+				{
+					"id": "yjs_reload",
+					"title": "Yjs reload",
+					"description": "Reseed the selected webspace from its scenario source"
+				},
+				{
+					"id": "yjs_reset",
+					"title": "Yjs reset",
+					"description": "Hard-reset the selected webspace from its scenario source"
 				}
 			],
 			"nodes": [
