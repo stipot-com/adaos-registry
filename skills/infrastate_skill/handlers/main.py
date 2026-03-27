@@ -33,6 +33,11 @@ from packaging.version import Version, InvalidVersion
 _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
 _EVENTS_STATE_KEY = "infrastate.events"
+_BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
+_background_refresh_task: asyncio.Task[Any] | None = None
+_background_refresh_pending = False
+_background_refresh_webspace_id: str | None = None
+_background_refresh_reason = ""
 
 def _normalize_node_names(value: Any, *, limit: int = 8) -> list[str]:
     # Local copy for backward/forward compatibility with core.
@@ -662,6 +667,118 @@ def _write_ui_state(**updates: Any) -> dict[str, Any]:
     payload.update(updates)
     skill_memory_set(_UI_STATE_KEY, payload)
     return payload
+
+
+def _set_background_refresh_pending(*, webspace_id: str | None, reason: str) -> None:
+    global _background_refresh_pending
+    global _background_refresh_reason
+    global _background_refresh_webspace_id
+
+    token = str(webspace_id or "").strip() or None
+    _background_refresh_pending = True
+    if token:
+        _background_refresh_webspace_id = token
+    _background_refresh_reason = str(reason or "runtime.event").strip() or "runtime.event"
+    _write_ui_state(
+        background_refresh_pending=True,
+        background_refresh_running=bool(_background_refresh_task and not _background_refresh_task.done()),
+        background_refresh_reason=_background_refresh_reason,
+        background_refresh_requested_at=time.time(),
+        background_refresh_webspace_id=_background_refresh_webspace_id or "",
+        background_refresh_error="",
+    )
+
+
+async def _background_refresh_worker() -> None:
+    global _background_refresh_pending
+    global _background_refresh_reason
+    global _background_refresh_task
+    global _background_refresh_webspace_id
+
+    try:
+        while True:
+            await asyncio.sleep(_BACKGROUND_REFRESH_DEBOUNCE_S)
+            webspace_id = _background_refresh_webspace_id
+            reason = _background_refresh_reason or "runtime.event"
+            _background_refresh_pending = False
+            _background_refresh_reason = ""
+            _background_refresh_webspace_id = None
+            started_at = time.time()
+            _write_ui_state(
+                background_refresh_pending=False,
+                background_refresh_running=True,
+                background_refresh_reason=reason,
+                background_refresh_started_at=started_at,
+                background_refresh_webspace_id=webspace_id or "",
+                background_refresh_error="",
+            )
+            try:
+                refresh_snapshot(webspace_id=webspace_id)
+            except Exception as exc:
+                _write_ui_state(
+                    background_refresh_running=False,
+                    background_refresh_finished_at=time.time(),
+                    background_refresh_error=f"{type(exc).__name__}: {exc}",
+                )
+                _log.warning("background infrastate refresh failed reason=%s webspace=%s", reason, webspace_id or "-", exc_info=True)
+            else:
+                _write_ui_state(
+                    background_refresh_running=False,
+                    background_refresh_finished_at=time.time(),
+                    background_refresh_error="",
+                )
+            await asyncio.sleep(0)
+            if not _background_refresh_pending:
+                break
+    finally:
+        _background_refresh_task = None
+        if _background_refresh_pending:
+            _schedule_snapshot_refresh(reason="background.refresh.retry")
+
+
+def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = "runtime.event") -> None:
+    global _background_refresh_pending
+    global _background_refresh_reason
+    global _background_refresh_task
+    global _background_refresh_webspace_id
+
+    _set_background_refresh_pending(webspace_id=webspace_id, reason=reason)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        _log.debug("no running loop for infrastate background refresh; running inline reason=%s", reason)
+        try:
+            refresh_snapshot(webspace_id=webspace_id)
+        except Exception as exc:
+            _write_ui_state(
+                background_refresh_pending=False,
+                background_refresh_running=False,
+                background_refresh_finished_at=time.time(),
+                background_refresh_reason=str(reason or "runtime.event"),
+                background_refresh_webspace_id=str(webspace_id or ""),
+                background_refresh_error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        finally:
+            _background_refresh_pending = False
+            _background_refresh_reason = ""
+            _background_refresh_webspace_id = None
+            _background_refresh_task = None
+        _write_ui_state(
+            background_refresh_pending=False,
+            background_refresh_running=False,
+            background_refresh_finished_at=time.time(),
+            background_refresh_reason=str(reason or "runtime.event"),
+            background_refresh_webspace_id=str(webspace_id or ""),
+            background_refresh_error="",
+        )
+        return
+    if _background_refresh_task is not None and not _background_refresh_task.done():
+        return
+    _background_refresh_task = loop.create_task(
+        _background_refresh_worker(),
+        name="infrastate-background-refresh",
+    )
 
 
 def _hub_member_connection_state(reliability: dict[str, Any]) -> dict[str, Any]:
@@ -2639,20 +2756,30 @@ def on_skill_activated(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     if not isinstance(payload, dict):
         return
-    refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
+    _schedule_snapshot_refresh(
+        webspace_id=_webspace_id_from_payload(payload),
+        reason="skills.activated",
+    )
 
 
 @subscribe("skills.updated")
 def on_skill_updated(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
-    refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
+    _schedule_snapshot_refresh(
+        webspace_id=_webspace_id_from_payload(payload),
+        reason="skills.updated",
+    )
 
 
 @subscribe("desktop.webspace.refresh")
 @subscribe("desktop.webspace.reload")
 def on_webspace_reload(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
-    refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
+    event_type = str(getattr(evt, "type", "") or "desktop.webspace.reload")
+    _schedule_snapshot_refresh(
+        webspace_id=_webspace_id_from_payload(payload),
+        reason=event_type,
+    )
 
 
 @subscribe("sys.ready")
@@ -2676,6 +2803,9 @@ def on_runtime_event(evt: Any) -> None:
     try:
         event_type = str(getattr(evt, "type", "") or (payload.get("type") if isinstance(payload, dict) else "") or "runtime.event")
         _append_event(event_type, payload)
-        refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
+        _schedule_snapshot_refresh(
+            webspace_id=_webspace_id_from_payload(payload),
+            reason=event_type,
+        )
     except Exception:
         _log.debug("failed to refresh infrastate snapshot from runtime event", exc_info=True)
