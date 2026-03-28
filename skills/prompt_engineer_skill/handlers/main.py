@@ -1014,21 +1014,29 @@ def prompt_create_dev_project(payload: Optional[Dict[str, Any]] = None) -> Dict[
     The workspace bridge passes a single JSON payload dict, so we
     resolve fields manually instead of relying on positional args.
     """
+    def _coerce_text(value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, dict):
+            for key in ("id", "value", "label", "name", "object_id", "project_id"):
+                nested = value.get(key)
+                if isinstance(nested, str) and nested.strip():
+                    return nested.strip()
+        return ""
+
     payload = payload or {}
-    object_type = payload.get("object_type") or payload.get("project_type")
-    name = payload.get("name") or payload.get("object_id") or payload.get("project_id")
-    template = payload.get("template")
+    object_type = _coerce_text(payload.get("object_type") or payload.get("project_type"))
+    name = _coerce_text(payload.get("name") or payload.get("object_id") or payload.get("project_id"))
+    template_value = _coerce_text(payload.get("template"))
 
-    kind = (object_type or "").strip().lower() or "scenario"
+    kind = object_type.lower() or "scenario"
     if kind not in ("skill", "scenario"):
-        raise ValueError("object_type must be 'skill' or 'scenario'")
+        return {"ok": False, "error": "object_type must be 'skill' or 'scenario'"}
 
-    name = (name or "").strip()
     if not name:
-        raise ValueError("name must not be empty")
+        return {"ok": False, "error": "name must not be empty"}
 
-    if isinstance(template, str):
-        template = template.strip() or None
+    template = template_value or None
 
     svc = RootDeveloperService()
 
@@ -1043,6 +1051,12 @@ def prompt_create_dev_project(payload: Optional[Dict[str, Any]] = None) -> Dict[
     except RootServiceError as exc:
         _log.error("dev %s create failed for '%s': %s", kind, name, exc)
         return {"ok": False, "error": str(exc)}
+    except (ValueError, FileExistsError) as exc:
+        _log.error("invalid prompt create payload for %s '%s': %s", kind, name, exc)
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:  # pragma: no cover - defensive normalization for UI
+        _log.exception("unexpected dev %s create failure for '%s'", kind, name)
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     _emit_project_changed(kind, result.name, reason="project_created")
 
