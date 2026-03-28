@@ -15,6 +15,7 @@ import yaml
 from adaos.sdk.core._ctx import require_ctx
 from adaos.sdk.core.decorators import tool
 from adaos.sdk.root.developer import RootDeveloperService, TemplateResolutionError, RootServiceError
+from adaos.services.eventbus import emit as bus_emit
 
 _log = logging.getLogger("skills.prompt_engineer")
 
@@ -276,6 +277,27 @@ def _write_state(root: Path, state: Dict[str, Any]) -> None:
     _write_text(path, payload)
 
 
+def _emit_project_changed(object_type: str, object_id: str, *, reason: str) -> None:
+    kind = str(object_type or "").strip().lower()
+    project_id = str(object_id or "").strip()
+    if kind not in {"skill", "scenario"} or not project_id:
+        return
+    try:
+        ctx = _require_ctx()
+        bus_emit(
+            ctx.bus,
+            "prompt.project.changed",
+            {
+                "object_type": kind,
+                "object_id": project_id,
+                "reason": str(reason or "").strip() or "changed",
+            },
+            "skills.prompt_engineer_skill",
+        )
+    except Exception:
+        _log.debug("failed to emit prompt.project.changed for %s:%s", kind, project_id, exc_info=True)
+
+
 def _build_ts_text(state: Dict[str, Any]) -> str:
     """
     Combine base_tz and tz_addenda into a single Technical Specification text.
@@ -318,6 +340,7 @@ def prompt_save_base_tz(object_type: str, object_id: str, text: str) -> Dict[str
     state = _load_state(object_type, object_id)
     state["base_tz"] = text or ""
     _write_state(root, state)
+    _emit_project_changed(object_type, object_id, reason="base_tz_saved")
     return {"ok": True, "state": state}
 
 
@@ -354,6 +377,7 @@ def prompt_append_tz_addendum(
     )
     state["tz_addenda"] = addenda
     _write_state(root, state)
+    _emit_project_changed(object_type, object_id, reason="tz_addendum_appended")
     return {"ok": True, "state": state}
 
 
@@ -473,6 +497,7 @@ def tz_add_reset(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     state["tz_addenda"] = []
     root = _project_root(object_type, object_id)
     _write_state(root, state)
+    _emit_project_changed(object_type, object_id, reason="tz_addenda_reset")
     return {
         "ok": True,
         "object_type": object_type,
@@ -990,8 +1015,8 @@ def prompt_create_dev_project(payload: Optional[Dict[str, Any]] = None) -> Dict[
     resolve fields manually instead of relying on positional args.
     """
     payload = payload or {}
-    object_type = payload.get("object_type")
-    name = payload.get("name")
+    object_type = payload.get("object_type") or payload.get("project_type")
+    name = payload.get("name") or payload.get("object_id") or payload.get("project_id")
     template = payload.get("template")
 
     kind = (object_type or "").strip().lower() or "scenario"
@@ -1019,9 +1044,13 @@ def prompt_create_dev_project(payload: Optional[Dict[str, Any]] = None) -> Dict[
         _log.error("dev %s create failed for '%s': %s", kind, name, exc)
         return {"ok": False, "error": str(exc)}
 
+    _emit_project_changed(kind, result.name, reason="project_created")
+
     return {
         "ok": True,
         "object_type": kind,
+        "object_id": result.name,
+        "project_id": result.name,
         "name": result.name,
         "path": str(result.path),
         "template": template or "default",
@@ -1048,6 +1077,7 @@ def prompt_snapshot_project(payload: Optional[Dict[str, Any]] = None) -> Dict[st
     root = _project_root(object_type, object_id)
     state = _load_state(object_type, object_id)
     _write_state(root, state)
+    _emit_project_changed(object_type, object_id, reason="project_snapshotted")
     return {"ok": True, "object_type": object_type, "object_id": object_id}
 
 
@@ -1177,6 +1207,7 @@ def prompt_update_project_meta(payload: Optional[Dict[str, Any]] = None) -> Dict
         _log.warning("prompt_update_project_meta failed to write %s: %s", yaml_path, exc, exc_info=True)
         return {"ok": False, "error": str(exc)}
 
+    _emit_project_changed(object_type, object_id, reason="project_meta_updated")
     return prompt_get_project_meta({"object_type": object_type, "object_id": object_id})
 
 
@@ -1356,6 +1387,7 @@ def prompt_git_update(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any
         "items": updated,
     }
     _append_git_log(object_type, object_id, result)
+    _emit_project_changed(object_type, object_id, reason="git_updated")
     return result
 
 
@@ -1456,6 +1488,7 @@ def prompt_git_publish(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
         "items": published,
     }
     _append_git_log(object_type, object_id, result)
+    _emit_project_changed(object_type, object_id, reason="git_published")
     return result
 
 
@@ -1544,4 +1577,5 @@ def prompt_git_delete(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any
         "items": deleted,
     }
     _append_git_log(object_type, object_id, result)
+    _emit_project_changed(object_type, object_id, reason="git_deleted")
     return result

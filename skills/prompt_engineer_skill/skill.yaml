@@ -1,5 +1,5 @@
 name: prompt_engineer_skill
-version: 0.4.0
+version: 0.5.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -634,5 +634,5 @@ tools:
     type: object
     properties: {}
 exports: {}
-updated_at: '2026-03-27T12:14:05+00:00'
+updated_at: '2026-03-28T06:04:06+00:00'
 
