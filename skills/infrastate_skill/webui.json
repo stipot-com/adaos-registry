@@ -279,6 +279,23 @@
 							]
 						},
 						{
+							"id": "infrastate-scenarios",
+							"type": "ui.table",
+							"area": "main",
+							"title": "Installed scenarios",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/scenarios"
+							},
+							"inputs": {
+								"emptyText": "No installed scenarios",
+								"columns": [
+									{ "key": "name", "label": "Name" },
+									{ "key": "version", "label": "Version", "mono": true, "width": "160px" }
+								]
+							}
+						},
+						{
 							"id": "infrastate-logs",
 							"type": "ui.list",
 							"area": "main",
@@ -422,6 +439,7 @@
 			"realtime": [],
 			"slots": [],
 			"skills": [],
+			"scenarios": [],
 			"logs": []
 			,
 			"events": []

@@ -26,7 +26,7 @@ from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.skill.manager import SkillManager
-from adaos.adapters.db import SqliteSkillRegistry
+from adaos.adapters.db import SqliteScenarioRegistry, SqliteSkillRegistry
 
 from packaging.version import Version, InvalidVersion
 
@@ -325,6 +325,52 @@ def _skills_items() -> list[dict[str, Any]]:
                 "slot": slot,
                 "remote_version": remote_version,
                 "update_available": update_available,
+            }
+        )
+
+    out.sort(key=lambda x: x.get("name") or "")
+    return out
+
+
+def _scenario_items() -> list[dict[str, Any]]:
+    try:
+        ctx = get_ctx()
+    except Exception:
+        return []
+
+    try:
+        registry_rows = SqliteScenarioRegistry(ctx.sql).list() or []
+    except Exception:
+        registry_rows = []
+
+    try:
+        repo_metas = ctx.scenarios_repo.list() or []
+    except Exception:
+        repo_metas = []
+
+    versions_by_name: dict[str, str] = {}
+    for meta in repo_metas:
+        try:
+            name = str(getattr(meta, "id", None).value if getattr(meta, "id", None) else getattr(meta, "name", "") or "").strip()
+        except Exception:
+            name = ""
+        if not name:
+            continue
+        version = str(getattr(meta, "version", "") or "").strip()
+        if version:
+            versions_by_name[name] = version
+
+    out: list[dict[str, Any]] = []
+    for row in registry_rows:
+        name = str(getattr(row, "name", "") or "").strip()
+        if not name:
+            continue
+        version = str(versions_by_name.get(name) or getattr(row, "active_version", "") or "").strip()
+        out.append(
+            {
+                "name": name,
+                "version": version,
+                "updated_at": getattr(row, "last_updated", None),
             }
         )
 
@@ -2683,6 +2729,7 @@ def _snapshot() -> dict[str, Any]:
         "realtime": _realtime_items(reliability, transport_diag),
         "slots": _slot_items(display_slots_payload),
         "skills": _skills_items(),
+        "scenarios": _scenario_items(),
         "logs": _status_log_items(effective_report),
         "events": list(reversed(_event_state())),
         "status": display_status,
