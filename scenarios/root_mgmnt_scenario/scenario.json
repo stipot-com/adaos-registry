@@ -1,0 +1,743 @@
+{
+  "id": "root_mgmnt_scenario",
+  "version": "0.2.0",
+  "name": "Root management",
+  "type": "desktop",
+  "title": "Root LLM & Fleet",
+  "description": "Private root operator console for LLM policy, subnet activity, and lifecycle hygiene.",
+  "depends": [
+    "root_mgmnt"
+  ],
+  "ui": {
+    "application": {
+      "version": "0.1",
+      "desktop": {
+        "pageSchema": {
+          "id": "root_mgmnt_page",
+          "title": "Root LLM & Fleet",
+          "layout": {
+            "type": "split",
+            "areas": [
+              {
+                "id": "sidebar",
+                "role": "sidebar"
+              },
+              {
+                "id": "main",
+                "role": "main"
+              },
+              {
+                "id": "right",
+                "role": "aux"
+              },
+              {
+                "id": "bottom",
+                "role": "footer"
+              }
+            ]
+          },
+          "initialState": {
+            "rootTab": "overview",
+            "selectedSubnetId": ""
+          },
+          "widgets": [
+            {
+              "id": "root-tabs",
+              "type": "input.commandBar",
+              "area": "sidebar",
+              "title": "Workspace",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "overview",
+                    "label": "Overview"
+                  },
+                  {
+                    "id": "fleet",
+                    "label": "Fleet"
+                  },
+                  {
+                    "id": "lifecycle",
+                    "label": "Lifecycle"
+                  },
+                  {
+                    "id": "audit",
+                    "label": "Audit"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:overview",
+                  "type": "updateState",
+                  "params": {
+                    "rootTab": "overview"
+                  }
+                },
+                {
+                  "on": "click:fleet",
+                  "type": "updateState",
+                  "params": {
+                    "rootTab": "fleet"
+                  }
+                },
+                {
+                  "on": "click:lifecycle",
+                  "type": "updateState",
+                  "params": {
+                    "rootTab": "lifecycle"
+                  }
+                },
+                {
+                  "on": "click:audit",
+                  "type": "updateState",
+                  "params": {
+                    "rootTab": "audit"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "policy-actions",
+              "type": "input.commandBar",
+              "area": "sidebar",
+              "title": "LLM policy",
+              "inputs": {
+                "size": "small",
+                "buttons": [
+                  {
+                    "id": "reload",
+                    "label": "Reload"
+                  },
+                  {
+                    "id": "enable",
+                    "label": "Enable"
+                  },
+                  {
+                    "id": "disable",
+                    "label": "Disable"
+                  },
+                  {
+                    "id": "open",
+                    "label": "Open"
+                  },
+                  {
+                    "id": "allowlist",
+                    "label": "Allowlist"
+                  },
+                  {
+                    "id": "denyall",
+                    "label": "Deny all"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:reload",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                },
+                {
+                  "on": "click:enable",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.set_llm_enabled",
+                  "params": {
+                    "enabled": true
+                  }
+                },
+                {
+                  "on": "click:enable",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                },
+                {
+                  "on": "click:disable",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.set_llm_enabled",
+                  "params": {
+                    "enabled": false
+                  }
+                },
+                {
+                  "on": "click:disable",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                },
+                {
+                  "on": "click:open",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.set_policy_mode",
+                  "params": {
+                    "mode": "open"
+                  }
+                },
+                {
+                  "on": "click:open",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                },
+                {
+                  "on": "click:allowlist",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.set_policy_mode",
+                  "params": {
+                    "mode": "allowlist"
+                  }
+                },
+                {
+                  "on": "click:allowlist",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                },
+                {
+                  "on": "click:denyall",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.set_policy_mode",
+                  "params": {
+                    "mode": "denyall"
+                  }
+                },
+                {
+                  "on": "click:denyall",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "fleet-total",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Fleet",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_metric_tile",
+                "params": {
+                  "metric_id": "fleet_total"
+                }
+              },
+              "visibleIf": "$state.rootTab === 'overview'"
+            },
+            {
+              "id": "retire-total",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Retire",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_metric_tile",
+                "params": {
+                  "metric_id": "retire_candidates"
+                }
+              },
+              "visibleIf": "$state.rootTab === 'overview'"
+            },
+            {
+              "id": "llm-requests",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "LLM 24h",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_metric_tile",
+                "params": {
+                  "metric_id": "llm_requests_24h"
+                }
+              },
+              "visibleIf": "$state.rootTab === 'overview'"
+            },
+            {
+              "id": "llm-policy",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Policy",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_metric_tile",
+                "params": {
+                  "metric_id": "llm_policy"
+                }
+              },
+              "visibleIf": "$state.rootTab === 'overview'"
+            },
+            {
+              "id": "policy-summary",
+              "type": "item.details",
+              "area": "main",
+              "title": "Policy summary",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_policy_summary"
+              },
+              "visibleIf": "$state.rootTab === 'overview'"
+            },
+            {
+              "id": "overview-lifecycle",
+              "type": "ui.table",
+              "area": "main",
+              "title": "Top lifecycle candidates",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_lifecycle_candidates"
+              },
+              "inputs": {
+                "emptyText": "No lifecycle candidates.",
+                "columns": [
+                  {
+                    "key": "subnet_id",
+                    "label": "Subnet",
+                    "mono": true,
+                    "width": "180px"
+                  },
+                  {
+                    "key": "lifecycle_state",
+                    "label": "State",
+                    "width": "110px"
+                  },
+                  {
+                    "key": "idle_days",
+                    "label": "Idle days",
+                    "width": "90px"
+                  },
+                  {
+                    "key": "candidate_reason",
+                    "label": "Reason"
+                  }
+                ],
+                "buttons": [
+                  {
+                    "id": "inspect",
+                    "label": "Inspect"
+                  },
+                  {
+                    "id": "retire",
+                    "label": "Retire",
+                    "whenKey": "can_retire"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:inspect",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.retire_subnet",
+                  "params": {
+                    "subnet_id": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                }
+              ],
+              "visibleIf": "$state.rootTab === 'overview'"
+            },
+            {
+              "id": "fleet-table",
+              "type": "ui.table",
+              "area": "main",
+              "title": "Fleet",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_fleet"
+              },
+              "inputs": {
+                "emptyText": "No known subnets.",
+                "columns": [
+                  {
+                    "key": "subnet_id",
+                    "label": "Subnet",
+                    "mono": true,
+                    "width": "180px"
+                  },
+                  {
+                    "key": "owner_id",
+                    "label": "Owner",
+                    "width": "120px"
+                  },
+                  {
+                    "key": "lifecycle_state",
+                    "label": "State",
+                    "width": "110px"
+                  },
+                  {
+                    "key": "live_now",
+                    "label": "Live",
+                    "width": "70px"
+                  },
+                  {
+                    "key": "last_seen",
+                    "label": "Last seen",
+                    "width": "90px"
+                  },
+                  {
+                    "key": "llm_requests_30d",
+                    "label": "LLM 30d",
+                    "width": "90px"
+                  },
+                  {
+                    "key": "activity_score",
+                    "label": "Score",
+                    "width": "70px"
+                  }
+                ],
+                "buttons": [
+                  {
+                    "id": "inspect",
+                    "label": "Inspect"
+                  },
+                  {
+                    "id": "freeze",
+                    "label": "Freeze",
+                    "whenKey": "can_freeze"
+                  },
+                  {
+                    "id": "archive",
+                    "label": "Archive",
+                    "whenKey": "can_archive"
+                  },
+                  {
+                    "id": "retire",
+                    "label": "Retire",
+                    "whenKey": "can_retire"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:inspect",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:freeze",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:freeze",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.freeze_subnet_llm",
+                  "params": {
+                    "subnet_id": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:freeze",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                },
+                {
+                  "on": "click:archive",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:archive",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.archive_dev_space",
+                  "params": {
+                    "subnet_id": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:archive",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.retire_subnet",
+                  "params": {
+                    "subnet_id": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                }
+              ],
+              "visibleIf": "$state.rootTab === 'fleet'"
+            },
+            {
+              "id": "lifecycle-table",
+              "type": "ui.table",
+              "area": "main",
+              "title": "Lifecycle queue",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_lifecycle_candidates"
+              },
+              "inputs": {
+                "emptyText": "No dormant or retire-candidate subnets.",
+                "columns": [
+                  {
+                    "key": "subnet_id",
+                    "label": "Subnet",
+                    "mono": true,
+                    "width": "180px"
+                  },
+                  {
+                    "key": "lifecycle_state",
+                    "label": "State",
+                    "width": "110px"
+                  },
+                  {
+                    "key": "idle_days",
+                    "label": "Idle days",
+                    "width": "90px"
+                  },
+                  {
+                    "key": "draft_artifacts",
+                    "label": "Drafts",
+                    "width": "80px"
+                  },
+                  {
+                    "key": "registry_artifacts",
+                    "label": "Registry",
+                    "width": "80px"
+                  },
+                  {
+                    "key": "candidate_reason",
+                    "label": "Reason"
+                  }
+                ],
+                "buttons": [
+                  {
+                    "id": "inspect",
+                    "label": "Inspect"
+                  },
+                  {
+                    "id": "archive",
+                    "label": "Archive",
+                    "whenKey": "can_archive"
+                  },
+                  {
+                    "id": "retire",
+                    "label": "Retire",
+                    "whenKey": "can_retire"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:inspect",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:archive",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:archive",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.archive_dev_space",
+                  "params": {
+                    "subnet_id": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:archive",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "updateState",
+                  "params": {
+                    "selectedSubnetId": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "callSkill",
+                  "target": "root_mgmnt.retire_subnet",
+                  "params": {
+                    "subnet_id": "$event.subnet_id"
+                  }
+                },
+                {
+                  "on": "click:retire",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                }
+              ],
+              "visibleIf": "$state.rootTab === 'lifecycle'"
+            },
+            {
+              "id": "audit-table",
+              "type": "ui.table",
+              "area": "main",
+              "title": "Audit events",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_audit_events"
+              },
+              "inputs": {
+                "emptyText": "No audit events yet.",
+                "columns": [
+                  {
+                    "key": "created_at",
+                    "label": "Created",
+                    "mono": true,
+                    "width": "170px"
+                  },
+                  {
+                    "key": "kind",
+                    "label": "Kind",
+                    "width": "120px"
+                  },
+                  {
+                    "key": "action",
+                    "label": "Action",
+                    "width": "130px"
+                  },
+                  {
+                    "key": "subnet_id",
+                    "label": "Subnet",
+                    "mono": true,
+                    "width": "180px"
+                  },
+                  {
+                    "key": "actor",
+                    "label": "Actor",
+                    "width": "140px"
+                  },
+                  {
+                    "key": "status",
+                    "label": "Status",
+                    "width": "90px"
+                  },
+                  {
+                    "key": "summary",
+                    "label": "Summary"
+                  }
+                ]
+              },
+              "visibleIf": "$state.rootTab === 'audit'"
+            },
+            {
+              "id": "selected-subnet",
+              "type": "item.details",
+              "area": "right",
+              "title": "Subnet details",
+              "dataSource": {
+                "kind": "skill",
+                "name": "root_mgmnt.get_subnet_details",
+                "params": {
+                  "subnet_id": "$state.selectedSubnetId"
+                }
+              }
+            },
+            {
+              "id": "bottom-actions",
+              "type": "input.commandBar",
+              "area": "bottom",
+              "inputs": {
+                "size": "small",
+                "buttons": [
+                  {
+                    "id": "reload",
+                    "label": "Reload page"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:reload",
+                  "type": "callHost",
+                  "target": "desktop.webspace.reload",
+                  "params": {
+                    "scenario_id": "root_mgmnt_scenario"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "registry": {
+    "widgets": [],
+    "modals": []
+  },
+  "catalog": {
+    "apps": [],
+    "widgets": []
+  },
+  "data": {},
+  "updated_at": "2026-03-29T03:52:04+00:00"
+}
