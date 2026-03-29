@@ -5,31 +5,10 @@
       "desktop": {
         "topbar": [
           {
-            "id": "btn_apps",
-            "label": "Apps",
-            "action": {
-              "openModal": "apps_catalog"
-            }
-          },
-          {
             "id": "btn_voice",
             "label": "🎙️",
             "action": {
               "openModal": "voice_chat_modal"
-            }
-          },
-          {
-            "id": "btn_widgets",
-            "label": "Widgets",
-            "action": {
-              "openModal": "widgets_catalog"
-            }
-          },
-          {
-            "id": "btn_teacher",
-            "label": "NLU",
-            "action": {
-              "openModal": "nlu_teacher_modal"
             }
           }
         ],
@@ -78,68 +57,6 @@
                   "params": {
                     "modalId": "$event.action.openModal"
                   }
-                }
-              ]
-            },
-            {
-              "id": "workspace-tools",
-              "type": "input.commandBar",
-              "area": "main",
-              "inputs": {
-                "buttons": [
-                  {
-                    "id": "apps",
-                    "label": "Apps"
-                  },
-                  {
-                    "id": "widgets",
-                    "label": "Widgets"
-                  },
-                  {
-                    "id": "workspace-manager",
-                    "label": "Workspaces"
-                  },
-                  {
-                    "id": "yjs-reload",
-                    "label": "YJS reload"
-                  },
-                  {
-                    "id": "yjs-reset",
-                    "label": "YJS reset"
-                  }
-                ]
-              },
-              "actions": [
-                {
-                  "on": "click:apps",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "apps_catalog"
-                  }
-                },
-                {
-                  "on": "click:widgets",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "widgets_catalog"
-                  }
-                },
-                {
-                  "on": "click:workspace-manager",
-                  "type": "openModal",
-                  "params": {
-                    "modalId": "workspace_manager"
-                  }
-                },
-                {
-                  "on": "click:yjs-reload",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload"
-                },
-                {
-                  "on": "click:yjs-reset",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reset"
                 }
               ]
             },

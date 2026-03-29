@@ -1,29 +1,30 @@
-# yaml-language-server: $schema=../../../../src/adaos/abi/scenario.schema.json
 id: web_desktop
-version: 0.0.1
+version: 0.1.0
 title: Web Desktop
-description: Desktop shell scenario that defines the main UI layout, registry and base catalog.
+description: Desktop shell scenario that defines the main UI layout, registry and
+  base catalog.
 type: desktop
 depends:
-  - web_desktop_skill
-  - greet_on_boot_skill
-  - pair_new_device_skill
-  - voice_chat_skill
-updated_at: "2025-11-14T18:14:36+00:00"
+- web_desktop_skill
+- greet_on_boot_skill
+- pair_new_device_skill
+- voice_chat_skill
+updated_at: '2026-03-29T04:56:09+00:00'
 data_projections:
-  - scope: current_user
-    slot: profile.settings
-    targets:
-      - backend: kv
-      - backend: yjs
-        path: data/skills/profile/{user_id}/settings
-  - scope: subnet
-    slot: weather.snapshot
-    targets:
-      - backend: yjs
-        path: data/weather
-  - scope: subnet
-    slot: infra.status
-    targets:
-      - backend: yjs
-        path: data/infra/status
+- scope: current_user
+  slot: profile.settings
+  targets:
+  - backend: kv
+  - backend: yjs
+    path: data/skills/profile/{user_id}/settings
+- scope: subnet
+  slot: weather.snapshot
+  targets:
+  - backend: yjs
+    path: data/weather
+- scope: subnet
+  slot: infra.status
+  targets:
+  - backend: yjs
+    path: data/infra/status
+
