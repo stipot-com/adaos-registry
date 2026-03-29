@@ -1,0 +1,235 @@
+name: root_mgmnt
+version: 0.2.0
+entry: handlers/main.py
+runtime:
+  python: '3.11'
+description: Private root operator skill for LLM policy, fleet activity, and subnet
+  lifecycle hygiene.
+dependencies: []
+events: {}
+default_tool: get_snapshot
+tools:
+- name: get_snapshot
+  description: Fetch the latest root management snapshot from the root backend.
+  entry: handlers.main:get_snapshot
+  input_schema:
+    type: object
+    properties:
+      force:
+        type: boolean
+  output_schema:
+    type: object
+    properties: {}
+- name: refresh_snapshot
+  description: Force-refresh the cached root management snapshot.
+  entry: handlers.main:refresh_snapshot
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    properties: {}
+- name: get_metric_tile
+  description: Return one overview metric tile for the root operations dashboard.
+  entry: handlers.main:get_metric_tile
+  input_schema:
+    type: object
+    properties:
+      metric_id:
+        type: string
+    required:
+    - metric_id
+  output_schema:
+    type: object
+    properties: {}
+- name: get_policy_summary
+  description: Return effective root LLM policy and high-level fleet summary.
+  entry: handlers.main:get_policy_summary
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    properties: {}
+- name: get_fleet
+  description: Return fleet table rows for all known subnets.
+  entry: handlers.main:get_fleet
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    properties: {}
+- name: get_lifecycle_candidates
+  description: Return the shortlist of dormant and retire-candidate subnets.
+  entry: handlers.main:get_lifecycle_candidates
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    properties: {}
+- name: get_audit_events
+  description: Return recent root management audit events.
+  entry: handlers.main:get_audit_events
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
+    properties: {}
+- name: get_subnet_details
+  description: Return detailed view for a selected subnet.
+  entry: handlers.main:get_subnet_details
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+  output_schema:
+    type: object
+    properties: {}
+- name: freeze_subnet_llm
+  description: Freeze LLM access for a subnet.
+  entry: handlers.main:freeze_subnet_llm
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+      note:
+        type: string
+    required:
+    - subnet_id
+  output_schema:
+    type: object
+    properties: {}
+- name: unfreeze_subnet_llm
+  description: Remove LLM freeze/block override for a subnet.
+  entry: handlers.main:unfreeze_subnet_llm
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+      note:
+        type: string
+    required:
+    - subnet_id
+  output_schema:
+    type: object
+    properties: {}
+- name: mark_dormant
+  description: Mark a subnet as dormant.
+  entry: handlers.main:mark_dormant
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+      note:
+        type: string
+    required:
+    - subnet_id
+  output_schema:
+    type: object
+    properties: {}
+- name: reactivate_subnet
+  description: Clear lifecycle overrides and reactivate a subnet.
+  entry: handlers.main:reactivate_subnet
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+      note:
+        type: string
+    required:
+    - subnet_id
+  output_schema:
+    type: object
+    properties: {}
+- name: archive_dev_space
+  description: Tombstone draft and registry artifacts in forge for a subnet.
+  entry: handlers.main:archive_dev_space
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+      note:
+        type: string
+    required:
+    - subnet_id
+  output_schema:
+    type: object
+    properties: {}
+- name: retire_subnet
+  description: Archive forge artifacts and retire a subnet.
+  entry: handlers.main:retire_subnet
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+      note:
+        type: string
+    required:
+    - subnet_id
+  output_schema:
+    type: object
+    properties: {}
+- name: set_policy_mode
+  description: Update the global root LLM access mode.
+  entry: handlers.main:set_policy_mode
+  input_schema:
+    type: object
+    properties:
+      mode:
+        type: string
+    required:
+    - mode
+  output_schema:
+    type: object
+    properties: {}
+- name: set_llm_enabled
+  description: Enable or disable root LLM service globally.
+  entry: handlers.main:set_llm_enabled
+  input_schema:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+    required:
+    - enabled
+  output_schema:
+    type: object
+    properties: {}
+- name: allow_subnet
+  description: Add subnet to the root LLM allowlist.
+  entry: handlers.main:allow_subnet
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+    required:
+    - subnet_id
+  output_schema:
+    type: object
+    properties: {}
+- name: remove_allowed_subnet
+  description: Remove subnet from the root LLM allowlist.
+  entry: handlers.main:remove_allowed_subnet
+  input_schema:
+    type: object
+    properties:
+      subnet_id:
+        type: string
+    required:
+    - subnet_id
+  output_schema:
+    type: object
+    properties: {}
+updated_at: '2026-03-29T03:50:43+00:00'
+
