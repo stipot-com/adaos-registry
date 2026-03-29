@@ -316,7 +316,8 @@ def refresh_snapshot() -> dict[str, Any]:
 
 
 @tool("get_metric_tile")
-def get_metric_tile(metric_id: str) -> dict[str, Any]:
+def get_metric_tile(metric_id: str, refresh_nonce: Any | None = None) -> dict[str, Any]:
+    _ = refresh_nonce
     snapshot = _snapshot_or_fallback(force=False)
     return {
         **_metric_value(snapshot, str(metric_id or "").strip()),
@@ -325,7 +326,8 @@ def get_metric_tile(metric_id: str) -> dict[str, Any]:
 
 
 @tool("get_policy_summary")
-def get_policy_summary() -> dict[str, Any]:
+def get_policy_summary(refresh_nonce: Any | None = None) -> dict[str, Any]:
+    _ = refresh_nonce
     snapshot = _snapshot_or_fallback(force=False)
     return {
         **_policy_summary(snapshot),
@@ -334,7 +336,8 @@ def get_policy_summary() -> dict[str, Any]:
 
 
 @tool("get_fleet")
-def get_fleet() -> dict[str, Any]:
+def get_fleet(refresh_nonce: Any | None = None) -> dict[str, Any]:
+    _ = refresh_nonce
     snapshot = _snapshot_or_fallback(force=False)
     items = sorted(
         _fleet(snapshot),
@@ -351,7 +354,8 @@ def get_fleet() -> dict[str, Any]:
 
 
 @tool("get_lifecycle_candidates")
-def get_lifecycle_candidates() -> dict[str, Any]:
+def get_lifecycle_candidates(refresh_nonce: Any | None = None) -> dict[str, Any]:
+    _ = refresh_nonce
     snapshot = _snapshot_or_fallback(force=False)
     items = sorted(
         _lifecycle_candidates(snapshot),
@@ -364,7 +368,8 @@ def get_lifecycle_candidates() -> dict[str, Any]:
 
 
 @tool("get_audit_events")
-def get_audit_events() -> dict[str, Any]:
+def get_audit_events(refresh_nonce: Any | None = None) -> dict[str, Any]:
+    _ = refresh_nonce
     snapshot = _snapshot_or_fallback(force=False)
     return {
         "items": _audit(snapshot),
@@ -373,7 +378,8 @@ def get_audit_events() -> dict[str, Any]:
 
 
 @tool("get_subnet_details")
-def get_subnet_details(subnet_id: Optional[str] = None) -> dict[str, Any]:
+def get_subnet_details(subnet_id: Optional[str] = None, refresh_nonce: Any | None = None) -> dict[str, Any]:
+    _ = refresh_nonce
     snapshot = _snapshot_or_fallback(force=False)
     return {
         **_subnet_details(snapshot, subnet_id),
