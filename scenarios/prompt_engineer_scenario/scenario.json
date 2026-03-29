@@ -535,6 +535,8 @@
                     "on": "click:create",
                     "type": "updateState",
                     "params": {
+                      "currentProjectType": "$state.createObjectType",
+                      "currentProjectId": "$state.createObjectName",
                       "currentObjectType": "$state.createObjectType",
                       "currentObjectId": "$state.createObjectName",
                       "currentStage": "tz"
