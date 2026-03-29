@@ -1,5 +1,5 @@
 name: root_mgmnt
-version: 0.2.0
+version: 0.3.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -231,5 +231,5 @@ tools:
   output_schema:
     type: object
     properties: {}
-updated_at: '2026-03-29T03:50:43+00:00'
+updated_at: '2026-03-29T06:36:53+00:00'
 

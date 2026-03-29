@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from typing import Any, Dict, Mapping, Optional
 from urllib.parse import quote
@@ -12,7 +13,10 @@ from adaos.services.root.client import RootHttpClient
 
 _log = logging.getLogger("skills.root_mgmnt")
 _CACHE_TTL_S = float(str(os.getenv("ADAOS_ROOT_MGMNT_CACHE_TTL") or "5").strip() or "5")
+_STALE_MAX_AGE_S = float(str(os.getenv("ADAOS_ROOT_MGMNT_STALE_MAX_AGE") or "120").strip() or "120")
+_REQUEST_TIMEOUT_S = float(str(os.getenv("ADAOS_ROOT_MGMNT_TIMEOUT") or "4.5").strip() or "4.5")
 _SNAPSHOT_CACHE: dict[str, Any] = {"ts": 0.0, "value": None}
+_SNAPSHOT_FETCH_LOCK = threading.Lock()
 
 
 def lang_res() -> Dict[str, str]:
@@ -68,7 +72,7 @@ def _client() -> RootHttpClient:
     return RootHttpClient(
         base_url=base_url,
         verify=_root_verify(base_url),
-        timeout=30.0,
+        timeout=_REQUEST_TIMEOUT_S,
         default_headers={
             "X-Root-Mgmnt-Token": _root_token(),
             "X-Root-Mgmnt-Actor": "root_mgmnt.skill",
@@ -81,17 +85,46 @@ def _invalidate_cache() -> None:
     _SNAPSHOT_CACHE["value"] = None
 
 
-def _snapshot(force: bool = False) -> dict[str, Any]:
-    now = time.time()
+def _copy_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    return dict(snapshot) if isinstance(snapshot, Mapping) else {}
+
+
+def _read_cached_snapshot(*, max_age_s: float | None = None) -> dict[str, Any] | None:
     cached = _SNAPSHOT_CACHE.get("value")
     cached_ts = float(_SNAPSHOT_CACHE.get("ts") or 0.0)
-    if not force and isinstance(cached, dict) and (now - cached_ts) < _CACHE_TTL_S:
-        return dict(cached)
-    payload = _client().request("GET", "/v1/root_mgmnt/snapshot")
-    snapshot = dict(payload) if isinstance(payload, Mapping) else {"ok": False, "error": "invalid_snapshot"}
-    _SNAPSHOT_CACHE["ts"] = now
-    _SNAPSHOT_CACHE["value"] = snapshot
-    return dict(snapshot)
+    if not isinstance(cached, Mapping):
+        return None
+    if max_age_s is not None and cached_ts > 0 and (time.time() - cached_ts) > max_age_s:
+        return None
+    return _copy_snapshot(cached)
+
+
+def _snapshot_meta(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "generated_at": snapshot.get("generated_at"),
+        "stale": bool(snapshot.get("stale")),
+        "warning": str(snapshot.get("warning") or "").strip() or None,
+        "error": str(snapshot.get("error") or "").strip() or None,
+    }
+
+
+def _snapshot(force: bool = False) -> dict[str, Any]:
+    if not force:
+        cached = _read_cached_snapshot(max_age_s=_CACHE_TTL_S)
+        if cached is not None:
+            return cached
+    with _SNAPSHOT_FETCH_LOCK:
+        if not force:
+            cached = _read_cached_snapshot(max_age_s=_CACHE_TTL_S)
+            if cached is not None:
+                return cached
+        payload = _client().request("GET", "/v1/root_mgmnt/snapshot", timeout=_REQUEST_TIMEOUT_S)
+        snapshot = dict(payload) if isinstance(payload, Mapping) else {"ok": False, "error": "invalid_snapshot"}
+        snapshot.pop("stale", None)
+        snapshot.pop("warning", None)
+        _SNAPSHOT_CACHE["ts"] = time.time()
+        _SNAPSHOT_CACHE["value"] = snapshot
+        return dict(snapshot)
 
 
 def _snapshot_or_fallback(force: bool = False) -> dict[str, Any]:
@@ -99,10 +132,18 @@ def _snapshot_or_fallback(force: bool = False) -> dict[str, Any]:
         return _snapshot(force=force)
     except Exception as exc:
         _log.warning("root_mgmnt snapshot failed", exc_info=True)
+        stale = _read_cached_snapshot(max_age_s=_STALE_MAX_AGE_S)
+        if stale is not None:
+            stale["stale"] = True
+            stale["warning"] = "showing cached root snapshot"
+            stale["error"] = f"{type(exc).__name__}: {exc}"
+            stale["stale_age_s"] = round(max(0.0, time.time() - float(_SNAPSHOT_CACHE.get("ts") or 0.0)), 3)
+            return stale
         return {
             "ok": False,
             "error": f"{type(exc).__name__}: {exc}",
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "warning": "root snapshot unavailable",
             "overview": {},
             "policy": {},
             "fleet": [],
@@ -277,13 +318,19 @@ def refresh_snapshot() -> dict[str, Any]:
 @tool("get_metric_tile")
 def get_metric_tile(metric_id: str) -> dict[str, Any]:
     snapshot = _snapshot_or_fallback(force=False)
-    return _metric_value(snapshot, str(metric_id or "").strip())
+    return {
+        **_metric_value(snapshot, str(metric_id or "").strip()),
+        **_snapshot_meta(snapshot),
+    }
 
 
 @tool("get_policy_summary")
 def get_policy_summary() -> dict[str, Any]:
     snapshot = _snapshot_or_fallback(force=False)
-    return _policy_summary(snapshot)
+    return {
+        **_policy_summary(snapshot),
+        **_snapshot_meta(snapshot),
+    }
 
 
 @tool("get_fleet")
@@ -297,7 +344,10 @@ def get_fleet() -> dict[str, Any]:
             str(item.get("subnet_id") or ""),
         ),
     )
-    return {"items": items}
+    return {
+        "items": items,
+        **_snapshot_meta(snapshot),
+    }
 
 
 @tool("get_lifecycle_candidates")
@@ -307,19 +357,28 @@ def get_lifecycle_candidates() -> dict[str, Any]:
         _lifecycle_candidates(snapshot),
         key=lambda item: (-(int(item.get("idle_days") or 0)), str(item.get("subnet_id") or "")),
     )
-    return {"items": items}
+    return {
+        "items": items,
+        **_snapshot_meta(snapshot),
+    }
 
 
 @tool("get_audit_events")
 def get_audit_events() -> dict[str, Any]:
     snapshot = _snapshot_or_fallback(force=False)
-    return {"items": _audit(snapshot)}
+    return {
+        "items": _audit(snapshot),
+        **_snapshot_meta(snapshot),
+    }
 
 
 @tool("get_subnet_details")
 def get_subnet_details(subnet_id: Optional[str] = None) -> dict[str, Any]:
     snapshot = _snapshot_or_fallback(force=False)
-    return _subnet_details(snapshot, subnet_id)
+    return {
+        **_subnet_details(snapshot, subnet_id),
+        **_snapshot_meta(snapshot),
+    }
 
 
 @tool("freeze_subnet_llm")
