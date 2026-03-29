@@ -1,10 +1,10 @@
 id: root_mgmnt_scenario
-version: 0.2.0
+version: 0.3.0
 title: Root LLM & Fleet
 description: Private root operator console for LLM policy, subnet activity, and lifecycle
   hygiene.
 type: desktop
 depends:
 - root_mgmnt
-updated_at: '2026-03-29T04:56:59+00:00'
+updated_at: '2026-03-29T08:05:21+00:00'
 

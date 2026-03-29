@@ -19,10 +19,6 @@
             "type": "split",
             "areas": [
               {
-                "id": "sidebar",
-                "role": "sidebar"
-              },
-              {
                 "id": "main",
                 "role": "main"
               },
@@ -38,15 +34,17 @@
           },
           "initialState": {
             "rootTab": "overview",
-            "selectedSubnetId": ""
+            "selectedSubnetId": "",
+            "rootRefreshTs": 0
           },
           "widgets": [
             {
               "id": "root-tabs",
               "type": "input.commandBar",
-              "area": "sidebar",
+              "area": "main",
               "title": "Workspace",
               "inputs": {
+                "variant": "stack",
                 "buttons": [
                   {
                     "id": "overview",
@@ -100,9 +98,10 @@
             {
               "id": "policy-actions",
               "type": "input.commandBar",
-              "area": "sidebar",
+              "area": "main",
               "title": "LLM policy",
               "inputs": {
+                "variant": "stack",
                 "size": "small",
                 "buttons": [
                   {
@@ -134,10 +133,9 @@
               "actions": [
                 {
                   "on": "click:reload",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 },
                 {
@@ -150,10 +148,9 @@
                 },
                 {
                   "on": "click:enable",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 },
                 {
@@ -166,10 +163,9 @@
                 },
                 {
                   "on": "click:disable",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 },
                 {
@@ -182,10 +178,9 @@
                 },
                 {
                   "on": "click:open",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 },
                 {
@@ -198,10 +193,9 @@
                 },
                 {
                   "on": "click:allowlist",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 },
                 {
@@ -214,10 +208,9 @@
                 },
                 {
                   "on": "click:denyall",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 }
               ]
@@ -231,7 +224,8 @@
                 "kind": "skill",
                 "name": "root_mgmnt.get_metric_tile",
                 "params": {
-                  "metric_id": "fleet_total"
+                  "metric_id": "fleet_total",
+                  "refresh_nonce": "$state.rootRefreshTs"
                 }
               },
               "visibleIf": "$state.rootTab === 'overview'"
@@ -245,7 +239,8 @@
                 "kind": "skill",
                 "name": "root_mgmnt.get_metric_tile",
                 "params": {
-                  "metric_id": "retire_candidates"
+                  "metric_id": "retire_candidates",
+                  "refresh_nonce": "$state.rootRefreshTs"
                 }
               },
               "visibleIf": "$state.rootTab === 'overview'"
@@ -259,7 +254,8 @@
                 "kind": "skill",
                 "name": "root_mgmnt.get_metric_tile",
                 "params": {
-                  "metric_id": "llm_requests_24h"
+                  "metric_id": "llm_requests_24h",
+                  "refresh_nonce": "$state.rootRefreshTs"
                 }
               },
               "visibleIf": "$state.rootTab === 'overview'"
@@ -273,7 +269,8 @@
                 "kind": "skill",
                 "name": "root_mgmnt.get_metric_tile",
                 "params": {
-                  "metric_id": "llm_policy"
+                  "metric_id": "llm_policy",
+                  "refresh_nonce": "$state.rootRefreshTs"
                 }
               },
               "visibleIf": "$state.rootTab === 'overview'"
@@ -285,7 +282,10 @@
               "title": "Policy summary",
               "dataSource": {
                 "kind": "skill",
-                "name": "root_mgmnt.get_policy_summary"
+                "name": "root_mgmnt.get_policy_summary",
+                "params": {
+                  "refresh_nonce": "$state.rootRefreshTs"
+                }
               },
               "visibleIf": "$state.rootTab === 'overview'"
             },
@@ -296,7 +296,10 @@
               "title": "Top lifecycle candidates",
               "dataSource": {
                 "kind": "skill",
-                "name": "root_mgmnt.get_lifecycle_candidates"
+                "name": "root_mgmnt.get_lifecycle_candidates",
+                "params": {
+                  "refresh_nonce": "$state.rootRefreshTs"
+                }
               },
               "inputs": {
                 "emptyText": "No lifecycle candidates.",
@@ -359,10 +362,9 @@
                 },
                 {
                   "on": "click:retire",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 }
               ],
@@ -375,7 +377,10 @@
               "title": "Fleet",
               "dataSource": {
                 "kind": "skill",
-                "name": "root_mgmnt.get_fleet"
+                "name": "root_mgmnt.get_fleet",
+                "params": {
+                  "refresh_nonce": "$state.rootRefreshTs"
+                }
               },
               "inputs": {
                 "emptyText": "No known subnets.",
@@ -464,10 +469,9 @@
                 },
                 {
                   "on": "click:freeze",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 },
                 {
@@ -487,10 +491,9 @@
                 },
                 {
                   "on": "click:archive",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 },
                 {
@@ -510,10 +513,9 @@
                 },
                 {
                   "on": "click:retire",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 }
               ],
@@ -526,7 +528,10 @@
               "title": "Lifecycle queue",
               "dataSource": {
                 "kind": "skill",
-                "name": "root_mgmnt.get_lifecycle_candidates"
+                "name": "root_mgmnt.get_lifecycle_candidates",
+                "params": {
+                  "refresh_nonce": "$state.rootRefreshTs"
+                }
               },
               "inputs": {
                 "emptyText": "No dormant or retire-candidate subnets.",
@@ -604,10 +609,9 @@
                 },
                 {
                   "on": "click:archive",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 },
                 {
@@ -627,10 +631,9 @@
                 },
                 {
                   "on": "click:retire",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 }
               ],
@@ -643,7 +646,10 @@
               "title": "Audit events",
               "dataSource": {
                 "kind": "skill",
-                "name": "root_mgmnt.get_audit_events"
+                "name": "root_mgmnt.get_audit_events",
+                "params": {
+                  "refresh_nonce": "$state.rootRefreshTs"
+                }
               },
               "inputs": {
                 "emptyText": "No audit events yet.",
@@ -697,7 +703,8 @@
                 "kind": "skill",
                 "name": "root_mgmnt.get_subnet_details",
                 "params": {
-                  "subnet_id": "$state.selectedSubnetId"
+                  "subnet_id": "$state.selectedSubnetId",
+                  "refresh_nonce": "$state.rootRefreshTs"
                 }
               }
             },
@@ -710,17 +717,16 @@
                 "buttons": [
                   {
                     "id": "reload",
-                    "label": "Reload page"
+                    "label": "Refresh data"
                   }
                 ]
               },
               "actions": [
                 {
                   "on": "click:reload",
-                  "type": "callHost",
-                  "target": "desktop.webspace.reload",
+                  "type": "updateState",
                   "params": {
-                    "scenario_id": "root_mgmnt_scenario"
+                    "rootRefreshTs": "$event.ts"
                   }
                 }
               ]
