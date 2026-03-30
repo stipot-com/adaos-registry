@@ -2972,6 +2972,16 @@ def on_skill_updated(evt: Any) -> None:
 
 @subscribe("desktop.webspace.refresh")
 @subscribe("desktop.webspace.reload")
+@subscribe("desktop.webspace.reloaded")
+@subscribe("desktop.webspace.reset")
+@subscribe("desktop.webspace.restored")
+@subscribe("desktop.webspace.go_home")
+@subscribe("desktop.webspace.set_home")
+@subscribe("desktop.webspace.create")
+@subscribe("desktop.webspace.rename")
+@subscribe("desktop.webspace.update")
+@subscribe("desktop.webspace.delete")
+@subscribe("desktop.scenario.set")
 def on_webspace_reload(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     event_type = str(getattr(evt, "type", "") or "desktop.webspace.reload")
