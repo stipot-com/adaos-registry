@@ -947,10 +947,12 @@ def _yjs_webspace_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, An
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
     sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
     webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
+    selected_webspace = sync_runtime.get("selected_webspace") if isinstance(sync_runtime.get("selected_webspace"), dict) else {}
     selected_id = _selected_yjs_webspace_id(ui_state, reliability)
     items: list[dict[str, Any]] = []
     for index, webspace_id in enumerate(sorted(str(key) for key in webspaces.keys()), start=1):
         entry = webspaces.get(webspace_id) if isinstance(webspaces.get(webspace_id), dict) else {}
+        title = str(selected_webspace.get("title") or "").strip() if webspace_id == selected_id else ""
         label = "default" if webspace_id == default_webspace_id() else webspace_id
         if webspace_id == selected_id:
             label = f"{label} *"
@@ -960,6 +962,7 @@ def _yjs_webspace_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, An
                 "label": label,
                 "title": "Selected Yjs webspace" if webspace_id == selected_id else f"Yjs webspace {index}",
                 "subtitle": (
+                    f"{title + ' | ' if title else ''}"
                     f"{entry.get('log_mode') or '-'} | "
                     f"replay={entry.get('replay_window_entries') or 0}/"
                     f"{entry.get('replay_window_limit') or 0}"
@@ -1763,11 +1766,15 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         assessment = sync_runtime.get("assessment") if isinstance(sync_runtime.get("assessment"), dict) else {}
         recovery_playbook = sync_runtime.get("recovery_playbook") if isinstance(sync_runtime.get("recovery_playbook"), dict) else {}
         recovery_guidance = sync_runtime.get("recovery_guidance") if isinstance(sync_runtime.get("recovery_guidance"), dict) else {}
+        webspace_guidance = sync_runtime.get("webspace_guidance") if isinstance(sync_runtime.get("webspace_guidance"), dict) else {}
+        selected_webspace = sync_runtime.get("selected_webspace") if isinstance(sync_runtime.get("selected_webspace"), dict) else {}
         recovery_order = recovery_playbook.get("action_order") if isinstance(recovery_playbook.get("action_order"), list) else []
         webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
         selected_ws_id = str(sync_runtime.get("selected_webspace_id") or "").strip() or default_webspace_id()
         selected_ws = webspaces.get(selected_ws_id) if isinstance(webspaces.get(selected_ws_id), dict) else {}
         recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
+        recommended_webspace_action = str(webspace_guidance.get("recommended_action") or "").strip()
+        rebuild = selected_webspace.get("rebuild") if isinstance(selected_webspace.get("rebuild"), dict) else {}
         items.append(
             {
                 "id": "yjs_sync_runtime",
@@ -1786,6 +1793,10 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"backups={selected_ws.get('backup_total') or 0} | "
                     f"snapshot={'yes' if selected_ws.get('snapshot_file_exists') else 'no'} | "
                     f"next={recommended_action or '-'} | "
+                    f"home={selected_webspace.get('home_scenario') or '-'} | "
+                    f"proj={'match' if selected_webspace.get('projection_matches_home') is True else 'drift' if selected_webspace.get('projection_matches_home') is False else 'unknown'} | "
+                    f"ws_next={recommended_webspace_action or '-'} | "
+                    f"rebuild={rebuild.get('status') or '-'} | "
                     f"policy={'>'.join(str(item) for item in recovery_order) if recovery_order else '-'} | "
                     f"last_backup_ago={selected_ws.get('last_backup_ago_s') if selected_ws.get('last_backup_ago_s') is not None else '-'}"
                 ),
@@ -2054,11 +2065,14 @@ def _summary(
     sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
     sync_webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
     recovery_guidance = sync_runtime.get("recovery_guidance") if isinstance(sync_runtime.get("recovery_guidance"), dict) else {}
+    webspace_guidance = sync_runtime.get("webspace_guidance") if isinstance(sync_runtime.get("webspace_guidance"), dict) else {}
+    selected_webspace_meta = sync_runtime.get("selected_webspace") if isinstance(sync_runtime.get("selected_webspace"), dict) else {}
     selected_yjs_webspace_id = _selected_yjs_webspace_id(ui_state, reliability)
     selected_sync_webspace = sync_webspaces.get(selected_yjs_webspace_id) if isinstance(sync_webspaces.get(selected_yjs_webspace_id), dict) else {}
     selected_member = selected_member if isinstance(selected_member, dict) else {}
     if selected_kind == "local" and selected_yjs_webspace_id:
         recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
+        recommended_webspace_action = str(webspace_guidance.get("recommended_action") or "").strip()
         message += (
             f" | yjs_ws={selected_yjs_webspace_id}"
             f" {selected_sync_webspace.get('log_mode') or '-'}"
@@ -2067,8 +2081,16 @@ def _summary(
         )
         if selected_sync_webspace:
             message += f" snapshot={'yes' if selected_sync_webspace.get('snapshot_file_exists') else 'no'}"
+        if selected_webspace_meta:
+            message += (
+                f" home={selected_webspace_meta.get('home_scenario') or '-'}"
+                f" mode={selected_webspace_meta.get('source_mode') or '-'}"
+                f" rebuild={(selected_webspace_meta.get('rebuild') if isinstance(selected_webspace_meta.get('rebuild'), dict) else {}).get('status') or '-'}"
+            )
         if recommended_action:
             message += f" next={recommended_action}"
+        if recommended_webspace_action:
+            message += f" ws_next={recommended_webspace_action}"
     if selected_kind != "local":
         remote_control = _remote_control_payload(
             selected_member.get("node_snapshot") if isinstance(selected_member.get("node_snapshot"), dict) else {},
@@ -2122,6 +2144,8 @@ def _summary(
         "selected_yjs_replay_window_limit": int(selected_sync_webspace.get("replay_window_limit") or 0),
         "selected_yjs_backup_total": int(selected_sync_webspace.get("backup_total") or 0),
         "selected_yjs_snapshot_exists": bool(selected_sync_webspace.get("snapshot_file_exists")),
+        "selected_yjs_home_scenario": str(selected_webspace_meta.get("home_scenario") or ""),
+        "selected_yjs_source_mode": str(selected_webspace_meta.get("source_mode") or ""),
         "subnet_id": str(getattr(conf, "subnet_id", "") or ""),
         "root_url": str(getattr(getattr(conf, "root_settings", None), "base_url", "") or ""),
         "updated_at": float(status.get("updated_at") or time.time()),
@@ -2197,13 +2221,16 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
     action_overrides = sync_runtime.get("action_overrides") if isinstance(sync_runtime.get("action_overrides"), dict) else {}
     recovery_guidance = sync_runtime.get("recovery_guidance") if isinstance(sync_runtime.get("recovery_guidance"), dict) else {}
+    webspace_guidance = sync_runtime.get("webspace_guidance") if isinstance(sync_runtime.get("webspace_guidance"), dict) else {}
     backup_override = action_overrides.get("backup") if isinstance(action_overrides.get("backup"), dict) else {}
     reload_override = action_overrides.get("reload") if isinstance(action_overrides.get("reload"), dict) else {}
     restore_override = action_overrides.get("restore") if isinstance(action_overrides.get("restore"), dict) else {}
     reset_override = action_overrides.get("reset") if isinstance(action_overrides.get("reset"), dict) else {}
+    go_home_override = action_overrides.get("go_home") if isinstance(action_overrides.get("go_home"), dict) else {}
     sync_webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
     selected_sync_webspace = sync_webspaces.get(selected_yjs_webspace_id) if isinstance(sync_webspaces.get(selected_yjs_webspace_id), dict) else {}
     recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
+    recommended_webspace_action = str(webspace_guidance.get("recommended_action") or "").strip()
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     local_node_id = str(load_config().node_id or "")
     if selected_node_id and selected_node_id != local_node_id:
@@ -2348,6 +2375,15 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                     ) + str(reset_override.get("reason") or f"Hard-reset webspace {selected_yjs_webspace_id} from its current scenario"),
                     "subtitle": last_action if last_action == "yjs_reset" else "",
                 },
+                {
+                    "id": "yjs_go_home",
+                    "title": "Yjs go home",
+                    "status": "ok" if bool(go_home_override.get("enabled")) else "idle",
+                    "description": (
+                        "Recommended first step. " if recommended_webspace_action == "go_home" else ""
+                    ) + str(go_home_override.get("reason") or f"Return webspace {selected_yjs_webspace_id} to its manifest home scenario"),
+                    "subtitle": last_action if last_action == "yjs_go_home" else "",
+                },
             ]
         )
     if bool(sidecar_runtime.get("enabled")):
@@ -2395,7 +2431,7 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
     status = read_core_update_status()
     selected_node_id = str(_ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "")
     if (
-        action_id in {"start_update", "cancel_update", "refuse_update", "rollback", "drain", "restart_sidecar", "yjs_backup", "yjs_reload", "yjs_restore", "yjs_reset"}
+        action_id in {"start_update", "cancel_update", "refuse_update", "rollback", "drain", "restart_sidecar", "yjs_backup", "yjs_reload", "yjs_restore", "yjs_reset", "yjs_go_home"}
         and selected_node_id
         and selected_node_id != str(getattr(conf, "node_id", "") or "")
     ):
@@ -2670,6 +2706,13 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
         result = _post_local_admin(
             conf,
             f"/api/node/yjs/webspaces/{selected_webspace}/reset",
+            {},
+        )
+    elif action_id == "yjs_go_home":
+        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
+        result = _post_local_admin(
+            conf,
+            f"/api/node/yjs/webspaces/{selected_webspace}/go-home",
             {},
         )
     else:
