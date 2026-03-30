@@ -1794,6 +1794,7 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                     f"snapshot={'yes' if selected_ws.get('snapshot_file_exists') else 'no'} | "
                     f"next={recommended_action or '-'} | "
                     f"home={selected_webspace.get('home_scenario') or '-'} | "
+                    f"proj_scenario={selected_webspace.get('projection_active_scenario') or '-'} | "
                     f"proj={'match' if selected_webspace.get('projection_matches_home') is True else 'drift' if selected_webspace.get('projection_matches_home') is False else 'unknown'} | "
                     f"ws_next={recommended_webspace_action or '-'} | "
                     f"rebuild={rebuild.get('status') or '-'} | "
@@ -2084,6 +2085,7 @@ def _summary(
         if selected_webspace_meta:
             message += (
                 f" home={selected_webspace_meta.get('home_scenario') or '-'}"
+                f" proj_scenario={selected_webspace_meta.get('projection_active_scenario') or '-'}"
                 f" mode={selected_webspace_meta.get('source_mode') or '-'}"
                 f" rebuild={(selected_webspace_meta.get('rebuild') if isinstance(selected_webspace_meta.get('rebuild'), dict) else {}).get('status') or '-'}"
             )
@@ -2227,10 +2229,14 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     restore_override = action_overrides.get("restore") if isinstance(action_overrides.get("restore"), dict) else {}
     reset_override = action_overrides.get("reset") if isinstance(action_overrides.get("reset"), dict) else {}
     go_home_override = action_overrides.get("go_home") if isinstance(action_overrides.get("go_home"), dict) else {}
+    set_home_current_override = (
+        action_overrides.get("set_home_current") if isinstance(action_overrides.get("set_home_current"), dict) else {}
+    )
     sync_webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
     selected_sync_webspace = sync_webspaces.get(selected_yjs_webspace_id) if isinstance(sync_webspaces.get(selected_yjs_webspace_id), dict) else {}
     recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
     recommended_webspace_action = str(webspace_guidance.get("recommended_action") or "").strip()
+    alternate_webspace_action = str(webspace_guidance.get("alternate_action") or "").strip()
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     local_node_id = str(load_config().node_id or "")
     if selected_node_id and selected_node_id != local_node_id:
@@ -2384,6 +2390,25 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                     ) + str(go_home_override.get("reason") or f"Return webspace {selected_yjs_webspace_id} to its manifest home scenario"),
                     "subtitle": last_action if last_action == "yjs_go_home" else "",
                 },
+                {
+                    "id": "yjs_set_home_current",
+                    "title": "Yjs set current as home",
+                    "status": "ok" if bool(set_home_current_override.get("enabled")) else "idle",
+                    "description": (
+                        ("Recommended first step. " if recommended_webspace_action == "set_home_current" else "")
+                        + ("Alternative to go home. " if alternate_webspace_action == "set_home_current" else "")
+                        + str(
+                            set_home_current_override.get("reason")
+                            or f"Persist the current projected scenario as home for webspace {selected_yjs_webspace_id}"
+                        )
+                        if bool(set_home_current_override.get("enabled"))
+                        else str(
+                            set_home_current_override.get("reason")
+                            or f"Current projected scenario is unavailable for webspace {selected_yjs_webspace_id}"
+                        )
+                    ),
+                    "subtitle": last_action if last_action == "yjs_set_home_current" else "",
+                },
             ]
         )
     if bool(sidecar_runtime.get("enabled")):
@@ -2431,7 +2456,20 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
     status = read_core_update_status()
     selected_node_id = str(_ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "")
     if (
-        action_id in {"start_update", "cancel_update", "refuse_update", "rollback", "drain", "restart_sidecar", "yjs_backup", "yjs_reload", "yjs_restore", "yjs_reset", "yjs_go_home"}
+        action_id in {
+            "start_update",
+            "cancel_update",
+            "refuse_update",
+            "rollback",
+            "drain",
+            "restart_sidecar",
+            "yjs_backup",
+            "yjs_reload",
+            "yjs_restore",
+            "yjs_reset",
+            "yjs_go_home",
+            "yjs_set_home_current",
+        }
         and selected_node_id
         and selected_node_id != str(getattr(conf, "node_id", "") or "")
     ):
@@ -2715,6 +2753,13 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             f"/api/node/yjs/webspaces/{selected_webspace}/go-home",
             {},
         )
+    elif action_id == "yjs_set_home_current":
+        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
+        result = _post_local_admin(
+            conf,
+            f"/api/node/yjs/webspaces/{selected_webspace}/set-home-current",
+            {},
+        )
     else:
         raise ValueError(f"unsupported infrastate action: {action_id}")
     _write_ui_state(
@@ -2977,6 +3022,7 @@ def on_skill_updated(evt: Any) -> None:
 @subscribe("desktop.webspace.restored")
 @subscribe("desktop.webspace.go_home")
 @subscribe("desktop.webspace.set_home")
+@subscribe("desktop.webspace.set_home_current")
 @subscribe("desktop.webspace.create")
 @subscribe("desktop.webspace.rename")
 @subscribe("desktop.webspace.update")
