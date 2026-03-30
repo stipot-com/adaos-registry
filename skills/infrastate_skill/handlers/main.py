@@ -2127,6 +2127,7 @@ def _summary(
             message += f" runtime={build_ref}"
         if selected_member.get("last_snapshot_ago_s") is not None:
             message += f" snapshot_ago={selected_member.get('last_snapshot_ago_s')}"
+        message += " yjs=hub-local-only"
     return {
         "label": summary_label,
         "value": summary_value,
@@ -2447,7 +2448,16 @@ def _yjs_action_items(status: dict[str, Any], ui_state: dict[str, Any], reliabil
     selected_node_id = str(ui_state.get("selected_node_id") or "").strip()
     local_node_id = str(load_config().node_id or "")
     if selected_node_id and selected_node_id != local_node_id:
-        return []
+        selected_node = _selected_node_entry(reliability, selected_node_id)
+        return [
+            {
+                "id": "yjs_scope",
+                "title": "Yjs scope",
+                "status": "idle",
+                "description": "Yjs recovery and webspace controls run on the hub only; remote member tabs are read-only for sync control.",
+                "subtitle": str(selected_node.get("label") or selected_node_id or "remote member"),
+            }
+        ]
     items = list(_action_items(status, ui_state, reliability))
     return [item for item in items if str(item.get("id") or "").startswith("yjs_")]
 
@@ -3028,6 +3038,8 @@ def on_skill_updated(evt: Any) -> None:
 @subscribe("desktop.webspace.update")
 @subscribe("desktop.webspace.delete")
 @subscribe("desktop.scenario.set")
+@subscribe("node.yjs.control.completed")
+@subscribe("node.yjs.control.failed")
 def on_webspace_reload(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     event_type = str(getattr(evt, "type", "") or "desktop.webspace.reload")

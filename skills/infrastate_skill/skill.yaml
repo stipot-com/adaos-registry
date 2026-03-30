@@ -1,5 +1,5 @@
 name: infrastate_skill
-version: 0.16.0
+version: 0.17.0
 description: Локальный обзор состояния ядра, graceful update, A/B слотов и последнего
   результата обновления.
 runtime:
@@ -22,6 +22,8 @@ events:
   - subnet.member.snapshot.requested
   - subnet.member.update.requested
   - subnet.member.update.result
+  - node.yjs.control.completed
+  - node.yjs.control.failed
   - subnet.stopping
   - subnet.stopped
   - core.update.status
@@ -75,5 +77,5 @@ tools:
   output_schema:
     type: object
     properties: {}
-updated_at: '2026-03-30T21:01:52+00:00'
+updated_at: '2026-03-30T21:16:45+00:00'
 
