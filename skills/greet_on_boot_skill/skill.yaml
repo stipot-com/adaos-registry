@@ -1,5 +1,5 @@
 name: greet_on_boot_skill
-version: 0.1.0
+version: 0.2.0
 description: System greeting and infrastructure health-check skill used by the greet_on_boot
   scenario.
 runtime:
@@ -7,11 +7,11 @@ runtime:
 dependencies: []
 events: {}
 data_projections:
-  - scope: subnet
-    slot: infra.status
-    targets:
-      - backend: yjs
-        path: data/infra/status
+- scope: subnet
+  slot: infra.status
+  targets:
+  - backend: yjs
+    path: data/infra/status
 default_tool: collect_infra_status
 tools:
 - name: collect_infra_status
@@ -49,3 +49,5 @@ tools:
       message:
         type: string
         description: Human-readable summary used for notifications.
+updated_at: '2026-04-07T19:49:12+00:00'
+

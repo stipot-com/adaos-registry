@@ -1,7 +1,28 @@
 {
   "version": 1,
-  "updated_at": "2026-04-07T18:44:37+00:00",
+  "updated_at": "2026-04-07T19:49:12+00:00",
   "skills": [
+    {
+      "kind": "skill",
+      "id": "greet_on_boot_skill",
+      "name": "greet_on_boot_skill",
+      "version": "0.2.0",
+      "updated_at": "2026-04-07T19:49:12+00:00",
+      "path": "skills/greet_on_boot_skill",
+      "manifest": "skills/greet_on_boot_skill/skill.yaml",
+      "source": {
+        "path": "skills/greet_on_boot_skill",
+        "manifest": "skills/greet_on_boot_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "greet_on_boot_skill",
+        "id": "greet_on_boot_skill"
+      },
+      "description": "System greeting and infrastructure health-check skill used by the greet_on_boot scenario.",
+      "runtime_python": "3.11",
+      "tools_count": 2
+    },
     {
       "kind": "skill",
       "id": "infra_access_skill",
