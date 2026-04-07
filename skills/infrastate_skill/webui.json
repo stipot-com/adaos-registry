@@ -246,8 +246,33 @@
           "params": {
             "id": "$event.id"
           }
+        },
+        {
+          "on": "click:marketplace",
+          "type": "openModal",
+          "params": {
+            "modalId": "marketplace_modal"
+          }
         }
       ]
+    },
+    {
+      "id": "infrastate-operations",
+      "type": "ui.list",
+      "area": "main",
+      "title": "Active operations",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/infrastate/operations/items"
+      },
+      "inputs": {
+        "titleKey": "target_id",
+        "subtitleKey": "message",
+        "detailsPath": "",
+        "showDetails": false,
+        "itemAccordion": false,
+        "emptyText": "No active operations"
+      }
     },
     {
       "id": "infrastate-skills",
@@ -333,6 +358,102 @@
 						}
 					]
 				}
+			},
+			"marketplace_modal": {
+				"title": "Marketplace",
+				"schema": {
+					"id": "marketplace_modal",
+					"layout": {
+						"type": "single",
+						"areas": [{ "id": "main", "role": "main" }]
+					},
+					"widgets": [
+						{
+							"id": "marketplace-skills",
+							"type": "ui.table",
+							"area": "main",
+							"title": "Installable skills",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/marketplace/skills"
+							},
+							"inputs": {
+								"emptyText": "No installable skills",
+								"columns": [
+									{ "key": "id", "label": "Id", "mono": true, "width": "180px" },
+									{ "key": "version", "label": "Version", "mono": true, "width": "110px" },
+									{ "key": "description", "label": "Description" },
+									{ "key": "operation_status", "label": "Status", "width": "120px" }
+								],
+								"buttons": [
+									{ "id": "install", "label": "Install", "disabledKey": "install_disabled" }
+								]
+							},
+							"actions": [
+								{
+									"on": "click:install",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": {
+										"id": "marketplace_install",
+										"value": "$event"
+									}
+								}
+							]
+						},
+						{
+							"id": "marketplace-scenarios",
+							"type": "ui.table",
+							"area": "main",
+							"title": "Installable scenarios",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/marketplace/scenarios"
+							},
+							"inputs": {
+								"emptyText": "No installable scenarios",
+								"columns": [
+									{ "key": "id", "label": "Id", "mono": true, "width": "180px" },
+									{ "key": "version", "label": "Version", "mono": true, "width": "110px" },
+									{ "key": "description", "label": "Description" },
+									{ "key": "operation_status", "label": "Status", "width": "120px" }
+								],
+								"buttons": [
+									{ "id": "install", "label": "Install", "disabledKey": "install_disabled" }
+								]
+							},
+							"actions": [
+								{
+									"on": "click:install",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": {
+										"id": "marketplace_install",
+										"value": "$event"
+									}
+								}
+							]
+						},
+						{
+							"id": "marketplace-operations",
+							"type": "ui.list",
+							"area": "main",
+							"title": "Active operations",
+							"dataSource": {
+								"kind": "y",
+								"path": "data/infrastate/operations/items"
+							},
+							"inputs": {
+								"titleKey": "target_id",
+								"subtitleKey": "message",
+								"detailsPath": "",
+								"showDetails": false,
+								"itemAccordion": false,
+								"emptyText": "No active operations"
+							}
+						}
+					]
+				}
 			}
 		},
 		"widgets": {}
@@ -351,6 +472,12 @@
           "title": "Update skills & scenarios",
           "status": "ok",
           "description": "Run workspace sync on the selected node"
+        },
+        {
+          "id": "marketplace",
+          "title": "Marketplace",
+          "status": "ok",
+          "description": "Browse registry catalog and install missing skills or scenarios"
         }
       ],
       "actions": [
@@ -440,6 +567,8 @@
 			"slots": [],
 			"skills": [],
 			"scenarios": [],
+			"operations": { "items": [], "active": [] },
+			"marketplace": { "skills": [], "scenarios": [] },
 			"logs": []
 			,
 			"events": []
