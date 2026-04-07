@@ -1,5 +1,5 @@
 name: infrastate_skill
-version: 0.21.0
+version: 0.22.0
 description: Локальный обзор состояния ядра, graceful update, A/B слотов и последнего
   результата обновления.
 runtime:
@@ -78,5 +78,5 @@ tools:
   output_schema:
     type: object
     properties: {}
-updated_at: '2026-04-07T21:00:24+00:00'
+updated_at: '2026-04-07T21:30:24+00:00'
 

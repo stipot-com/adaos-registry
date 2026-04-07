@@ -291,15 +291,36 @@
 									{ "key": "slot", "label": "Slot", "mono": true, "width": "90px" }
 								],
 								"buttons": [
-									{ "id": "update", "label": "Update", "whenKey": "update_available", "whenEquals": true }
+									{ "id": "activate", "label": "Activate" },
+									{ "id": "test", "label": "Test" },
+									{ "id": "update", "label": "Update", "whenKey": "update_available", "whenEquals": true },
+									{ "id": "uninstall", "label": "Uninstall", "disabledKey": "uninstall_disabled" }
       ]
     },
 							"actions": [
 								{
+									"on": "click:activate",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": { "id": "skill_activate", "name": "$event.name" }
+								},
+								{
+									"on": "click:test",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": { "id": "skill_test", "name": "$event.name" }
+								},
+								{
 									"on": "click:update",
 									"type": "callHost",
-									"target": "skills.update",
-									"params": { "name": "$event.name" }
+									"target": "infrastate.action",
+									"params": { "id": "skill_update", "name": "$event.name" }
+								},
+								{
+									"on": "click:uninstall",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": { "id": "skill_uninstall", "name": "$event.name" }
 								}
 							]
 						},
@@ -317,8 +338,19 @@
 								"columns": [
 									{ "key": "name", "label": "Name" },
 									{ "key": "version", "label": "Version", "mono": true, "width": "160px" }
+								],
+								"buttons": [
+									{ "id": "uninstall", "label": "Uninstall", "disabledKey": "uninstall_disabled" }
 								]
-							}
+							},
+							"actions": [
+								{
+									"on": "click:uninstall",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": { "id": "scenario_uninstall", "name": "$event.name" }
+								}
+							]
 						},
 						{
 							"id": "infrastate-logs",

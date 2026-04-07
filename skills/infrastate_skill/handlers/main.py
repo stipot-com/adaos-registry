@@ -25,6 +25,9 @@ from adaos.services.reliability import assess_transport_diagnostics, reliability
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.operations import get_operation_manager, submit_install_operation
+from adaos.services.skill.update import SkillUpdateService
+from adaos.services.scenarios.loader import read_manifest
+from adaos.services.scenario.manager import ScenarioManager
 from adaos.services.workspace_registry import find_workspace_registry_entry, list_workspace_registry_entries
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.skill.manager import SkillManager
@@ -242,6 +245,7 @@ def _skills_items() -> list[dict[str, Any]]:
     except Exception:
         metas = []
 
+    skill_usage = _skill_usage_by_scenarios()
     out: list[dict[str, Any]] = []
     for meta in metas:
         try:
@@ -271,6 +275,11 @@ def _skills_items() -> list[dict[str, Any]]:
                 "name": name,
                 "version": local_version,
                 "slot": slot,
+                "active": bool(slot),
+                "can_activate": True,
+                "can_test": True,
+                "used_by_scenarios": skill_usage.get(name, []),
+                "uninstall_disabled": bool(skill_usage.get(name, [])),
                 "remote_version": remote_version,
                 "update_available": update_available,
             }
@@ -319,11 +328,47 @@ def _scenario_items() -> list[dict[str, Any]]:
                 "name": name,
                 "version": version,
                 "updated_at": getattr(row, "last_updated", None),
+                "uninstall_disabled": False,
             }
         )
 
     out.sort(key=lambda x: x.get("name") or "")
     return out
+
+
+def _skill_usage_by_scenarios() -> dict[str, list[str]]:
+    try:
+        ctx = get_ctx()
+    except Exception:
+        return {}
+
+    try:
+        scenario_rows = SqliteScenarioRegistry(ctx.sql).list() or []
+    except Exception:
+        scenario_rows = []
+
+    usage: dict[str, list[str]] = {}
+    for row in scenario_rows:
+        scenario_name = str(getattr(row, "name", "") or "").strip()
+        if not scenario_name:
+            continue
+        try:
+            manifest = read_manifest(scenario_name) or {}
+        except Exception:
+            manifest = {}
+        depends = manifest.get("depends") or []
+        if not isinstance(depends, (list, tuple)):
+            continue
+        for dep in depends:
+            skill_name = str(dep or "").strip()
+            if not skill_name:
+                continue
+            bucket = usage.setdefault(skill_name, [])
+            if scenario_name not in bucket:
+                bucket.append(scenario_name)
+    for skill_name in list(usage.keys()):
+        usage[skill_name].sort()
+    return usage
 
 
 def _operations_snapshot(*, webspace_id: str | None = None) -> dict[str, Any]:
@@ -2557,11 +2602,174 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             "yjs_reset",
             "yjs_go_home",
             "yjs_set_home_current",
+            "skill_activate",
+            "skill_test",
+            "skill_update",
+            "skill_uninstall",
+            "scenario_uninstall",
         }
         and selected_node_id
         and selected_node_id != str(getattr(conf, "node_id", "") or "")
     ):
         raise ValueError("remote member tabs are read-only for update and transport actions")
+    if action_id in {"skill_activate", "skill_test", "skill_update", "skill_uninstall"}:
+        name = str(_extract_param(payload, "name") or "").strip()
+        if not name:
+            raise ValueError("skill action requires skill name")
+        webspace_id = str(_extract_param(payload, "webspace_id") or default_webspace_id()).strip() or default_webspace_id()
+        ctx = get_ctx()
+        mgr = SkillManager(
+            repo=ctx.skills_repo,
+            registry=SqliteSkillRegistry(ctx.sql),
+            git=ctx.git,
+            paths=ctx.paths,
+            bus=getattr(ctx, "bus", None),
+            caps=ctx.caps,
+            settings=ctx.settings,
+        )
+        if action_id == "skill_activate":
+            prep = mgr.prepare_runtime(name, run_tests=False)
+            slot = mgr.activate_for_space(
+                name,
+                version=getattr(prep, "version", None),
+                slot=getattr(prep, "slot", None),
+                space="default",
+                webspace_id=webspace_id,
+            )
+            result = {
+                "ok": True,
+                "action": action_id,
+                "name": name,
+                "version": getattr(prep, "version", None),
+                "slot": slot,
+                "prepared": getattr(prep, "slot", None),
+                "webspace_id": webspace_id,
+            }
+        elif action_id == "skill_test":
+            try:
+                tests = mgr.run_skill_tests(name)
+                serialized_tests = {
+                    test_name: {
+                        "status": getattr(test_result, "status", ""),
+                        "detail": getattr(test_result, "detail", None),
+                    }
+                    for test_name, test_result in (tests or {}).items()
+                }
+                result = {
+                    "ok": True,
+                    "action": action_id,
+                    "name": name,
+                    "mode": "active_runtime",
+                    "tests": serialized_tests,
+                }
+            except Exception:
+                prep = mgr.prepare_runtime(name, run_tests=True)
+                serialized_tests = {
+                    test_name: {
+                        "status": getattr(test_result, "status", ""),
+                        "detail": getattr(test_result, "detail", None),
+                    }
+                    for test_name, test_result in getattr(prep, "tests", {}).items()
+                }
+                result = {
+                    "ok": True,
+                    "action": action_id,
+                    "name": name,
+                    "mode": "prepared_runtime",
+                    "version": getattr(prep, "version", None),
+                    "slot": getattr(prep, "slot", None),
+                    "tests": serialized_tests,
+                }
+        elif action_id == "skill_uninstall":
+            used_by = _skill_usage_by_scenarios().get(name, [])
+            if used_by:
+                raise ValueError(f"skill '{name}' is used by scenarios: {', '.join(used_by)}")
+            mgr.uninstall(name)
+            result = {
+                "ok": True,
+                "action": action_id,
+                "name": name,
+                "webspace_id": webspace_id,
+            }
+        else:
+            service = SkillUpdateService(ctx)
+            update_result = service.request_update(name, dry_run=False)
+            runtime_status_before = {}
+            try:
+                runtime_status_before = mgr.runtime_status(name)
+            except Exception:
+                runtime_status_before = {}
+            runtime_version_before = str(runtime_status_before.get("version") or "").strip()
+            source_version = str(update_result.version or "").strip()
+            runtime_result: dict[str, Any] | None = None
+            try:
+                runtime_result = mgr.runtime_update(name, space="workspace")
+            except Exception:
+                _log.exception("runtime_update failed after infrastate skill update: %s", name)
+            should_prepare = bool(source_version and source_version != runtime_version_before)
+            if isinstance(runtime_result, dict) and not bool(runtime_result.get("ok", True)):
+                should_prepare = True
+            slot = ""
+            prepared_slot = ""
+            if should_prepare:
+                prep = mgr.prepare_runtime(name, run_tests=False)
+                prepared_slot = str(getattr(prep, "slot", None) or "")
+                slot = str(
+                    mgr.activate_for_space(
+                        name,
+                        version=getattr(prep, "version", None),
+                        slot=getattr(prep, "slot", None),
+                        space="default",
+                        webspace_id=webspace_id,
+                    )
+                    or ""
+                )
+            result = {
+                "ok": True,
+                "action": action_id,
+                "name": name,
+                "updated": bool(update_result.updated),
+                "version": update_result.version,
+                "runtime": runtime_result,
+                "slot": slot,
+                "prepared": prepared_slot,
+                "webspace_id": webspace_id,
+            }
+        _write_ui_state(
+            last_action=action_id,
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_result=result,
+            last_error="",
+        )
+        return result
+    if action_id == "scenario_uninstall":
+        name = str(_extract_param(payload, "name") or "").strip()
+        if not name:
+            raise ValueError("scenario action requires scenario name")
+        ctx = get_ctx()
+        mgr = ScenarioManager(
+            repo=ctx.scenarios_repo,
+            registry=SqliteScenarioRegistry(ctx.sql),
+            git=ctx.git,
+            paths=ctx.paths,
+            bus=getattr(ctx, "bus", None),
+            caps=ctx.caps,
+        )
+        mgr.uninstall(name)
+        result = {
+            "ok": True,
+            "action": action_id,
+            "name": name,
+        }
+        _write_ui_state(
+            last_action=action_id,
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_result=result,
+            last_error="",
+        )
+        return result
     if action_id == "refresh":
         if selected_node_id and selected_node_id != str(getattr(conf, "node_id", "") or ""):
             if str(getattr(conf, "role", "") or "").strip().lower() != "hub":
