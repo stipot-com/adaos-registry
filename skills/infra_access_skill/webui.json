@@ -1,0 +1,103 @@
+{
+  "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "apps": [
+    {
+      "id": "infra_access_app",
+      "title": "Infra Access",
+      "icon": "shield-checkmark-outline",
+      "launchModal": "infra_access_modal"
+    }
+  ],
+  "widgets": [
+    {
+      "id": "infra_access_summary",
+      "type": "visual.metricTile",
+      "title": "Infra Access",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/infra_access/summary"
+      }
+    }
+  ],
+  "registry": {
+    "modals": {
+      "infra_access_modal": {
+        "title": "Infra Access",
+        "schema": {
+          "id": "infra_access_modal",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "infra-access-summary",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Operational Summary",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/summary_items"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "showDetails": false,
+                "emptyText": "No infra_access state published yet"
+              }
+            },
+            {
+              "id": "infra-access-tokens",
+              "type": "ui.list",
+              "area": "main",
+              "title": "MCP Tokens",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/tokens"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "content",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No issued tokens yet"
+              }
+            },
+            {
+              "id": "infra-access-events",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Operational Events",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/events"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "content",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No infra_access events yet"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "contributions": [
+    {
+      "extensionPoint": "desktop.apps",
+      "type": "app",
+      "id": "infra_access_app",
+      "autoInstall": false
+    }
+  ]
+}

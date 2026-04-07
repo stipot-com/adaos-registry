@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "execution_mode": "reported_only",
+  "capabilities": [
+    "hub.get_status",
+    "hub.get_runtime_summary",
+    "hub.issue_access_token"
+  ],
+  "allowed_services": [],
+  "allowed_test_paths": [],
+  "observability": {
+    "enabled": true,
+    "channels": [
+      "root_mcp.audit",
+      "hub.control_report"
+    ]
+  },
+  "token_management": {
+    "enabled": true,
+    "issuer_mode": "root_mcp"
+  }
+}

@@ -1,0 +1,13 @@
+name: infra_access_skill
+version: 0.2.0
+entry: handlers/main.py
+runtime:
+  python: '3.11'
+description: Skill-mediated operational surface for managed infra access, observability,
+  and Root MCP token workflows.
+dependencies: []
+events: {}
+tools: []
+exports: {}
+updated_at: '2026-04-07T18:01:59+00:00'
+
