@@ -28,7 +28,7 @@ from adaos.services.operations import get_operation_manager, submit_install_oper
 from adaos.services.skill.update import SkillUpdateService
 from adaos.services.scenarios.loader import read_manifest
 from adaos.services.scenario.manager import ScenarioManager
-from adaos.services.workspace_registry import find_workspace_registry_entry, list_workspace_registry_entries
+from adaos.services.workspace_registry import find_workspace_registry_entry, list_workspace_registry_entries, rebuild_workspace_registry
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.skill.manager import SkillManager
 from adaos.adapters.db import SqliteScenarioRegistry, SqliteSkillRegistry
@@ -224,6 +224,67 @@ def _read_registry_catalog_version(*, skill_id: str) -> str | None:
     return token or None
 
 
+def _registry_payload_from_git_ref(workspace_root: Path) -> dict[str, Any] | None:
+    remote = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_REMOTE") or "origin").strip() or "origin"
+    branch = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_BRANCH") or "main").strip() or "main"
+    ref = f"{remote}/{branch}:registry.json"
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(workspace_root), "show", ref],
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        payload = json.loads(proc.stdout or "")
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
+    try:
+        ctx = get_ctx()
+    except Exception:
+        return []
+
+    workspace_root = Path(ctx.paths.workspace_dir())
+    merged: dict[str, dict[str, Any]] = {}
+
+    def _merge(items: list[dict[str, Any]] | Any) -> None:
+        if not isinstance(items, list):
+            return
+        for raw in items:
+            if not isinstance(raw, dict):
+                continue
+            key = str(raw.get("name") or raw.get("id") or "").strip()
+            if not key:
+                continue
+            merged[key] = dict(raw)
+
+    remote_payload = _registry_payload_from_git_ref(workspace_root)
+    if isinstance(remote_payload, dict):
+        _merge(remote_payload.get(kind_plural))
+
+    try:
+        _merge(list_workspace_registry_entries(workspace_root, kind=kind_plural))
+    except Exception:
+        pass
+
+    try:
+        scanned_payload = rebuild_workspace_registry(workspace_root)
+    except Exception:
+        scanned_payload = None
+    if isinstance(scanned_payload, dict):
+        _merge(scanned_payload.get(kind_plural))
+
+    return [merged[key] for key in sorted(merged, key=str.lower)]
+
+
 def _skills_items() -> list[dict[str, Any]]:
     try:
         ctx = get_ctx()
@@ -397,7 +458,7 @@ def _marketplace_items(*, webspace_id: str | None = None) -> dict[str, list[dict
 
     def _rows(kind_plural: str, installed: set[str]) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        for entry in list_workspace_registry_entries(ctx.paths.workspace_dir(), kind=kind_plural):
+        for entry in _marketplace_catalog_entries(kind_plural):
             artifact = entry if isinstance(entry, dict) else {}
             target_kind = str(artifact.get("kind") or kind_plural[:-1]).strip() or kind_plural[:-1]
             target_id = str(artifact.get("id") or artifact.get("name") or "").strip()
