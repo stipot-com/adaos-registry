@@ -1,5 +1,5 @@
 name: infrastate_skill
-version: 0.17.0
+version: 0.18.0
 description: Локальный обзор состояния ядра, graceful update, A/B слотов и последнего
   результата обновления.
 runtime:
@@ -29,6 +29,7 @@ events:
   - core.update.status
   - hub.core_update.status
   - node.names.changed
+  - operations.
 data_projections:
 - scope: subnet
   slot: infrastate.snapshot
@@ -77,5 +78,5 @@ tools:
   output_schema:
     type: object
     properties: {}
-updated_at: '2026-03-30T21:16:45+00:00'
+updated_at: '2026-04-07T18:29:13+00:00'
 

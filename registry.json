@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "updated_at": "2026-04-07T18:29:13+00:00",
+  "skills": [
+    {
+      "kind": "skill",
+      "id": "infrastate_skill",
+      "name": "infrastate_skill",
+      "version": "0.18.0",
+      "updated_at": "2026-04-07T18:29:13+00:00",
+      "path": "skills/infrastate_skill",
+      "manifest": "skills/infrastate_skill/skill.yaml",
+      "source": {
+        "path": "skills/infrastate_skill",
+        "manifest": "skills/infrastate_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "infrastate_skill",
+        "id": "infrastate_skill"
+      },
+      "description": "Локальный обзор состояния ядра, graceful update, A/B слотов и последнего результата обновления.",
+      "runtime_python": "3.11",
+      "tools_count": 3
+    }
+  ],
+  "scenarios": []
+}

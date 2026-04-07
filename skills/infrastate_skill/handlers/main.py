@@ -24,6 +24,8 @@ from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 from adaos.services.scenario.webspace_runtime import WebspaceService
+from adaos.services.operations import get_operation_manager, submit_install_operation
+from adaos.services.workspace_registry import list_workspace_registry_entries
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.skill.manager import SkillManager
 from adaos.adapters.db import SqliteScenarioRegistry, SqliteSkillRegistry
@@ -378,6 +380,62 @@ def _scenario_items() -> list[dict[str, Any]]:
     return out
 
 
+def _operations_snapshot(*, webspace_id: str | None = None) -> dict[str, Any]:
+    try:
+        return get_operation_manager().snapshot(webspace_id=webspace_id)
+    except Exception:
+        return {"by_id": {}, "order": [], "active": [], "active_items": [], "notifications": []}
+
+
+def _marketplace_items(*, webspace_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    try:
+        ctx = get_ctx()
+    except Exception:
+        return {"skills": [], "scenarios": []}
+
+    operations = _operations_snapshot(webspace_id=webspace_id)
+    active_by_target: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in operations.get("active_items") or []:
+        if not isinstance(item, dict):
+            continue
+        key = (str(item.get("target_kind") or ""), str(item.get("target_id") or ""))
+        active_by_target[key] = item
+
+    installed_skills = {str(item.get("name") or "").strip() for item in _skills_items() if str(item.get("name") or "").strip()}
+    installed_scenarios = {str(item.get("name") or "").strip() for item in _scenario_items() if str(item.get("name") or "").strip()}
+
+    def _rows(kind_plural: str, installed: set[str]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for entry in list_workspace_registry_entries(ctx.paths.workspace_dir(), kind=kind_plural):
+            artifact = entry if isinstance(entry, dict) else {}
+            target_kind = str(artifact.get("kind") or kind_plural[:-1]).strip() or kind_plural[:-1]
+            target_id = str(artifact.get("id") or artifact.get("name") or "").strip()
+            if not target_id or target_id in installed:
+                continue
+            op = active_by_target.get((target_kind, target_id))
+            rows.append(
+                {
+                    "kind": target_kind,
+                    "id": target_id,
+                    "name": str(artifact.get("title") or artifact.get("name") or target_id),
+                    "version": str(artifact.get("version") or ""),
+                    "description": str(artifact.get("description") or ""),
+                    "tags": ", ".join(str(tag) for tag in (artifact.get("tags") or []) if str(tag).strip()),
+                    "publisher": str(((artifact.get("publisher") or {}) if isinstance(artifact.get("publisher"), dict) else {}).get("owner_id") or ""),
+                    "install_disabled": bool(op),
+                    "operation_status": str(op.get("status") or "") if isinstance(op, dict) else "",
+                    "operation_step": str(op.get("current_step") or op.get("message") or "") if isinstance(op, dict) else "",
+                }
+            )
+        rows.sort(key=lambda item: str(item.get("id") or ""))
+        return rows
+
+    return {
+        "skills": _rows("skills", installed_skills),
+        "scenarios": _rows("scenarios", installed_scenarios),
+    }
+
+
 def _update_actions(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> list[dict[str, Any]]:
     selected_node_id = str(ui_state.get("selected_node_id") or getattr(conf, "node_id", "") or "").strip()
     local_node_id = str(getattr(conf, "node_id", "") or "").strip()
@@ -402,7 +460,13 @@ def _update_actions(conf, ui_state: dict[str, Any], reliability: dict[str, Any])
             "title": title,
             "status": "ok",
             "description": description,
-        }
+        },
+        {
+            "id": "marketplace",
+            "title": "Marketplace",
+            "status": "ok",
+            "description": "Browse registry catalog and install missing skills or scenarios.",
+        },
     ]
 
 
@@ -705,6 +769,74 @@ def _build_meta() -> dict[str, Any]:
         "runtime_git_branch": str(active_manifest.get("git_branch") or active_manifest.get("target_rev") or ""),
         "runtime_git_subject": str(active_manifest.get("git_subject") or ""),
     }
+
+
+def _validated_runtime_source(status: dict[str, Any], last_result: dict[str, Any]) -> dict[str, Any]:
+    for candidate in (status, last_result):
+        if not isinstance(candidate, dict):
+            continue
+        if str(candidate.get("state") or "").strip().lower() != "succeeded":
+            continue
+        if str(candidate.get("phase") or "").strip().lower() != "validate":
+            continue
+        manifest = candidate.get("manifest")
+        if not isinstance(manifest, dict) or not manifest:
+            continue
+        slot = str(candidate.get("target_slot") or manifest.get("slot") or "").strip().upper()
+        if not slot:
+            continue
+        return {
+            "slot": slot,
+            "manifest": dict(manifest),
+        }
+    return {}
+
+
+def _effective_runtime_projection(
+    status: dict[str, Any],
+    last_result: dict[str, Any],
+    slots_payload: dict[str, Any],
+    build: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    validated = _validated_runtime_source(status, last_result)
+    if not validated:
+        return slots_payload, build
+
+    slot = str(validated.get("slot") or "").strip().upper()
+    manifest = validated.get("manifest") if isinstance(validated.get("manifest"), dict) else {}
+    if not slot or not manifest:
+        return slots_payload, build
+
+    effective_slots = dict(slots_payload or {})
+    current_active = str(effective_slots.get("active_slot") or "").strip().upper()
+    if current_active and current_active != slot:
+        effective_slots["previous_slot"] = current_active
+    effective_slots["active_slot"] = slot
+
+    raw_slots = effective_slots.get("slots")
+    slot_items = dict(raw_slots) if isinstance(raw_slots, dict) else {}
+    current_slot_meta = slot_items.get(slot)
+    slot_meta = dict(current_slot_meta) if isinstance(current_slot_meta, dict) else {}
+    current_manifest = slot_meta.get("manifest")
+    merged_manifest = dict(current_manifest) if isinstance(current_manifest, dict) else {}
+    merged_manifest.update(manifest)
+    merged_manifest["slot"] = slot
+    slot_meta["manifest"] = merged_manifest
+    slot_items[slot] = slot_meta
+    effective_slots["slots"] = slot_items
+    effective_slots["active_manifest"] = merged_manifest
+
+    effective_build = dict(build or {})
+    effective_build["runtime_version"] = str(merged_manifest.get("target_version") or effective_build.get("runtime_version") or "")
+    effective_build["runtime_git_commit"] = str(merged_manifest.get("git_commit") or effective_build.get("runtime_git_commit") or "")
+    effective_build["runtime_git_short_commit"] = str(
+        merged_manifest.get("git_short_commit") or effective_build.get("runtime_git_short_commit") or ""
+    )
+    effective_build["runtime_git_branch"] = str(
+        merged_manifest.get("git_branch") or merged_manifest.get("target_rev") or effective_build.get("runtime_git_branch") or ""
+    )
+    effective_build["runtime_git_subject"] = str(merged_manifest.get("git_subject") or effective_build.get("runtime_git_subject") or "")
+    return effective_slots, effective_build
 
 
 def _ui_state() -> dict[str, Any]:
@@ -2649,6 +2781,33 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             last_error="",
         )
         return result
+    if action_id == "marketplace_install":
+        value = payload.get("value") if isinstance(payload, dict) else {}
+        value_map = value if isinstance(value, dict) else {}
+        target_kind = str(value_map.get("kind") or value_map.get("target_kind") or "").strip().lower()
+        target_id = str(value_map.get("id") or value_map.get("target_id") or "").strip()
+        webspace_id = str(value_map.get("webspace_id") or payload.get("webspace_id") or default_webspace_id()).strip() or default_webspace_id()
+        if target_kind not in {"skill", "scenario"} or not target_id:
+            raise ValueError("marketplace install requires target kind and id")
+        result = submit_install_operation(
+            target_kind=target_kind,
+            target_id=target_id,
+            webspace_id=webspace_id,
+            initiator={"kind": "ui", "id": "infrastate"},
+        )
+        _write_ui_state(
+            last_action=action_id,
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_result=result,
+            last_error="",
+        )
+        return {
+            "ok": True,
+            "accepted": True,
+            "operation_id": result.get("operation_id"),
+            "operation": result,
+        }
     if action_id in {"member_start_update", "member_cancel_update", "member_rollback", "member_drain"}:
         if not selected_node_id or selected_node_id == str(getattr(conf, "node_id", "") or ""):
             raise ValueError("remote member action requires selected remote member")
@@ -2782,7 +2941,7 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
     return result
 
 
-def _snapshot() -> dict[str, Any]:
+def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     _ensure_skill_data_projections()
     conf = load_config()
     status = read_core_update_status()
@@ -2790,6 +2949,7 @@ def _snapshot() -> dict[str, Any]:
     slots_payload = slot_status()
     lifecycle = runtime_lifecycle_snapshot()
     build = _build_meta()
+    slots_payload, build = _effective_runtime_projection(status, last_result, slots_payload, build)
     ui_state = _ui_state()
     reliability = _reliability_snapshot(conf, lifecycle)
     node_tabs, selected_node = _node_tabs(conf, ui_state, reliability)
@@ -2813,6 +2973,8 @@ def _snapshot() -> dict[str, Any]:
     transport_diag = _transport_diag_snapshot()
     report = _read_json(_base_dir() / "state" / "core_update" / "status.json") or {}
     effective_report = _effective_update_log_report(report, display_last_result)
+    operations = _operations_snapshot(webspace_id=webspace_id)
+    marketplace = _marketplace_items(webspace_id=webspace_id)
     snapshot = {
         "summary": _summary(display_status, display_last_result, display_slots_payload, display_lifecycle, conf, display_build, ui_state, reliability, transport_diag, selected_member=selected_member),
         "actions": _action_items(display_status, ui_state, reliability),
@@ -2828,6 +2990,11 @@ def _snapshot() -> dict[str, Any]:
         "slots": _slot_items(display_slots_payload),
         "skills": _skills_items(),
         "scenarios": _scenario_items(),
+        "operations": {
+            "items": operations.get("active_items") or [],
+            "active": operations.get("active") or [],
+        },
+        "marketplace": marketplace,
         "logs": _status_log_items(effective_report),
         "events": list(reversed(_event_state())),
         "status": display_status,
@@ -2907,6 +3074,8 @@ def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None) -> dic
                 "content": error_text,
             }
         ],
+        "operations": {"items": [], "active": []},
+        "marketplace": {"skills": [], "scenarios": []},
         "events": list(reversed(_event_state())),
         "lifecycle": lifecycle if isinstance(lifecycle, dict) else {},
         "reliability": reliability,
@@ -2919,7 +3088,7 @@ def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None) -> dic
 
 def _snapshot_or_fallback(*, webspace_id: str | None = None) -> dict[str, Any]:
     try:
-        return _snapshot()
+        return _snapshot(webspace_id=webspace_id)
     except Exception as exc:
         _log.warning("infrastate snapshot failed; projecting fallback snapshot", exc_info=True)
         return _fallback_snapshot(exc, webspace_id=webspace_id)
@@ -2979,6 +3148,15 @@ def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
 def on_refresh(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
+
+
+@subscribe("operations.")
+def on_operations_changed(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    _schedule_snapshot_refresh(
+        webspace_id=_webspace_id_from_payload(payload),
+        reason="operations.changed",
+    )
 
 
 @subscribe("infrastate.action")
