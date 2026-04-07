@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-07T21:30:24+00:00",
+  "updated_at": "2026-04-07T23:13:10+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -89,5 +89,25 @@
       "tools_count": 1
     }
   ],
-  "scenarios": []
+  "scenarios": [
+    {
+      "kind": "scenario",
+      "id": "infrascope",
+      "name": "infrascope",
+      "version": "0.3.0",
+      "updated_at": "2026-04-07T23:13:10+00:00",
+      "path": "scenarios/infrascope",
+      "manifest": "scenarios/infrascope/scenario.yaml",
+      "source": {
+        "path": "scenarios/infrascope",
+        "manifest": "scenarios/infrascope/scenario.yaml"
+      },
+      "install": {
+        "kind": "scenario",
+        "name": "infrascope",
+        "id": "infrascope"
+      },
+      "description": "Operator control-plane scenario for overview, inventory, and in-context object inspection."
+    }
+  ]
 }

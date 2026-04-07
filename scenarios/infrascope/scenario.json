@@ -1,0 +1,598 @@
+{
+  "id": "infrascope",
+  "version": "0.2.0",
+  "name": "Infrascope",
+  "title": "Infrascope",
+  "description": "Operator control-plane workspace for overview, inventory, and unified object inspection.",
+  "type": "desktop",
+  "ui": {
+    "application": {
+      "version": "0.2",
+      "desktop": {
+        "topbar": [],
+        "pageSchema": {
+          "id": "infrascope",
+          "title": "Infrascope",
+          "initialState": {
+            "infrascopeMode": "overview",
+            "inventoryKind": "hubs",
+            "inspectorTab": "summary",
+            "selectedObjectId": "local",
+            "selectedObjectTitle": "Local node"
+          },
+          "layout": {
+            "type": "split",
+            "areas": [
+              {
+                "id": "sidebar",
+                "role": "sidebar"
+              },
+              {
+                "id": "main",
+                "role": "main"
+              },
+              {
+                "id": "right",
+                "role": "aux"
+              },
+              {
+                "id": "bottom",
+                "role": "footer"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "infrascope-mode",
+              "type": "input.commandBar",
+              "area": "sidebar",
+              "title": "Modes",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "overview",
+                    "label": "Overview"
+                  },
+                  {
+                    "id": "inventory",
+                    "label": "Inventory"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:overview",
+                  "type": "updateState",
+                  "params": {
+                    "infrascopeMode": "overview"
+                  }
+                },
+                {
+                  "on": "click:inventory",
+                  "type": "updateState",
+                  "params": {
+                    "infrascopeMode": "inventory"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "infrascope-inventory-tabs",
+              "type": "input.commandBar",
+              "area": "sidebar",
+              "title": "Inventory",
+              "visibleIf": "$state.infrascopeMode === 'inventory'",
+              "inputs": {
+                "variant": "stack",
+                "buttons": [
+                  {
+                    "id": "hubs",
+                    "label": "Hubs"
+                  },
+                  {
+                    "id": "members",
+                    "label": "Members"
+                  },
+                  {
+                    "id": "browsers",
+                    "label": "Browsers"
+                  },
+                  {
+                    "id": "devices",
+                    "label": "Devices"
+                  },
+                  {
+                    "id": "skills",
+                    "label": "Skills"
+                  },
+                  {
+                    "id": "scenarios",
+                    "label": "Scenarios"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:hubs",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "hubs"
+                  }
+                },
+                {
+                  "on": "click:members",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "members"
+                  }
+                },
+                {
+                  "on": "click:browsers",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "browsers"
+                  }
+                },
+                {
+                  "on": "click:devices",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "devices"
+                  }
+                },
+                {
+                  "on": "click:skills",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "skills"
+                  }
+                },
+                {
+                  "on": "click:scenarios",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "scenarios"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "overview-summary",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Overview",
+              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.get_overview_summary",
+                "params": {}
+              },
+              "actions": [
+                {
+                  "on": "click:inspect_local",
+                  "type": "updateState",
+                  "params": {
+                    "selectedObjectId": "$event.object_id",
+                    "selectedObjectTitle": "$event.object_title",
+                    "inspectorTab": "summary"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "overview-health",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Health strip",
+              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.list_overview_collection",
+                "params": {
+                  "section": "health_strip"
+                }
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No health items yet",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "showDetails": false,
+                "itemAccordion": false
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "selectedObjectId": "$event.object_id",
+                    "selectedObjectTitle": "$event.object_title",
+                    "inspectorTab": "summary"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "overview-incidents",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Active incidents",
+              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.list_overview_collection",
+                "params": {
+                  "section": "active_incidents"
+                }
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No active incidents",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "showDetails": false,
+                "itemAccordion": false
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "selectedObjectId": "$event.object_id",
+                    "selectedObjectTitle": "$event.object_title",
+                    "inspectorTab": "incidents"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "overview-runtimes",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Active runtimes",
+              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.list_overview_collection",
+                "params": {
+                  "section": "active_runtimes"
+                }
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No runtime items yet",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "showDetails": false,
+                "itemAccordion": false
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "selectedObjectId": "$event.object_id",
+                    "selectedObjectTitle": "$event.object_title",
+                    "inspectorTab": "summary"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "overview-quotas",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Quota summary",
+              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.list_overview_collection",
+                "params": {
+                  "section": "quota_summary"
+                }
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No quota pressure detected",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "showDetails": false,
+                "itemAccordion": false
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "selectedObjectId": "$event.object_id",
+                    "selectedObjectTitle": "$event.object_title",
+                    "inspectorTab": "summary"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "overview-changes",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Recent changes",
+              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.list_overview_collection",
+                "params": {
+                  "section": "recent_changes"
+                }
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No recent changes detected",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "showDetails": false,
+                "itemAccordion": false
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "selectedObjectId": "$event.object_id",
+                    "selectedObjectTitle": "$event.object_title",
+                    "inspectorTab": "changes"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "inventory-list",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Inventory",
+              "visibleIf": "$state.infrascopeMode === 'inventory'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.list_inventory",
+                "params": {
+                  "kind": "$state.inventoryKind"
+                }
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No inventory objects for the selected tab",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "showDetails": false,
+                "itemAccordion": false
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "updateState",
+                  "params": {
+                    "selectedObjectId": "$event.object_id",
+                    "selectedObjectTitle": "$event.object_title",
+                    "inspectorTab": "summary"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "selected-object-summary",
+              "type": "visual.metricTile",
+              "area": "right",
+              "title": "Object inspector",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.get_object_inspector",
+                "params": {
+                  "object_id": "$state.selectedObjectId",
+                  "task_goal": "assist operator in Infrascope"
+                }
+              }
+            },
+            {
+              "id": "inspector-tabs",
+              "type": "input.commandBar",
+              "area": "right",
+              "title": "Inspector",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "summary",
+                    "label": "Summary"
+                  },
+                  {
+                    "id": "incidents",
+                    "label": "Incidents"
+                  },
+                  {
+                    "id": "actions",
+                    "label": "Actions"
+                  },
+                  {
+                    "id": "changes",
+                    "label": "Changes"
+                  },
+                  {
+                    "id": "topology",
+                    "label": "Topology"
+                  },
+                  {
+                    "id": "packet",
+                    "label": "Task packet"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:summary",
+                  "type": "updateState",
+                  "params": {
+                    "inspectorTab": "summary"
+                  }
+                },
+                {
+                  "on": "click:incidents",
+                  "type": "updateState",
+                  "params": {
+                    "inspectorTab": "incidents"
+                  }
+                },
+                {
+                  "on": "click:actions",
+                  "type": "updateState",
+                  "params": {
+                    "inspectorTab": "actions"
+                  }
+                },
+                {
+                  "on": "click:changes",
+                  "type": "updateState",
+                  "params": {
+                    "inspectorTab": "changes"
+                  }
+                },
+                {
+                  "on": "click:topology",
+                  "type": "updateState",
+                  "params": {
+                    "inspectorTab": "topology"
+                  }
+                },
+                {
+                  "on": "click:packet",
+                  "type": "updateState",
+                  "params": {
+                    "inspectorTab": "packet"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "inspector-object",
+              "type": "item.details",
+              "area": "right",
+              "title": "Selected object",
+              "visibleIf": "$state.inspectorTab === 'summary'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.get_object_inspector",
+                "params": {
+                  "object_id": "$state.selectedObjectId",
+                  "task_goal": "assist operator in Infrascope"
+                }
+              },
+              "inputs": {
+                "bindField": "object"
+              }
+            },
+            {
+              "id": "inspector-incidents",
+              "type": "item.details",
+              "area": "right",
+              "title": "Incidents",
+              "visibleIf": "$state.inspectorTab === 'incidents'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.get_object_inspector",
+                "params": {
+                  "object_id": "$state.selectedObjectId",
+                  "task_goal": "assist operator in Infrascope"
+                }
+              },
+              "inputs": {
+                "bindField": "incidents"
+              }
+            },
+            {
+              "id": "inspector-actions",
+              "type": "item.details",
+              "area": "right",
+              "title": "Actions",
+              "visibleIf": "$state.inspectorTab === 'actions'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.get_object_inspector",
+                "params": {
+                  "object_id": "$state.selectedObjectId",
+                  "task_goal": "assist operator in Infrascope"
+                }
+              },
+              "inputs": {
+                "bindField": "actions"
+              }
+            },
+            {
+              "id": "inspector-changes",
+              "type": "item.details",
+              "area": "right",
+              "title": "Recent changes",
+              "visibleIf": "$state.inspectorTab === 'changes'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.get_object_inspector",
+                "params": {
+                  "object_id": "$state.selectedObjectId",
+                  "task_goal": "assist operator in Infrascope"
+                }
+              },
+              "inputs": {
+                "bindField": "recent_changes"
+              }
+            },
+            {
+              "id": "inspector-topology",
+              "type": "item.details",
+              "area": "bottom",
+              "title": "Topology slice",
+              "visibleIf": "$state.inspectorTab === 'topology'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.get_object_inspector",
+                "params": {
+                  "object_id": "$state.selectedObjectId",
+                  "task_goal": "assist operator in Infrascope"
+                }
+              },
+              "inputs": {
+                "bindField": "topology"
+              }
+            },
+            {
+              "id": "inspector-packet",
+              "type": "item.details",
+              "area": "bottom",
+              "title": "Task packet",
+              "visibleIf": "$state.inspectorTab === 'packet'",
+              "dataSource": {
+                "kind": "skill",
+                "name": "infrascope_skill.get_object_inspector",
+                "params": {
+                  "object_id": "$state.selectedObjectId",
+                  "task_goal": "assist operator in Infrascope"
+                }
+              },
+              "inputs": {
+                "bindField": "task_packet"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "registry": {
+    "widgets": [
+      "input.commandBar",
+      "visual.metricTile",
+      "ui.list",
+      "item.details"
+    ],
+    "modals": []
+  },
+  "catalog": {
+    "apps": [],
+    "widgets": []
+  }
+}
