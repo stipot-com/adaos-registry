@@ -1,0 +1,94 @@
+name: infrascope_skill
+version: 0.2.0
+entry: handlers/main.py
+runtime:
+  python: '3.11'
+description: UI-facing projection skill for the Infrascope operator scenario.
+dependencies: []
+events: {}
+tools:
+- name: get_overview_summary
+  description: Return the summary tile payload for the Infrascope overview.
+  entry: handlers.main:get_overview_summary
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: object
+- name: list_overview_collection
+  description: Return one overview collection for the Infrascope workspace.
+  entry: handlers.main:list_overview_collection
+  input_schema:
+    type: object
+    required:
+    - section
+    properties:
+      section:
+        type: string
+        enum:
+        - health_strip
+        - active_incidents
+        - quota_summary
+        - active_runtimes
+        - recent_changes
+      webspace_id:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: array
+    items:
+      type: object
+- name: list_inventory
+  description: Return inventory rows for one Infrascope object class.
+  entry: handlers.main:list_inventory
+  input_schema:
+    type: object
+    properties:
+      kind:
+        type: string
+        enum:
+        - all
+        - hubs
+        - members
+        - browsers
+        - devices
+        - skills
+        - scenarios
+        - runtimes
+        - quotas
+      webspace_id:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: array
+    items:
+      type: object
+- name: get_object_inspector
+  description: Return the unified object-inspector payload for a selected object.
+  entry: handlers.main:get_object_inspector
+  input_schema:
+    type: object
+    properties:
+      object_id:
+        type:
+        - string
+        - 'null'
+      task_goal:
+        type:
+        - string
+        - 'null'
+      webspace_id:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: object
+exports: {}
+updated_at: '2026-04-07T23:13:52+00:00'
+

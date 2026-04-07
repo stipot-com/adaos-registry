@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-07T23:13:10+00:00",
+  "updated_at": "2026-04-07T23:13:52+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -44,6 +44,28 @@
       "entry": "handlers/main.py",
       "runtime_python": "3.11",
       "tools_count": 0
+    },
+    {
+      "kind": "skill",
+      "id": "infrascope_skill",
+      "name": "infrascope_skill",
+      "version": "0.2.0",
+      "updated_at": "2026-04-07T23:13:52+00:00",
+      "path": "skills/infrascope_skill",
+      "manifest": "skills/infrascope_skill/skill.yaml",
+      "source": {
+        "path": "skills/infrascope_skill",
+        "manifest": "skills/infrascope_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "infrascope_skill",
+        "id": "infrascope_skill"
+      },
+      "description": "UI-facing projection skill for the Infrascope operator scenario.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 4
     },
     {
       "kind": "skill",
