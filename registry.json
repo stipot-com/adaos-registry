@@ -1,7 +1,29 @@
 {
   "version": 1,
-  "updated_at": "2026-04-07T18:29:13+00:00",
+  "updated_at": "2026-04-07T18:29:36+00:00",
   "skills": [
+    {
+      "kind": "skill",
+      "id": "infra_access_skill",
+      "name": "infra_access_skill",
+      "version": "0.4.0",
+      "updated_at": "2026-04-07T18:29:36+00:00",
+      "path": "skills/infra_access_skill",
+      "manifest": "skills/infra_access_skill/skill.yaml",
+      "source": {
+        "path": "skills/infra_access_skill",
+        "manifest": "skills/infra_access_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "infra_access_skill",
+        "id": "infra_access_skill"
+      },
+      "description": "Skill-mediated operational surface for managed infra access, observability, and Root MCP token workflows.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 0
+    },
     {
       "kind": "skill",
       "id": "infrastate_skill",
