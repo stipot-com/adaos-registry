@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-07T19:49:12+00:00",
+  "updated_at": "2026-04-07T19:49:47+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -65,6 +65,28 @@
       "description": "Локальный обзор состояния ядра, graceful update, A/B слотов и последнего результата обновления.",
       "runtime_python": "3.11",
       "tools_count": 3
+    },
+    {
+      "kind": "skill",
+      "id": "mediaserver",
+      "name": "mediaserver",
+      "version": "0.3.0",
+      "updated_at": "2026-04-07T19:49:47+00:00",
+      "path": "skills/mediaserver",
+      "manifest": "skills/mediaserver/skill.yaml",
+      "source": {
+        "path": "skills/mediaserver",
+        "manifest": "skills/mediaserver/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "mediaserver",
+        "id": "mediaserver"
+      },
+      "description": "Local MVP media debugging skill for upload/playback diagnostics and media-channel readiness checks.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 1
     }
   ],
   "scenarios": []
