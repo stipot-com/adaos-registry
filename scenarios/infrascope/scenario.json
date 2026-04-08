@@ -1,6 +1,6 @@
 {
   "id": "infrascope",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "name": "Infrascope",
   "title": "Infrascope",
   "description": "Operator control-plane workspace for overview, inventory, and unified object inspection.",
@@ -48,6 +48,7 @@
               "area": "sidebar",
               "title": "Modes",
               "inputs": {
+                "selectedStateKey": "infrascopeMode",
                 "buttons": [
                   {
                     "id": "overview",
@@ -84,6 +85,7 @@
               "visibleIf": "$state.infrascopeMode === 'inventory'",
               "inputs": {
                 "variant": "stack",
+                "selectedStateKey": "inventoryKind",
                 "buttons": [
                   {
                     "id": "hubs",
@@ -163,9 +165,8 @@
               "title": "Overview",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.get_overview_summary",
-                "params": {}
+                "kind": "y",
+                "path": "data/infrascope/summary"
               },
               "actions": [
                 {
@@ -186,11 +187,8 @@
               "title": "Health strip",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.list_overview_collection",
-                "params": {
-                  "section": "health_strip"
-                }
+                "kind": "y",
+                "path": "data/infrascope/overview/health_strip"
               },
               "inputs": {
                 "inset": true,
@@ -219,11 +217,8 @@
               "title": "Active incidents",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.list_overview_collection",
-                "params": {
-                  "section": "active_incidents"
-                }
+                "kind": "y",
+                "path": "data/infrascope/overview/active_incidents"
               },
               "inputs": {
                 "inset": true,
@@ -252,11 +247,8 @@
               "title": "Active runtimes",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.list_overview_collection",
-                "params": {
-                  "section": "active_runtimes"
-                }
+                "kind": "y",
+                "path": "data/infrascope/overview/active_runtimes"
               },
               "inputs": {
                 "inset": true,
@@ -285,11 +277,8 @@
               "title": "Quota summary",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.list_overview_collection",
-                "params": {
-                  "section": "quota_summary"
-                }
+                "kind": "y",
+                "path": "data/infrascope/overview/quota_summary"
               },
               "inputs": {
                 "inset": true,
@@ -318,11 +307,8 @@
               "title": "Recent changes",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.list_overview_collection",
-                "params": {
-                  "section": "recent_changes"
-                }
+                "kind": "y",
+                "path": "data/infrascope/overview/recent_changes"
               },
               "inputs": {
                 "inset": true,
@@ -345,17 +331,33 @@
               ]
             },
             {
+              "id": "overview-operations",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Active operations",
+              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infrascope/operations/items"
+              },
+              "inputs": {
+                "inset": true,
+                "emptyText": "No active operations",
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "showDetails": false,
+                "itemAccordion": false
+              }
+            },
+            {
               "id": "inventory-list",
               "type": "ui.list",
               "area": "main",
               "title": "Inventory",
               "visibleIf": "$state.infrascopeMode === 'inventory'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.list_inventory",
-                "params": {
-                  "kind": "$state.inventoryKind"
-                }
+                "kind": "y",
+                "path": "data/infrascope/inventory/$state.inventoryKind"
               },
               "inputs": {
                 "inset": true,
@@ -383,12 +385,8 @@
               "area": "right",
               "title": "Object inspector",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.get_object_inspector",
-                "params": {
-                  "object_id": "$state.selectedObjectId",
-                  "task_goal": "assist operator in Infrascope"
-                }
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId"
               }
             },
             {
@@ -397,6 +395,7 @@
               "area": "right",
               "title": "Inspector",
               "inputs": {
+                "selectedStateKey": "inspectorTab",
                 "buttons": [
                   {
                     "id": "summary",
@@ -476,12 +475,8 @@
               "title": "Selected object",
               "visibleIf": "$state.inspectorTab === 'summary'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.get_object_inspector",
-                "params": {
-                  "object_id": "$state.selectedObjectId",
-                  "task_goal": "assist operator in Infrascope"
-                }
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId"
               },
               "inputs": {
                 "bindField": "object"
@@ -494,12 +489,8 @@
               "title": "Incidents",
               "visibleIf": "$state.inspectorTab === 'incidents'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.get_object_inspector",
-                "params": {
-                  "object_id": "$state.selectedObjectId",
-                  "task_goal": "assist operator in Infrascope"
-                }
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId"
               },
               "inputs": {
                 "bindField": "incidents"
@@ -512,12 +503,8 @@
               "title": "Actions",
               "visibleIf": "$state.inspectorTab === 'actions'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.get_object_inspector",
-                "params": {
-                  "object_id": "$state.selectedObjectId",
-                  "task_goal": "assist operator in Infrascope"
-                }
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId"
               },
               "inputs": {
                 "bindField": "actions"
@@ -530,12 +517,8 @@
               "title": "Recent changes",
               "visibleIf": "$state.inspectorTab === 'changes'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.get_object_inspector",
-                "params": {
-                  "object_id": "$state.selectedObjectId",
-                  "task_goal": "assist operator in Infrascope"
-                }
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId"
               },
               "inputs": {
                 "bindField": "recent_changes"
@@ -548,12 +531,8 @@
               "title": "Topology slice",
               "visibleIf": "$state.inspectorTab === 'topology'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.get_object_inspector",
-                "params": {
-                  "object_id": "$state.selectedObjectId",
-                  "task_goal": "assist operator in Infrascope"
-                }
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId"
               },
               "inputs": {
                 "bindField": "topology"
@@ -566,12 +545,8 @@
               "title": "Task packet",
               "visibleIf": "$state.inspectorTab === 'packet'",
               "dataSource": {
-                "kind": "skill",
-                "name": "infrascope_skill.get_object_inspector",
-                "params": {
-                  "object_id": "$state.selectedObjectId",
-                  "task_goal": "assist operator in Infrascope"
-                }
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId"
               },
               "inputs": {
                 "bindField": "task_packet"
