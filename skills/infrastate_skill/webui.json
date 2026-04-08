@@ -286,8 +286,8 @@
 							"inputs": {
 								"emptyText": "No installed skills",
 								"columns": [
-									{ "key": "name", "label": "Name" },
-									{ "key": "version", "label": "Version", "mono": true, "width": "160px" },
+									{ "key": "display_name", "label": "Name" },
+									{ "key": "version_display", "label": "Version", "mono": true, "width": "160px" },
 									{ "key": "slot", "label": "Slot", "mono": true, "width": "90px" }
 								],
 								"buttons": [

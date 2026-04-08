@@ -28,7 +28,7 @@ from adaos.services.operations import get_operation_manager, submit_install_oper
 from adaos.services.skill.update import SkillUpdateService
 from adaos.services.scenarios.loader import read_manifest
 from adaos.services.scenario.manager import ScenarioManager
-from adaos.services.workspace_registry import find_workspace_registry_entry, list_workspace_registry_entries, rebuild_workspace_registry
+from adaos.services.workspace_registry import list_workspace_registry_entries, rebuild_workspace_registry
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.skill.manager import SkillManager
 from adaos.adapters.db import SqliteScenarioRegistry, SqliteSkillRegistry
@@ -205,23 +205,18 @@ def _safe_version(v: Any) -> Version | None:
 
 
 def _read_registry_catalog_version(*, skill_id: str) -> str | None:
-    try:
-        ctx = get_ctx()
-    except Exception:
-        return None
-    entry = find_workspace_registry_entry(
-        Path(ctx.paths.workspace_dir()),
-        kind="skills",
-        name_or_id=skill_id,
-        fallback_to_scan=False,
-    )
-    if not isinstance(entry, dict):
-        return None
-    version = entry.get("version")
-    if version is None:
-        return None
-    token = str(version).strip()
-    return token or None
+    for entry in _marketplace_catalog_entries("skills"):
+        if not isinstance(entry, dict):
+            continue
+        entry_id = str(entry.get("id") or entry.get("name") or "").strip()
+        if entry_id != skill_id:
+            continue
+        version = entry.get("version")
+        if version is None:
+            return None
+        token = str(version).strip()
+        return token or None
+    return None
 
 
 def _registry_payload_from_git_ref(workspace_root: Path) -> dict[str, Any] | None:
@@ -330,11 +325,17 @@ def _skills_items() -> list[dict[str, Any]]:
         rv = _safe_version(remote_version)
         if lv is not None and rv is not None and rv > lv:
             update_available = True
+        display_name = f"{name} *" if update_available else name
+        version_display = local_version
+        if update_available and remote_version:
+            version_display = f"{local_version} ({remote_version})"
 
         out.append(
             {
                 "name": name,
+                "display_name": display_name,
                 "version": local_version,
+                "version_display": version_display,
                 "slot": slot,
                 "active": bool(slot),
                 "can_activate": True,
@@ -378,17 +379,23 @@ def _scenario_items() -> list[dict[str, Any]]:
         if version:
             versions_by_name[name] = version
 
-    out: list[dict[str, Any]] = []
+    installed_names = set(versions_by_name)
     for row in registry_rows:
         name = str(getattr(row, "name", "") or "").strip()
+        if name:
+            installed_names.add(name)
+
+    out: list[dict[str, Any]] = []
+    for name in sorted(installed_names):
         if not name:
             continue
+        row = next((item for item in registry_rows if str(getattr(item, "name", "") or "").strip() == name), None)
         version = str(versions_by_name.get(name) or getattr(row, "active_version", "") or "").strip()
         out.append(
             {
                 "name": name,
                 "version": version,
-                "updated_at": getattr(row, "last_updated", None),
+                "updated_at": getattr(row, "last_updated", None) if row is not None else None,
                 "uninstall_disabled": False,
             }
         )
@@ -482,9 +489,35 @@ def _marketplace_items(*, webspace_id: str | None = None) -> dict[str, list[dict
         rows.sort(key=lambda item: str(item.get("id") or ""))
         return rows
 
+    def _scenario_depends(names: list[str]) -> set[str]:
+        deps: set[str] = set()
+        for scenario_name in names:
+            token = str(scenario_name or "").strip()
+            if not token:
+                continue
+            try:
+                manifest = read_manifest(token) or {}
+            except Exception:
+                continue
+            raw_depends = manifest.get("depends") or []
+            if not isinstance(raw_depends, (list, tuple)):
+                continue
+            for dep in raw_depends:
+                dep_name = str(dep or "").strip()
+                if dep_name:
+                    deps.add(dep_name)
+        return deps
+    scenario_rows = _rows("scenarios", installed_scenarios)
+    hidden_skill_ids = _scenario_depends([str(item.get("id") or "") for item in scenario_rows])
+    skill_rows = [
+        item
+        for item in _rows("skills", installed_skills)
+        if str(item.get("id") or "").strip() not in hidden_skill_ids
+    ]
+
     return {
-        "skills": _rows("skills", installed_skills),
-        "scenarios": _rows("scenarios", installed_scenarios),
+        "skills": skill_rows,
+        "scenarios": scenario_rows,
     }
 
 
