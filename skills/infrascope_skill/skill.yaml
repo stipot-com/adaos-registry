@@ -1,11 +1,62 @@
 name: infrascope_skill
-version: 0.3.0
+version: 0.4.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
 description: UI-facing projection skill for the Infrascope operator scenario.
 dependencies: []
-events: {}
+events:
+  subscribe:
+  - infrascope.refresh
+  - operations.
+  - device.registered
+  - webrtc.peer.state.changed
+  - skill.installed
+  - skill.uninstalled
+  - scenario.installed
+  - scenario.removed
+  - scenarios.synced
+  - skills.activated
+  - skills.updated
+  - skills.rolledback
+  - skill.service.ready
+  - desktop.webspace.refresh
+  - desktop.webspace.reload
+  - desktop.webspace.reloaded
+  - desktop.webspace.reset
+  - desktop.webspace.restored
+  - desktop.webspace.go_home
+  - desktop.webspace.set_home
+  - desktop.webspace.set_home_current
+  - desktop.webspace.create
+  - desktop.webspace.rename
+  - desktop.webspace.update
+  - desktop.webspace.delete
+  - desktop.scenario.set
+  - node.yjs.control.completed
+  - node.yjs.control.failed
+  - sys.ready
+  - subnet.nats.up
+  - subnet.nats.down
+  - subnet.nats.reconnect
+  - subnet.member.link.up
+  - subnet.member.link.down
+  - subnet.member.meta.changed
+  - subnet.member.snapshot.changed
+  - subnet.member.snapshot.requested
+  - subnet.member.update.requested
+  - subnet.member.update.result
+  - subnet.stopping
+  - subnet.stopped
+  - core.update.status
+  - hub.core_update.status
+  - node.names.changed
+data_projections:
+- scope: subnet
+  slot: infrascope.snapshot
+  targets:
+  - backend: yjs
+    path: data/infrascope
 tools:
 - name: get_overview_summary
   description: Return the summary tile payload for the Infrascope overview.
@@ -89,7 +140,39 @@ tools:
         - 'null'
   output_schema:
     type: object
+- name: get_snapshot
+  description: Return the current Infrascope YJS snapshot payload.
+  entry: handlers.main:get_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type:
+        - string
+        - 'null'
+      task_goal:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: object
+- name: refresh_snapshot
+  description: Rebuild and project the current Infrascope snapshot into YJS.
+  entry: handlers.main:refresh_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type:
+        - string
+        - 'null'
+      task_goal:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: object
 exports: {}
 prototype: default
-updated_at: '2026-04-08T03:41:19+00:00'
+updated_at: '2026-04-08T04:42:19+00:00'
 

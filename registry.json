@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-08T03:42:08+00:00",
+  "updated_at": "2026-04-08T04:42:19+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -49,8 +49,8 @@
       "kind": "skill",
       "id": "infrascope_skill",
       "name": "infrascope_skill",
-      "version": "0.3.0",
-      "updated_at": "2026-04-08T03:41:19+00:00",
+      "version": "0.4.0",
+      "updated_at": "2026-04-08T04:42:19+00:00",
       "path": "skills/infrascope_skill",
       "manifest": "skills/infrascope_skill/skill.yaml",
       "source": {
@@ -65,7 +65,7 @@
       "description": "UI-facing projection skill for the Infrascope operator scenario.",
       "entry": "handlers/main.py",
       "runtime_python": "3.11",
-      "tools_count": 4
+      "tools_count": 6
     },
     {
       "kind": "skill",
