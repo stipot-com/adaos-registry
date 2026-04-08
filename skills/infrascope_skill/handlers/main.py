@@ -156,7 +156,11 @@ def _incident_rows(items: list[Any], *, object_index: dict[str, CanonicalObject]
 def _sorted_object_rows(items: list[CanonicalObject]) -> list[dict[str, Any]]:
     ordered = sorted(
         items,
-        key=lambda item: (_status_rank(getattr(item, "status", None)), str(getattr(item, "kind", "") or ""), str(getattr(item, "title", "") or "")),
+        key=lambda item: (
+            _status_rank(getattr(item, "status", None)),
+            str(getattr(item, "kind", "") or ""),
+            str(getattr(item, "title", "") or ""),
+        ),
         reverse=True,
     )
     rows: list[dict[str, Any]] = []
