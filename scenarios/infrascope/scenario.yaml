@@ -1,5 +1,5 @@
 id: infrascope
-version: 0.4.0
+version: 0.5.0
 title: Infrascope
 description: Operator control-plane scenario for overview, inventory, and in-context
   object inspection.
@@ -7,5 +7,5 @@ type: desktop
 depends:
 - web_desktop_skill
 - infrascope_skill
-updated_at: '2026-04-08T04:47:50+00:00'
+updated_at: '2026-04-08T07:27:29+00:00'
 

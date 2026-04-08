@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-08T04:47:50+00:00",
+  "updated_at": "2026-04-08T07:27:29+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -116,8 +116,8 @@
       "kind": "scenario",
       "id": "infrascope",
       "name": "infrascope",
-      "version": "0.4.0",
-      "updated_at": "2026-04-08T04:47:50+00:00",
+      "version": "0.5.0",
+      "updated_at": "2026-04-08T07:27:29+00:00",
       "path": "scenarios/infrascope",
       "manifest": "scenarios/infrascope/scenario.yaml",
       "source": {
