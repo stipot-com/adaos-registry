@@ -28,7 +28,8 @@ from adaos.services.operations import get_operation_manager, submit_install_oper
 from adaos.services.skill.update import SkillUpdateService
 from adaos.services.scenarios.loader import read_manifest
 from adaos.services.scenario.manager import ScenarioManager
-from adaos.services.workspace_registry import list_workspace_registry_entries, rebuild_workspace_registry
+from adaos.services.workspace_registry import build_registry_entry, list_workspace_registry_entries, rebuild_workspace_registry
+from adaos.services.workspace_sync import effective_registry_names, installed_names, sync_workspace_sparse_to_registry
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.skill.manager import SkillManager
 from adaos.adapters.db import SqliteScenarioRegistry, SqliteSkillRegistry
@@ -219,6 +220,37 @@ def _read_registry_catalog_version(*, skill_id: str) -> str | None:
     return None
 
 
+def _clean_version_text(value: Any) -> str | None:
+    token = str(value or "").strip()
+    return token or None
+
+
+def _workspace_registry_entry_map(workspace_root: Path, kind_plural: str) -> dict[str, dict[str, Any]]:
+    try:
+        entries = list_workspace_registry_entries(workspace_root, kind=kind_plural)
+    except Exception:
+        entries = []
+    mapped: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or entry.get("id") or "").strip()
+        if name:
+            mapped[name] = dict(entry)
+    return mapped
+
+
+def _read_local_artifact_version(workspace_root: Path, kind_plural: str, name: str) -> str | None:
+    artifact_dir = Path(workspace_root) / kind_plural / str(name)
+    try:
+        entry = build_registry_entry(kind_plural, artifact_dir)
+    except Exception:
+        entry = None
+    if not isinstance(entry, dict):
+        return None
+    return _clean_version_text(entry.get("version"))
+
+
 def _registry_payload_from_git_ref(workspace_root: Path) -> dict[str, Any] | None:
     remote = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_REMOTE") or "origin").strip() or "origin"
     branch = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_BRANCH") or "main").strip() or "main"
@@ -286,9 +318,11 @@ def _skills_items() -> list[dict[str, Any]]:
     except Exception:
         return []
 
+    workspace_root = Path(ctx.paths.workspace_dir())
+    registry = SqliteSkillRegistry(ctx.sql)
     mgr = SkillManager(
         repo=ctx.skills_repo,
-        registry=SqliteSkillRegistry(ctx.sql),
+        registry=registry,
         git=ctx.git,
         paths=ctx.paths,
         bus=getattr(ctx, "bus", None),
@@ -297,20 +331,35 @@ def _skills_items() -> list[dict[str, Any]]:
     )
 
     try:
-        metas = ctx.skills_repo.list() or []
+        registry_rows = registry.list() or []
     except Exception:
-        metas = []
+        registry_rows = []
+
+    installed_skill_names, _fallback_used = effective_registry_names(
+        ctx,
+        installed_names(registry_rows),
+        workspace_root,
+        "skills",
+    )
+    registry_rows_by_name = {
+        str(getattr(row, "name", "") or "").strip(): row
+        for row in registry_rows
+        if str(getattr(row, "name", "") or "").strip()
+    }
+    workspace_registry_by_name = _workspace_registry_entry_map(workspace_root, "skills")
 
     skill_usage = _skill_usage_by_scenarios()
     out: list[dict[str, Any]] = []
-    for meta in metas:
-        try:
-            name = str(getattr(meta, "id", None).value if getattr(meta, "id", None) else getattr(meta, "name", "") or "").strip()
-        except Exception:
-            name = ""
+    for name in installed_skill_names:
+        row = registry_rows_by_name.get(name)
         if not name:
             continue
-        local_version = str(getattr(meta, "version", "") or "").strip()
+        local_version = (
+            _read_local_artifact_version(workspace_root, "skills", name)
+            or _clean_version_text((workspace_registry_by_name.get(name) or {}).get("version"))
+            or _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
+            or ""
+        )
 
         slot = ""
         try:
@@ -356,41 +405,36 @@ def _scenario_items() -> list[dict[str, Any]]:
         ctx = get_ctx()
     except Exception:
         return []
+    workspace_root = Path(ctx.paths.workspace_dir())
 
     try:
         registry_rows = SqliteScenarioRegistry(ctx.sql).list() or []
     except Exception:
         registry_rows = []
-
-    try:
-        repo_metas = ctx.scenarios_repo.list() or []
-    except Exception:
-        repo_metas = []
-
-    versions_by_name: dict[str, str] = {}
-    for meta in repo_metas:
-        try:
-            name = str(getattr(meta, "id", None).value if getattr(meta, "id", None) else getattr(meta, "name", "") or "").strip()
-        except Exception:
-            name = ""
-        if not name:
-            continue
-        version = str(getattr(meta, "version", "") or "").strip()
-        if version:
-            versions_by_name[name] = version
-
-    installed_names = set(versions_by_name)
-    for row in registry_rows:
-        name = str(getattr(row, "name", "") or "").strip()
-        if name:
-            installed_names.add(name)
+    installed_scenario_names, _fallback_used = effective_registry_names(
+        ctx,
+        installed_names(registry_rows),
+        workspace_root,
+        "scenarios",
+    )
+    registry_rows_by_name = {
+        str(getattr(row, "name", "") or "").strip(): row
+        for row in registry_rows
+        if str(getattr(row, "name", "") or "").strip()
+    }
+    workspace_registry_by_name = _workspace_registry_entry_map(workspace_root, "scenarios")
 
     out: list[dict[str, Any]] = []
-    for name in sorted(installed_names):
+    for name in sorted(installed_scenario_names):
         if not name:
             continue
-        row = next((item for item in registry_rows if str(getattr(item, "name", "") or "").strip() == name), None)
-        version = str(versions_by_name.get(name) or getattr(row, "active_version", "") or "").strip()
+        row = registry_rows_by_name.get(name)
+        version = (
+            _read_local_artifact_version(workspace_root, "scenarios", name)
+            or _clean_version_text((workspace_registry_by_name.get(name) or {}).get("version"))
+            or _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
+            or ""
+        )
         out.append(
             {
                 "name": name,
@@ -584,47 +628,27 @@ def _adaos_update_local(*, dry_run: bool = False) -> dict[str, Any]:
         settings=ctx.settings,
     )
     try:
-        from adaos.adapters.db import SqliteScenarioRegistry
-        from adaos.services.scenario.manager import ScenarioManager
-
-        scenario_mgr = ScenarioManager(
-            repo=ctx.scenarios_repo,
-            registry=SqliteScenarioRegistry(ctx.sql),
-            git=ctx.git,
-            paths=ctx.paths,
-            bus=getattr(ctx, "bus", None),
-            caps=ctx.caps,
-        )
+        sync_result = sync_workspace_sparse_to_registry(ctx)
+        payload["workspace_synced"] = bool(sync_result.get("ok"))
+        payload["skills_synced"] = bool(sync_result.get("ok"))
+        payload["scenarios_synced"] = bool(sync_result.get("ok"))
+        payload["skills"] = [str(name) for name in (sync_result.get("skills") or []) if str(name).strip()]
+        payload["scenarios"] = [str(name) for name in (sync_result.get("scenarios") or []) if str(name).strip()]
+        fallback_used = sync_result.get("fallback_used") or {}
+        if isinstance(fallback_used, dict) and fallback_used:
+            payload["fallback_used"] = fallback_used
+        if not sync_result.get("ok"):
+            errors["workspace_sync"] = str(sync_result.get("error") or sync_result.get("errors") or "workspace sync failed")
     except Exception as exc:
-        scenario_mgr = None
-        errors["scenario_mgr"] = f"{type(exc).__name__}: {exc}"
-
-    try:
-        skill_mgr.sync()
-        payload["skills_synced"] = True
-    except Exception as exc:
+        sync_result = {"skills": [], "scenarios": []}
+        payload["workspace_synced"] = False
         payload["skills_synced"] = False
-        errors["skills_sync"] = f"{type(exc).__name__}: {exc}"
-
-    if scenario_mgr is not None:
-        try:
-            scenario_mgr.sync()
-            payload["scenarios_synced"] = True
-        except Exception as exc:
-            payload["scenarios_synced"] = False
-            errors["scenarios_sync"] = f"{type(exc).__name__}: {exc}"
+        payload["scenarios_synced"] = False
+        errors["workspace_sync"] = f"{type(exc).__name__}: {exc}"
 
     runtime_updated: list[str] = []
     runtime_errors: dict[str, str] = {}
-    try:
-        metas = ctx.skills_repo.list() or []
-    except Exception:
-        metas = []
-    for meta in metas:
-        try:
-            name = str(getattr(meta, "id", None).value if getattr(meta, "id", None) else getattr(meta, "name", "") or "").strip()
-        except Exception:
-            name = ""
+    for name in [str(item) for item in (sync_result.get("skills") or []) if str(item).strip()]:
         if not name:
             continue
         try:
