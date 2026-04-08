@@ -1516,6 +1516,127 @@ def _effective_update_log_report(current: dict[str, Any], last_result: dict[str,
     return current or last_result
 
 
+def _skill_runtime_migration_report(status: dict[str, Any], last_result: dict[str, Any]) -> dict[str, Any]:
+    for candidate in (status, last_result):
+        if not isinstance(candidate, dict):
+            continue
+        report = candidate.get("skill_runtime_migration")
+        if isinstance(report, dict) and report:
+            return dict(report)
+        manifest = candidate.get("manifest")
+        if not isinstance(manifest, dict):
+            continue
+        report = manifest.get("skill_runtime_migration")
+        if isinstance(report, dict) and report:
+            return dict(report)
+    return {}
+
+
+def _skill_runtime_rollback_report(status: dict[str, Any], last_result: dict[str, Any]) -> dict[str, Any]:
+    for candidate in (status, last_result):
+        if not isinstance(candidate, dict):
+            continue
+        report = candidate.get("skill_runtime_rollback")
+        if isinstance(report, dict) and report:
+            return dict(report)
+    return {}
+
+
+def _skill_post_commit_checks_report(status: dict[str, Any], last_result: dict[str, Any]) -> dict[str, Any]:
+    for candidate in (status, last_result):
+        if not isinstance(candidate, dict):
+            continue
+        report = candidate.get("skill_post_commit_checks")
+        if isinstance(report, dict) and report:
+            return dict(report)
+    return {}
+
+
+def _skill_runtime_migration_note(report: dict[str, Any]) -> str:
+    if not isinstance(report, dict) or not report:
+        return ""
+    total = int(report.get("total") or 0)
+    failed_total = int(report.get("failed_total") or 0)
+    rollback_total = int(report.get("rollback_total") or 0)
+    deactivated_total = int(report.get("deactivated_total") or 0)
+    if total <= 0:
+        return ""
+    parts = [f"skill_migration={total - failed_total}/{total}"]
+    if failed_total:
+        failed = []
+        for item in report.get("skills") or []:
+            if not isinstance(item, dict) or bool(item.get("ok")):
+                continue
+            failed.append(
+                f"{str(item.get('skill') or 'skill')}:{str(item.get('failed_stage') or 'failed')}"
+            )
+        if failed:
+            parts.append("failed=" + ",".join(failed[:3]))
+            if len(failed) > 3:
+                parts[-1] += f"(+{len(failed) - 3})"
+    if rollback_total:
+        parts.append(f"rollback={rollback_total}")
+    if deactivated_total:
+        parts.append(f"deactivated={deactivated_total}")
+    return " | ".join(parts)
+
+
+def _skill_runtime_rollback_note(report: dict[str, Any]) -> str:
+    if not isinstance(report, dict) or not report:
+        return ""
+    total = int(report.get("total") or 0)
+    failed_total = int(report.get("failed_total") or 0)
+    rollback_total = int(report.get("rollback_total") or 0)
+    skipped_total = int(report.get("skipped_total") or 0)
+    if total <= 0:
+        return ""
+    parts = [f"skill_rollback={rollback_total}/{total}"]
+    if failed_total:
+        failed = []
+        for item in report.get("skills") or []:
+            if not isinstance(item, dict) or bool(item.get("ok")):
+                continue
+            failed.append(str(item.get("skill") or "skill"))
+        if failed:
+            parts.append("failed=" + ",".join(failed[:3]))
+            if len(failed) > 3:
+                parts[-1] += f"(+{len(failed) - 3})"
+    if skipped_total:
+        parts.append(f"skipped={skipped_total}")
+    return " | ".join(parts)
+
+
+def _skill_post_commit_checks_note(report: dict[str, Any]) -> str:
+    if not isinstance(report, dict) or not report:
+        return ""
+    total = int(report.get("total") or 0)
+    failed_total = int(report.get("failed_total") or 0)
+    deactivated_total = int(report.get("deactivated_total") or 0)
+    if total <= 0 and not report.get("error"):
+        return ""
+    parts = []
+    if total > 0:
+        parts.append(f"skill_post_commit={total - failed_total}/{total}")
+    if failed_total:
+        failed = []
+        for item in report.get("skills") or []:
+            if not isinstance(item, dict) or bool(item.get("ok")):
+                continue
+            failed.append(
+                f"{str(item.get('skill') or 'skill')}:{str(item.get('failed_stage') or 'failed')}"
+            )
+        if failed:
+            parts.append("failed=" + ",".join(failed[:3]))
+            if len(failed) > 3:
+                parts[-1] += f"(+{len(failed) - 3})"
+    if deactivated_total:
+        parts.append(f"deactivated={deactivated_total}")
+    error_text = str(report.get("error") or "").strip()
+    if error_text:
+        parts.append(f"error={error_text}")
+    return " | ".join(parts)
+
+
 def _build_items(build: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {
@@ -2235,6 +2356,15 @@ def _summary(
         if last_result_message:
             suffix += f": {last_result_message}"
         message += f" | {suffix}"
+    skill_migration_note = _skill_runtime_migration_note(_skill_runtime_migration_report(status, last_result))
+    if skill_migration_note:
+        message += f" | {skill_migration_note}"
+    skill_rollback_note = _skill_runtime_rollback_note(_skill_runtime_rollback_report(status, last_result))
+    if skill_rollback_note:
+        message += f" | {skill_rollback_note}"
+    skill_post_commit_note = _skill_post_commit_checks_note(_skill_post_commit_checks_report(status, last_result))
+    if skill_post_commit_note:
+        message += f" | {skill_post_commit_note}"
     validation_summary = str(status.get("validation_error_summary") or "").strip()
     restored_slot = str(status.get("restored_slot") or "").strip()
     if state == "failed" and phase == "validate":
@@ -3246,7 +3376,34 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     report = _read_json(_base_dir() / "state" / "core_update" / "status.json") or {}
     effective_report = _effective_update_log_report(report, display_last_result)
     operations = _operations_snapshot(webspace_id=webspace_id)
-    marketplace = _marketplace_items(webspace_id=webspace_id)
+    try:
+        build_items = _build_items(display_build)
+    except Exception:
+        build_items = []
+    try:
+        step_items = _step_items(display_status, display_slots_payload, display_lifecycle, display_build)
+    except Exception:
+        step_items = []
+    try:
+        realtime_items = _realtime_items(reliability, transport_diag)
+    except Exception:
+        realtime_items = []
+    try:
+        slot_items = _slot_items(display_slots_payload)
+    except Exception:
+        slot_items = []
+    try:
+        skills_items = _skills_items()
+    except Exception:
+        skills_items = []
+    try:
+        scenario_items = _scenario_items()
+    except Exception:
+        scenario_items = []
+    try:
+        marketplace = _marketplace_items(webspace_id=webspace_id)
+    except Exception:
+        marketplace = {"skills": [], "scenarios": []}
     snapshot = {
         "summary": _summary(display_status, display_last_result, display_slots_payload, display_lifecycle, conf, display_build, ui_state, reliability, transport_diag, selected_member=selected_member),
         "actions": _action_items(display_status, ui_state, reliability),
@@ -3256,12 +3413,12 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
         "nodes": node_tabs,
         "yjs_webspaces": yjs_webspace_tabs,
         "node_editor": node_editor,
-        "build": _build_items(display_build),
-        "steps": _step_items(display_status, display_slots_payload, display_lifecycle, display_build),
-        "realtime": _realtime_items(reliability, transport_diag),
-        "slots": _slot_items(display_slots_payload),
-        "skills": _skills_items(),
-        "scenarios": _scenario_items(),
+        "build": build_items,
+        "steps": step_items,
+        "realtime": realtime_items,
+        "slots": slot_items,
+        "skills": skills_items,
+        "scenarios": scenario_items,
         "operations": {
             "items": operations.get("active_items") or [],
             "active": operations.get("active") or [],
@@ -3271,6 +3428,9 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
         "events": list(reversed(_event_state())),
         "status": display_status,
         "last_result": display_last_result,
+        "skill_runtime_migration": _skill_runtime_migration_report(display_status, display_last_result),
+        "skill_runtime_rollback": _skill_runtime_rollback_report(display_status, display_last_result),
+        "skill_post_commit_checks": _skill_post_commit_checks_report(display_status, display_last_result),
         "lifecycle": display_lifecycle,
         "reliability": reliability,
         "transport_diag": transport_diag,
@@ -3472,6 +3632,18 @@ def on_skill_updated(evt: Any) -> None:
     _schedule_snapshot_refresh(
         webspace_id=_webspace_id_from_payload(payload),
         reason="skills.updated",
+    )
+
+
+@subscribe("device.registered")
+@subscribe("browser.session.changed")
+@subscribe("webrtc.peer.state.changed")
+def on_browser_runtime_changed(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    event_type = str(getattr(evt, "type", "") or "browser.session.changed")
+    _schedule_snapshot_refresh(
+        webspace_id=_webspace_id_from_payload(payload),
+        reason=event_type,
     )
 
 
