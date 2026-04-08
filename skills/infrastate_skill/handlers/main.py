@@ -1425,11 +1425,47 @@ def _self_headers(conf) -> dict[str, str]:
     return headers
 
 
+def _self_supervisor_base_url(conf) -> str | None:
+    host = str(
+        getattr(conf, "supervisor_host", None)
+        or os.getenv("ADAOS_SUPERVISOR_HOST")
+        or "127.0.0.1"
+    ).strip() or "127.0.0.1"
+    port = str(
+        getattr(conf, "supervisor_port", None)
+        or os.getenv("ADAOS_SUPERVISOR_PORT")
+        or "8776"
+    ).strip()
+    if not port:
+        return None
+    return f"http://{host}:{port}"
+
+
 def _post_local_admin(conf, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    headers = _self_headers(conf)
+    payload_body = body or {}
+    supervisor_path = ""
+    if path.startswith("/api/admin/update/"):
+        supervisor_path = path.replace("/api/admin/update/", "/api/supervisor/update/")
+    if supervisor_path:
+        supervisor_base = _self_supervisor_base_url(conf)
+        if supervisor_base:
+            try:
+                response = requests.post(
+                    supervisor_base + supervisor_path,
+                    headers=headers,
+                    json=payload_body,
+                    timeout=10,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                return payload if isinstance(payload, dict) else {"ok": True, "response": payload}
+            except Exception:
+                pass
     response = requests.post(
         _self_base_url(conf) + path,
-        headers=_self_headers(conf),
-        json=body or {},
+        headers=headers,
+        json=payload_body,
         timeout=10,
     )
     response.raise_for_status()
