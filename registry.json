@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-08T07:28:57+00:00",
+  "updated_at": "2026-04-08T11:39:19+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -130,6 +130,25 @@
         "id": "infrascope"
       },
       "description": "Operator control-plane scenario for overview, inventory, and in-context object inspection."
+    },
+    {
+      "kind": "scenario",
+      "id": "prompt_engineer_scenario",
+      "name": "prompt_engineer_scenario",
+      "version": "0.3.0",
+      "updated_at": "2026-04-08T11:39:19+00:00",
+      "path": "scenarios/prompt_engineer_scenario",
+      "manifest": "scenarios/prompt_engineer_scenario/scenario.yaml",
+      "source": {
+        "path": "scenarios/prompt_engineer_scenario",
+        "manifest": "scenarios/prompt_engineer_scenario/scenario.yaml"
+      },
+      "install": {
+        "kind": "scenario",
+        "name": "prompt_engineer_scenario",
+        "id": "prompt_engineer_scenario"
+      },
+      "description": "Prompt engineering IDE workspace for dev skills and scenarios."
     }
   ]
 }
