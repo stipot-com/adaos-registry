@@ -1,5 +1,5 @@
 name: infrascope_skill
-version: 0.5.0
+version: 0.6.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -10,6 +10,7 @@ events:
   - infrascope.refresh
   - operations.
   - device.registered
+  - browser.session.changed
   - webrtc.peer.state.changed
   - skill.installed
   - skill.uninstalled
@@ -20,6 +21,9 @@ events:
   - skills.updated
   - skills.rolledback
   - skill.service.ready
+  - workspace.
+  - user.profile.changed
+  - capacity.changed
   - desktop.webspace.refresh
   - desktop.webspace.reload
   - desktop.webspace.reloaded
@@ -174,5 +178,5 @@ tools:
     type: object
 exports: {}
 prototype: default
-updated_at: '2026-04-08T07:28:57+00:00'
+updated_at: '2026-04-08T21:36:59+00:00'
 

@@ -12,6 +12,8 @@ import yaml
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet
+from adaos.services.core_update import read_last_result as read_core_update_last_result
+from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.operations.manager import get_operation_manager
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.system_model.mappers import coerce_mapping
@@ -241,6 +243,26 @@ def _sorted_object_rows(items: list[CanonicalObject]) -> list[dict[str, Any]]:
     return rows
 
 
+def _fallback_local_inventory_row(*, webspace_id: str | None = None) -> dict[str, Any]:
+    token = str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
+    return {
+        "id": "local",
+        "object_id": "local",
+        "object_title": "Local node",
+        "title": "Local node",
+        "subtitle": token,
+        "kind": "hub",
+        "status": CanonicalStatus.UNKNOWN.value,
+        "icon": _icon_for_kind("hub"),
+        "details": {
+            "id": "local",
+            "kind": "hub",
+            "title": "Local node",
+            "status": CanonicalStatus.UNKNOWN.value,
+        },
+    }
+
+
 def _operation_status_token(value: Any) -> str:
     token = str(value or "").strip().lower()
     if token in {"running", "waiting_input", "accepted", "queued"}:
@@ -283,6 +305,154 @@ def _active_operation_rows(*, webspace_id: str | None = None) -> list[dict[str, 
             }
         )
     return rows
+
+
+def _skill_runtime_migration_report() -> dict[str, Any]:
+    status = read_core_update_status()
+    last_result = read_core_update_last_result() or {}
+    for candidate in (status, last_result):
+        if not isinstance(candidate, dict):
+            continue
+        report = candidate.get("skill_runtime_migration")
+        if isinstance(report, dict) and report:
+            return dict(report)
+        manifest = candidate.get("manifest")
+        if not isinstance(manifest, dict):
+            continue
+        report = manifest.get("skill_runtime_migration")
+        if isinstance(report, dict) and report:
+            return dict(report)
+    return {}
+
+
+def _skill_runtime_rollback_report() -> dict[str, Any]:
+    status = read_core_update_status()
+    last_result = read_core_update_last_result() or {}
+    for candidate in (status, last_result):
+        if not isinstance(candidate, dict):
+            continue
+        report = candidate.get("skill_runtime_rollback")
+        if isinstance(report, dict) and report:
+            return dict(report)
+    return {}
+
+
+def _skill_post_commit_checks_report() -> dict[str, Any]:
+    status = read_core_update_status()
+    last_result = read_core_update_last_result() or {}
+    for candidate in (status, last_result):
+        if not isinstance(candidate, dict):
+            continue
+        report = candidate.get("skill_post_commit_checks")
+        if isinstance(report, dict) and report:
+            return dict(report)
+    return {}
+
+
+def _skill_migration_operation_rows() -> list[dict[str, Any]]:
+    report = _skill_runtime_migration_report()
+    if not report:
+        return []
+    total = int(report.get("total") or 0)
+    failed_total = int(report.get("failed_total") or 0)
+    rollback_total = int(report.get("rollback_total") or 0)
+    deactivated_total = int(report.get("deactivated_total") or 0)
+    if total <= 0:
+        return []
+    failed = []
+    for item in report.get("skills") or []:
+        if not isinstance(item, dict) or bool(item.get("ok")):
+            continue
+        failed.append(f"{str(item.get('skill') or 'skill')}:{str(item.get('failed_stage') or 'failed')}")
+    if failed_total <= 0 and rollback_total <= 0 and deactivated_total <= 0:
+        return []
+    subtitle_bits = [f"{total - failed_total}/{total} migrated"]
+    if failed:
+        subtitle_bits.append(", ".join(failed[:3]) + (f" (+{len(failed) - 3})" if len(failed) > 3 else ""))
+    if rollback_total:
+        subtitle_bits.append(f"rollback={rollback_total}")
+    if deactivated_total:
+        subtitle_bits.append(f"deactivated={deactivated_total}")
+    return [
+        {
+            "id": "core-update-skill-runtime-migration",
+            "title": "core.update.skill_runtime_migration",
+            "subtitle": " | ".join(subtitle_bits),
+            "status": CanonicalStatus.OFFLINE.value if failed_total else CanonicalStatus.WARNING.value,
+            "icon": "warning-outline",
+            "details": report,
+        }
+    ]
+
+
+def _skill_rollback_operation_rows() -> list[dict[str, Any]]:
+    report = _skill_runtime_rollback_report()
+    if not report:
+        return []
+    total = int(report.get("total") or 0)
+    failed_total = int(report.get("failed_total") or 0)
+    rollback_total = int(report.get("rollback_total") or 0)
+    skipped_total = int(report.get("skipped_total") or 0)
+    if total <= 0:
+        return []
+    failed = []
+    for item in report.get("skills") or []:
+        if not isinstance(item, dict) or bool(item.get("ok")):
+            continue
+        failed.append(str(item.get("skill") or "skill"))
+    if failed_total <= 0 and rollback_total <= 0:
+        return []
+    subtitle_bits = [f"{rollback_total}/{total} rolled back"]
+    if failed:
+        subtitle_bits.append(", ".join(failed[:3]) + (f" (+{len(failed) - 3})" if len(failed) > 3 else ""))
+    if skipped_total:
+        subtitle_bits.append(f"skipped={skipped_total}")
+    return [
+        {
+            "id": "core-update-skill-runtime-rollback",
+            "title": "core.update.skill_runtime_rollback",
+            "subtitle": " | ".join(subtitle_bits),
+            "status": CanonicalStatus.OFFLINE.value if failed_total else CanonicalStatus.WARNING.value,
+            "icon": "refresh-outline",
+            "details": report,
+        }
+    ]
+
+
+def _skill_post_commit_operation_rows() -> list[dict[str, Any]]:
+    report = _skill_post_commit_checks_report()
+    if not report:
+        return []
+    total = int(report.get("total") or 0)
+    failed_total = int(report.get("failed_total") or 0)
+    deactivated_total = int(report.get("deactivated_total") or 0)
+    error_text = str(report.get("error") or "").strip()
+    if total <= 0 and not error_text:
+        return []
+    failed = []
+    for item in report.get("skills") or []:
+        if not isinstance(item, dict) or bool(item.get("ok")):
+            continue
+        failed.append(f"{str(item.get('skill') or 'skill')}:{str(item.get('failed_stage') or 'failed')}")
+    subtitle_bits = []
+    if total > 0:
+        subtitle_bits.append(f"{total - failed_total}/{total} passed")
+    if failed:
+        subtitle_bits.append(", ".join(failed[:3]) + (f" (+{len(failed) - 3})" if len(failed) > 3 else ""))
+    if deactivated_total:
+        subtitle_bits.append(f"deactivated={deactivated_total}")
+    if error_text:
+        subtitle_bits.append(error_text)
+    return [
+        {
+            "id": "core-update-skill-post-commit-checks",
+            "title": "core.update.skill_post_commit_checks",
+            "subtitle": " | ".join(subtitle_bits),
+            "status": CanonicalStatus.OFFLINE.value if failed_total or error_text else CanonicalStatus.WARNING.value,
+            "icon": "shield-half-outline",
+            "details": report,
+        }
+    ]
 
 
 def _skill_manifest_path() -> Path | None:
@@ -409,6 +579,10 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
         kind: list_inventory(kind, webspace_id=webspace_id)
         for kind in _INVENTORY_KINDS
     }
+    if not any(inventory.get(kind) for kind in _INVENTORY_KINDS):
+        fallback_row = _fallback_local_inventory_row(webspace_id=webspace_id)
+        inventory["all"] = [dict(fallback_row)]
+        inventory["hubs"] = [dict(fallback_row)]
 
     inspectors: dict[str, dict[str, Any]] = {}
     local_inspector = get_object_inspector("local", task_goal=goal, webspace_id=webspace_id)
@@ -421,16 +595,22 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
         inspectors[object_id] = get_object_inspector(object_id, task_goal=goal, webspace_id=webspace_id)
 
     operations = _operations_snapshot(webspace_id=webspace_id)
+    operation_rows = (
+        _active_operation_rows(webspace_id=webspace_id)
+        + _skill_migration_operation_rows()
+        + _skill_rollback_operation_rows()
+        + _skill_post_commit_operation_rows()
+    )
     return {
         "summary": summary,
         "overview": {
             **overview,
-            "active_operations": _active_operation_rows(webspace_id=webspace_id),
+            "active_operations": operation_rows,
         },
         "inventory": inventory,
         "inspectors": inspectors,
         "operations": {
-            "items": _active_operation_rows(webspace_id=webspace_id),
+            "items": operation_rows,
             "active": list(operations.get("active") or []),
         },
         "meta": {
@@ -445,6 +625,9 @@ def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None, task_g
     error_text = f"{type(exc).__name__}: {exc}"
     goal = str(task_goal or _DEFAULT_TASK_GOAL).strip() or _DEFAULT_TASK_GOAL
     empty_inventory = {kind: [] for kind in _INVENTORY_KINDS}
+    fallback_row = _fallback_local_inventory_row(webspace_id=webspace_id)
+    empty_inventory["all"] = [dict(fallback_row)]
+    empty_inventory["hubs"] = [dict(fallback_row)]
     return {
         "summary": {
             "label": "Infrascope",
@@ -617,12 +800,20 @@ def list_overview_collection(section: str, webspace_id: str | None = None) -> li
 @tool("list_inventory")
 def list_inventory(kind: str = "all", webspace_id: str | None = None) -> list[dict[str, Any]]:
     requested = _inventory_kind_token(kind)
-    objects = [
-        item
-        for item in current_control_plane_objects(webspace_id=webspace_id)
-        if _matches_inventory_kind(item, requested)
-    ]
-    return _sorted_object_rows(objects)
+    try:
+        objects = [
+            item
+            for item in current_control_plane_objects(webspace_id=webspace_id)
+            if _matches_inventory_kind(item, requested)
+        ]
+    except Exception:
+        objects = []
+    rows = _sorted_object_rows(objects)
+    if rows:
+        return rows
+    if requested in {"all", "hubs"}:
+        return [_fallback_local_inventory_row(webspace_id=webspace_id)]
+    return []
 
 
 @tool("get_object_inspector")
@@ -696,6 +887,7 @@ def on_operations_changed(evt: Any) -> None:
 
 
 @subscribe("device.registered")
+@subscribe("browser.session.changed")
 @subscribe("webrtc.peer.state.changed")
 def on_browser_runtime_changed(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
@@ -715,6 +907,9 @@ def on_browser_runtime_changed(evt: Any) -> None:
 @subscribe("skills.updated")
 @subscribe("skills.rolledback")
 @subscribe("skill.service.ready")
+@subscribe("workspace.")
+@subscribe("user.profile.changed")
+@subscribe("capacity.changed")
 def on_registry_changed(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     event_type = str(getattr(evt, "type", "") or "skills.updated")
