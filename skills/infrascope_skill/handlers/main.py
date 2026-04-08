@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +79,25 @@ _background_refresh_pending_all = False
 _background_refresh_webspace_ids: set[str] = set()
 _background_refresh_reason = ""
 _last_projected_fingerprints: dict[str, str] = {}
+_last_refresh_at_mono = 0.0
+
+
+def _refresh_debounce_s() -> float:
+    try:
+        raw = str(os.getenv("INFRASCOPE_REFRESH_DEBOUNCE_S", "") or "").strip()
+        if raw:
+            value = float(raw)
+            return max(0.0, min(value, 10.0))
+    except Exception:
+        pass
+    return 0.25
+
+
+def _event_webspace_fallback() -> str:
+    # Many runtime events do not carry a webspace_id; refreshing "all webspaces"
+    # for each such event can become very expensive and cause CPU spikes.
+    raw = str(os.getenv("INFRASCOPE_EVENT_WEBSPACE", "") or "").strip()
+    return raw or default_webspace_id()
 
 
 def lang_res() -> dict[str, str]:
@@ -464,11 +485,9 @@ def _snapshot_or_fallback(*, webspace_id: str | None = None, task_goal: str | No
 def _set_refresh_pending(*, webspace_id: str | None = None, reason: str) -> None:
     global _background_refresh_pending_all
     global _background_refresh_reason
-    token = str(webspace_id or "").strip()
+    token = str(webspace_id or "").strip() or _event_webspace_fallback()
     if token:
         _background_refresh_webspace_ids.add(token)
-    else:
-        _background_refresh_pending_all = True
     _background_refresh_reason = str(reason or "runtime.event")
 
 
@@ -500,6 +519,7 @@ async def _background_refresh_worker() -> None:
     global _background_refresh_task
     global _background_refresh_pending_all
     global _background_refresh_reason
+    global _last_refresh_at_mono
     try:
         while True:
             pending_all = _background_refresh_pending_all
@@ -510,6 +530,13 @@ async def _background_refresh_worker() -> None:
             _background_refresh_reason = ""
             targets = _refresh_projection_targets() if pending_all or not pending_ids else _refresh_projection_targets(webspace_id=pending_ids[0]) if len(pending_ids) == 1 else pending_ids
             try:
+                debounce_s = _refresh_debounce_s()
+                if debounce_s > 0:
+                    now = time.monotonic()
+                    wait_s = debounce_s - (now - float(_last_refresh_at_mono or 0.0))
+                    if wait_s > 0:
+                        await asyncio.sleep(wait_s)
+                _last_refresh_at_mono = time.monotonic()
                 _refresh_snapshot_targets(targets)
             except Exception:
                 _log.warning("background infrascope refresh failed reason=%s", reason, exc_info=True)
@@ -526,12 +553,19 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
     global _background_refresh_task
     global _background_refresh_pending_all
     global _background_refresh_reason
+    global _last_refresh_at_mono
     _set_refresh_pending(webspace_id=webspace_id, reason=reason)
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         _log.debug("no running loop for infrascope refresh; running inline reason=%s", reason)
-        _refresh_snapshot_targets(_refresh_projection_targets(webspace_id=webspace_id))
+        debounce_s = _refresh_debounce_s()
+        if debounce_s > 0:
+            now = time.monotonic()
+            if now - float(_last_refresh_at_mono or 0.0) < debounce_s:
+                return
+            _last_refresh_at_mono = now
+        _refresh_snapshot_targets(_refresh_projection_targets(webspace_id=str(webspace_id or "").strip() or _event_webspace_fallback()))
         _background_refresh_pending_all = False
         _background_refresh_reason = ""
         _background_refresh_webspace_ids.clear()
@@ -649,7 +683,7 @@ def refresh_snapshot(webspace_id: str | None = None, task_goal: str | None = Non
 @subscribe("infrascope.refresh")
 def on_refresh(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
-    refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
+    refresh_snapshot(webspace_id=_webspace_id_from_payload(payload) or _event_webspace_fallback())
 
 
 @subscribe("operations.")
