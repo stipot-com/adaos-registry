@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import json
 import logging
 import os
@@ -81,6 +82,7 @@ _background_refresh_pending_all = False
 _background_refresh_webspace_ids: set[str] = set()
 _background_refresh_reason = ""
 _last_projected_fingerprints: dict[str, str] = {}
+_last_good_snapshots: dict[str, dict[str, Any]] = {}
 _last_refresh_at_mono = 0.0
 
 
@@ -538,6 +540,65 @@ def _project_snapshot(snapshot: dict[str, Any], *, webspace_id: str) -> bool:
     return True
 
 
+def _snapshot_cache_key(*, webspace_id: str | None = None) -> str:
+    return str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
+
+
+def _remember_good_snapshot(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> None:
+    _last_good_snapshots[_snapshot_cache_key(webspace_id=webspace_id)] = deepcopy(snapshot)
+
+
+def _record_snapshot_error(errors: list[str], section: str, exc: Exception) -> None:
+    errors.append(f"{section}: {type(exc).__name__}: {exc}")
+
+
+def _summary_warning_fallback(*, webspace_id: str | None = None, errors: list[str]) -> dict[str, Any]:
+    token = _snapshot_cache_key(webspace_id=webspace_id)
+    warning = errors[0] if errors else "snapshot section unavailable"
+    return {
+        "label": "Infrascope",
+        "value": CanonicalStatus.WARNING.value,
+        "subtitle": token,
+        "description": "Infrascope is showing the latest available control-plane data.",
+        "warning": warning,
+        "buttons": [
+            {
+                "id": "inspect_local",
+                "label": "Inspect Local node",
+                "object_id": "local",
+                "object_title": "Local node",
+            }
+        ],
+        "object_id": "local",
+        "object_title": "Local node",
+    }
+
+
+def _snapshot_from_cache(cache_key: str, *, task_goal: str | None, error_text: str) -> dict[str, Any] | None:
+    cached = _last_good_snapshots.get(cache_key)
+    if not isinstance(cached, dict):
+        return None
+    snapshot = deepcopy(cached)
+    meta = coerce_mapping(snapshot.get("meta"))
+    meta["task_goal"] = str(task_goal or meta.get("task_goal") or _DEFAULT_TASK_GOAL).strip() or _DEFAULT_TASK_GOAL
+    meta["webspace_id"] = str(meta.get("webspace_id") or cache_key).strip() or cache_key
+    meta["stale"] = True
+    meta["stale_reason"] = error_text
+    snapshot["meta"] = meta
+    summary = coerce_mapping(snapshot.get("summary"))
+    summary.setdefault("label", "Infrascope")
+    summary.setdefault("object_id", "local")
+    summary.setdefault("object_title", "Local node")
+    summary["warning"] = error_text
+    summary.setdefault("description", "Infrascope is showing the latest available control-plane data.")
+    snapshot["summary"] = summary
+    errors = list(snapshot.get("errors") or [])
+    if error_text not in errors:
+        errors.append(error_text)
+    snapshot["errors"] = errors
+    return snapshot
+
+
 def _object_ids(*, webspace_id: str | None = None) -> list[str]:
     ids: list[str] = []
     seen: set[str] = set()
@@ -568,31 +629,56 @@ def _fallback_inspector(object_id: str, *, warning: str) -> dict[str, Any]:
 
 
 def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -> dict[str, Any]:
-    summary = get_overview_summary(webspace_id=webspace_id)
+    errors: list[str] = []
+    try:
+        summary = get_overview_summary(webspace_id=webspace_id)
+    except Exception as exc:
+        _record_snapshot_error(errors, "summary", exc)
+        summary = _summary_warning_fallback(webspace_id=webspace_id, errors=errors)
     goal = str(task_goal or _DEFAULT_TASK_GOAL).strip() or _DEFAULT_TASK_GOAL
 
-    overview = {
-        section: list_overview_collection(section, webspace_id=webspace_id)
-        for section in _OVERVIEW_SECTIONS
-    }
-    inventory = {
-        kind: list_inventory(kind, webspace_id=webspace_id)
-        for kind in _INVENTORY_KINDS
-    }
+    overview: dict[str, list[dict[str, Any]]] = {}
+    for section in _OVERVIEW_SECTIONS:
+        try:
+            overview[section] = list_overview_collection(section, webspace_id=webspace_id)
+        except Exception as exc:
+            _record_snapshot_error(errors, f"overview:{section}", exc)
+            overview[section] = []
+
+    inventory: dict[str, list[dict[str, Any]]] = {}
+    for kind in _INVENTORY_KINDS:
+        try:
+            inventory[kind] = list_inventory(kind, webspace_id=webspace_id)
+        except Exception as exc:
+            _record_snapshot_error(errors, f"inventory:{kind}", exc)
+            inventory[kind] = []
     if not any(inventory.get(kind) for kind in _INVENTORY_KINDS):
         fallback_row = _fallback_local_inventory_row(webspace_id=webspace_id)
         inventory["all"] = [dict(fallback_row)]
         inventory["hubs"] = [dict(fallback_row)]
 
     inspectors: dict[str, dict[str, Any]] = {}
-    local_inspector = get_object_inspector("local", task_goal=goal, webspace_id=webspace_id)
+    try:
+        local_inspector = get_object_inspector("local", task_goal=goal, webspace_id=webspace_id)
+    except Exception as exc:
+        _record_snapshot_error(errors, "inspector:local", exc)
+        local_inspector = _fallback_inspector("local", warning=f"{type(exc).__name__}: {exc}")
     local_actual_id = str(local_inspector.get("object_id") or summary.get("object_id") or "local").strip() or "local"
     inspectors["local"] = dict(local_inspector)
     inspectors[local_actual_id] = dict(local_inspector)
-    for object_id in _object_ids(webspace_id=webspace_id):
+    try:
+        object_ids = _object_ids(webspace_id=webspace_id)
+    except Exception as exc:
+        _record_snapshot_error(errors, "object_ids", exc)
+        object_ids = []
+    for object_id in object_ids:
         if object_id in inspectors:
             continue
-        inspectors[object_id] = get_object_inspector(object_id, task_goal=goal, webspace_id=webspace_id)
+        try:
+            inspectors[object_id] = get_object_inspector(object_id, task_goal=goal, webspace_id=webspace_id)
+        except Exception as exc:
+            _record_snapshot_error(errors, f"inspector:{object_id}", exc)
+            inspectors[object_id] = _fallback_inspector(object_id, warning=f"{type(exc).__name__}: {exc}")
 
     operations = _operations_snapshot(webspace_id=webspace_id)
     operation_rows = (
@@ -619,6 +705,13 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
             "object_total": len(inspectors),
         },
     }
+    if errors:
+        snapshot["errors"] = errors
+        snapshot["summary"] = {
+            **coerce_mapping(snapshot.get("summary")),
+            "warning": errors[0],
+        }
+    return snapshot
 
 
 def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None, task_goal: str | None = None) -> dict[str, Any]:
@@ -658,10 +751,17 @@ def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None, task_g
 
 
 def _snapshot_or_fallback(*, webspace_id: str | None = None, task_goal: str | None = None) -> dict[str, Any]:
+    cache_key = _snapshot_cache_key(webspace_id=webspace_id)
     try:
-        return _snapshot(webspace_id=webspace_id, task_goal=task_goal)
+        snapshot = _snapshot(webspace_id=webspace_id, task_goal=task_goal)
+        _remember_good_snapshot(snapshot, webspace_id=webspace_id)
+        return snapshot
     except Exception as exc:
         _log.warning("infrascope snapshot failed; projecting fallback snapshot", exc_info=True)
+        error_text = f"{type(exc).__name__}: {exc}"
+        cached = _snapshot_from_cache(cache_key, task_goal=task_goal, error_text=error_text)
+        if cached is not None:
+            return cached
         return _fallback_snapshot(exc, webspace_id=webspace_id, task_goal=task_goal)
 
 
