@@ -3382,25 +3382,78 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
 def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     _ensure_skill_data_projections()
     conf = load_config()
-    status = read_core_update_status()
-    last_result = read_core_update_last_result() or {}
-    slots_payload = slot_status()
-    lifecycle = runtime_lifecycle_snapshot()
-    build = _build_meta()
-    slots_payload, build = _effective_runtime_projection(status, last_result, slots_payload, build)
-    ui_state = _ui_state()
-    reliability = _reliability_snapshot(conf, lifecycle)
-    node_tabs, selected_node = _node_tabs(conf, ui_state, reliability)
-    yjs_webspace_tabs = _yjs_webspace_tabs(conf, ui_state, reliability, selected_node)
-    node_editor = _selected_node_editor(conf, selected_node)
-    selected_projection = _selected_node_projection(
-        selected_node,
-        reliability=reliability,
-        status=status,
-        last_result=last_result,
-        slots_payload=slots_payload,
-        lifecycle=lifecycle,
-        build=build,
+    status = _safe_snapshot_step("read_core_update_status", read_core_update_status, {}) or {}
+    last_result = _safe_snapshot_step("read_core_update_last_result", read_core_update_last_result, {}) or {}
+    slots_payload = _safe_snapshot_step("slot_status", slot_status, {}) or {}
+    lifecycle = _safe_snapshot_step("runtime_lifecycle_snapshot", runtime_lifecycle_snapshot, {}) or {}
+    build = _safe_snapshot_step("build_meta", _build_meta, {}) or {}
+    slots_payload, build = _safe_snapshot_step(
+        "effective_runtime_projection",
+        lambda: _effective_runtime_projection(status, last_result, slots_payload, build),
+        (slots_payload, build),
+    )
+    ui_state = _safe_snapshot_step("ui_state", _ui_state, {}) or {}
+    reliability = _safe_snapshot_step(
+        "reliability_snapshot",
+        lambda: _reliability_snapshot(conf, lifecycle),
+        {"runtime": {}},
+    )
+    node_tabs, selected_node = _safe_snapshot_step(
+        "node_tabs",
+        lambda: _node_tabs(conf, ui_state, reliability),
+        (
+            [
+                {
+                    "id": str(getattr(conf, "node_id", "") or "local"),
+                    "label": "hub" if str(getattr(conf, "role", "") or "").strip().lower() == "hub" else "member",
+                    "title": "Local node",
+                    "role": str(getattr(conf, "role", "") or ""),
+                    "node_id": str(getattr(conf, "node_id", "") or ""),
+                    "node_names": list(getattr(conf, "node_names", []) or []),
+                    "kind": "local",
+                    "selected": True,
+                }
+            ],
+            {
+                "id": str(getattr(conf, "node_id", "") or "local"),
+                "label": "hub" if str(getattr(conf, "role", "") or "").strip().lower() == "hub" else "member",
+                "title": "Local node",
+                "role": str(getattr(conf, "role", "") or ""),
+                "node_id": str(getattr(conf, "node_id", "") or ""),
+                "node_names": list(getattr(conf, "node_names", []) or []),
+                "kind": "local",
+            },
+        ),
+    )
+    yjs_webspace_tabs = _safe_snapshot_step(
+        "yjs_webspace_tabs",
+        lambda: _yjs_webspace_tabs(conf, ui_state, reliability, selected_node),
+        [],
+    )
+    node_editor = _safe_snapshot_step(
+        "selected_node_editor",
+        lambda: _selected_node_editor(conf, selected_node),
+        {"names_csv": "", "editable": False, "scope": "fallback"},
+    )
+    selected_projection = _safe_snapshot_step(
+        "selected_node_projection",
+        lambda: _selected_node_projection(
+            selected_node,
+            reliability=reliability,
+            status=status,
+            last_result=last_result,
+            slots_payload=slots_payload,
+            lifecycle=lifecycle,
+            build=build,
+        ),
+        {
+            "status": status,
+            "last_result": last_result,
+            "slots_payload": slots_payload,
+            "lifecycle": lifecycle,
+            "build": build,
+            "selected_member": {},
+        },
     )
     display_status = selected_projection["status"] if isinstance(selected_projection.get("status"), dict) else status
     display_last_result = selected_projection["last_result"] if isinstance(selected_projection.get("last_result"), dict) else last_result
@@ -3408,10 +3461,18 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     display_lifecycle = selected_projection["lifecycle"] if isinstance(selected_projection.get("lifecycle"), dict) else lifecycle
     display_build = selected_projection["build"] if isinstance(selected_projection.get("build"), dict) else build
     selected_member = selected_projection["selected_member"] if isinstance(selected_projection.get("selected_member"), dict) else {}
-    transport_diag = _transport_diag_snapshot()
-    report = _read_json(_base_dir() / "state" / "core_update" / "status.json") or {}
+    transport_diag = _safe_snapshot_step("transport_diag_snapshot", _transport_diag_snapshot, {}) or {}
+    report = _safe_snapshot_step(
+        "core_update_report",
+        lambda: _read_json(_base_dir() / "state" / "core_update" / "status.json") or {},
+        {},
+    )
     effective_report = _effective_update_log_report(report, display_last_result)
-    operations = _operations_snapshot(webspace_id=webspace_id)
+    operations = _safe_snapshot_step(
+        "operations_snapshot",
+        lambda: _operations_snapshot(webspace_id=webspace_id),
+        {"active_items": [], "active": []},
+    )
     try:
         build_items = _build_items(display_build)
     except Exception:
@@ -3441,11 +3502,21 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     except Exception:
         marketplace = {"skills": [], "scenarios": []}
     snapshot = {
-        "summary": _summary(display_status, display_last_result, display_slots_payload, display_lifecycle, conf, display_build, ui_state, reliability, transport_diag, selected_member=selected_member),
-        "actions": _action_items(display_status, ui_state, reliability),
-        "core_actions": _core_action_items(display_status, ui_state, reliability),
-        "yjs_actions": _yjs_action_items(display_status, ui_state, reliability),
-        "update_actions": _update_actions(conf, ui_state, reliability),
+        "summary": _safe_snapshot_step(
+            "summary",
+            lambda: _summary(display_status, display_last_result, display_slots_payload, display_lifecycle, conf, display_build, ui_state, reliability, transport_diag, selected_member=selected_member),
+            {
+                "label": "Infra State",
+                "value": str(display_status.get("state") or display_lifecycle.get("node_state") or "ready"),
+                "subtitle": f"webspace {str(webspace_id or default_webspace_id()).strip() or default_webspace_id()}",
+                "description": "Local snapshot is available with degraded metadata.",
+                "updated_at": time.time(),
+            },
+        ),
+        "actions": _safe_snapshot_step("action_items", lambda: _action_items(display_status, ui_state, reliability), []),
+        "core_actions": _safe_snapshot_step("core_action_items", lambda: _core_action_items(display_status, ui_state, reliability), []),
+        "yjs_actions": _safe_snapshot_step("yjs_action_items", lambda: _yjs_action_items(display_status, ui_state, reliability), []),
+        "update_actions": _safe_snapshot_step("update_actions", lambda: _update_actions(conf, ui_state, reliability), []),
         "nodes": node_tabs,
         "yjs_webspaces": yjs_webspace_tabs,
         "node_editor": node_editor,
@@ -3460,8 +3531,8 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
             "active": operations.get("active") or [],
         },
         "marketplace": marketplace,
-        "logs": _status_log_items(effective_report),
-        "events": list(reversed(_event_state())),
+        "logs": _safe_snapshot_step("status_log_items", lambda: _status_log_items(effective_report), []),
+        "events": _safe_snapshot_step("event_state", lambda: list(reversed(_event_state())), []),
         "status": display_status,
         "last_result": display_last_result,
         "skill_runtime_migration": _skill_runtime_migration_report(display_status, display_last_result),
@@ -3552,6 +3623,14 @@ def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None) -> dic
         "fallback": True,
         "errors": [error_text],
     }
+
+
+def _safe_snapshot_step(label: str, fn, default: Any) -> Any:
+    try:
+        return fn()
+    except Exception:
+        _log.debug("infrastate snapshot step failed step=%s", label, exc_info=True)
+        return default
 
 
 def _snapshot_or_fallback(*, webspace_id: str | None = None) -> dict[str, Any]:
