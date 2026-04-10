@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-10T05:49:14+00:00",
+  "updated_at": "2026-04-10T05:51:57+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -171,6 +171,25 @@
         "id": "prompt_engineer_scenario"
       },
       "description": "Prompt engineering IDE workspace for dev skills and scenarios."
+    },
+    {
+      "kind": "scenario",
+      "id": "web_desktop",
+      "name": "web_desktop",
+      "version": "0.3.0",
+      "updated_at": "2026-04-10T05:51:57+00:00",
+      "path": "scenarios/web_desktop",
+      "manifest": "scenarios/web_desktop/scenario.yaml",
+      "source": {
+        "path": "scenarios/web_desktop",
+        "manifest": "scenarios/web_desktop/scenario.yaml"
+      },
+      "install": {
+        "kind": "scenario",
+        "name": "web_desktop",
+        "id": "web_desktop"
+      },
+      "description": "Desktop shell scenario that defines the main UI layout, registry and base catalog."
     }
   ]
 }
