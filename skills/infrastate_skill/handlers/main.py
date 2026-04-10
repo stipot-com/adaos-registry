@@ -720,6 +720,219 @@ def _log_item(log_id: str, title: str, content: Any, *, status: str = "idle", pr
     }
 
 
+def _diagnostic_item(
+    item_id: str,
+    title: str,
+    content: Any,
+    *,
+    status: str = "idle",
+    subtitle: str = "",
+    copy_text: str | None = None,
+    preview_limit: int = 400,
+) -> dict[str, Any]:
+    text = _safe_json_text(content).strip()
+    rendered_copy = str(copy_text if copy_text is not None else text).strip()
+    return {
+        "id": item_id,
+        "title": title,
+        "status": status,
+        "subtitle": subtitle,
+        "preview": text[-preview_limit:].strip(),
+        "content": text[-12000:].strip(),
+        "copy_text": rendered_copy,
+    }
+
+
+def _read_text_command(cmd: list[str], *, timeout_sec: float = 8.0) -> str:
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_sec,
+            check=False,
+        )
+    except Exception:
+        return ""
+    output = str(completed.stdout or "").strip()
+    if output:
+        return output
+    stderr = str(completed.stderr or "").strip()
+    return stderr
+
+
+def _slot_tree_text(slot_dir: Path, *, max_depth: int = 2) -> str:
+    try:
+        root = slot_dir.expanduser().resolve()
+    except Exception:
+        root = slot_dir
+    if not root.exists():
+        return ""
+    lines: list[str] = []
+    for path in sorted(root.rglob("*")):
+        try:
+            rel = path.relative_to(root)
+        except Exception:
+            continue
+        depth = len(rel.parts)
+        if depth > max_depth:
+            continue
+        rendered = rel.as_posix()
+        if path.is_dir():
+            lines.append(rendered)
+        else:
+            lines.append(rendered)
+    return "\n".join(lines).strip()
+
+
+def _target_slot_id(status: dict[str, Any], last_result: dict[str, Any], slots_payload: dict[str, Any]) -> str:
+    for candidate in (
+        last_result.get("target_slot") if isinstance(last_result, dict) else "",
+        (last_result.get("plan") or {}).get("target_slot") if isinstance(last_result.get("plan"), dict) else "",
+        status.get("target_slot") if isinstance(status, dict) else "",
+        (status.get("plan") or {}).get("target_slot") if isinstance(status.get("plan"), dict) else "",
+        slots_payload.get("inactive_slot") if isinstance(slots_payload, dict) else "",
+    ):
+        token = str(candidate or "").strip()
+        if token:
+            return token
+    return ""
+
+
+def _core_update_required_commands(last_result: dict[str, Any], slots_payload: dict[str, Any]) -> str:
+    target_slot = _target_slot_id({}, last_result, slots_payload) or "B"
+    slot_dir = _base_dir() / "state" / "core_slots" / "slots" / target_slot
+    return "\n".join(
+        [
+            f"cat {_base_dir() / 'state' / 'core_update' / 'last_result.json'}",
+            f"find {slot_dir} -maxdepth 2 -printf '%P\\n' | sort",
+            "journalctl -u adaos.service -n 120 --no-pager",
+            f"cat {_base_dir() / 'state' / 'supervisor' / 'runtime.json'}",
+        ]
+    ).strip()
+
+
+def _core_update_diagnostic_items(
+    status: dict[str, Any],
+    last_result: dict[str, Any],
+    slots_payload: dict[str, Any],
+    *,
+    local_node: bool = True,
+) -> list[dict[str, Any]]:
+    target_slot = _target_slot_id(status, last_result, slots_payload)
+    items: list[dict[str, Any]] = []
+    commands_text = _core_update_required_commands(last_result, slots_payload)
+    items.append(
+        _diagnostic_item(
+            "core-update-diagnostic-commands",
+            "Required commands",
+            commands_text,
+            status="idle",
+            subtitle="Exact commands we usually ask to collect during core-update debugging",
+        )
+    )
+    if isinstance(last_result, dict) and last_result:
+        items.append(
+            _diagnostic_item(
+                "core-update-last-result",
+                "last_result.json",
+                last_result,
+                status="warn" if str(last_result.get("state") or "").strip().lower() == "failed" else "idle",
+                subtitle=str(_base_dir() / "state" / "core_update" / "last_result.json"),
+            )
+        )
+    if isinstance(status, dict) and status:
+        items.append(
+            _diagnostic_item(
+                "core-update-status",
+                "status.json",
+                status,
+                status="idle",
+                subtitle=str(_base_dir() / "state" / "core_update" / "status.json"),
+            )
+        )
+    if not local_node:
+        return items
+
+    runtime_path = _base_dir() / "state" / "supervisor" / "runtime.json"
+    runtime_payload = _read_json(runtime_path)
+    if runtime_payload:
+        items.append(
+            _diagnostic_item(
+                "supervisor-runtime",
+                "supervisor/runtime.json",
+                runtime_payload,
+                status="idle",
+                subtitle=str(runtime_path),
+            )
+        )
+
+    if target_slot:
+        slot_dir = _base_dir() / "state" / "core_slots" / "slots" / target_slot
+        slot_tree = _slot_tree_text(slot_dir, max_depth=2)
+        if slot_tree:
+            items.append(
+                _diagnostic_item(
+                    "target-slot-tree",
+                    f"slot {target_slot} tree",
+                    slot_tree,
+                    status="idle",
+                    subtitle=str(slot_dir),
+                )
+            )
+
+    journal_text = _read_text_command(["journalctl", "-u", "adaos.service", "-n", "120", "--no-pager"])
+    if journal_text:
+        items.append(
+            _diagnostic_item(
+                "adaos-service-journal",
+                "journalctl -u adaos.service -n 120",
+                journal_text,
+                status="idle",
+                subtitle="Recent systemd service log tail",
+            )
+        )
+    return items
+
+
+def _core_update_diagnostic_actions(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not items:
+        return []
+    bundle_parts: list[str] = []
+    for item in items:
+        title = str(item.get("title") or item.get("id") or "diagnostic").strip()
+        payload = str(item.get("copy_text") or item.get("content") or "").strip()
+        if not payload:
+            continue
+        bundle_parts.append(f"## {title}\n{payload}")
+    bundle_text = "\n\n".join(bundle_parts).strip()
+    actions: list[dict[str, Any]] = []
+    if bundle_text:
+        actions.append(
+            {
+                "id": "copy_core_update_diag_bundle",
+                "label": "Copy all diagnostics",
+                "title": "Copy all diagnostics",
+                "text": bundle_text,
+            }
+        )
+    commands_item = next((item for item in items if str(item.get("id") or "") == "core-update-diagnostic-commands"), None)
+    if isinstance(commands_item, dict):
+        commands_text = str(commands_item.get("copy_text") or "").strip()
+        if commands_text:
+            actions.append(
+                {
+                    "id": "copy_core_update_diag_commands",
+                    "label": "Copy commands",
+                    "title": "Copy commands",
+                    "text": commands_text,
+                }
+            )
+    return actions
+
+
 def _ui_level_from_channel_status(status: str, *, stability_state: str = "") -> str:
     if status == "ready":
         if stability_state in {"flapping", "unstable"}:
@@ -3501,6 +3714,22 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
         marketplace = _marketplace_items(webspace_id=webspace_id)
     except Exception:
         marketplace = {"skills": [], "scenarios": []}
+    selected_is_local = not selected_member or str(selected_member.get("kind") or "local").strip().lower() == "local"
+    core_update_diagnostics = _safe_snapshot_step(
+        "core_update_diagnostics",
+        lambda: _core_update_diagnostic_items(
+            display_status,
+            display_last_result,
+            display_slots_payload,
+            local_node=selected_is_local,
+        ),
+        [],
+    )
+    core_update_diag_actions = _safe_snapshot_step(
+        "core_update_diag_actions",
+        lambda: _core_update_diagnostic_actions(core_update_diagnostics),
+        [],
+    )
     snapshot = {
         "summary": _safe_snapshot_step(
             "summary",
@@ -3531,6 +3760,8 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
             "active": operations.get("active") or [],
         },
         "marketplace": marketplace,
+        "core_update_diagnostics": core_update_diagnostics,
+        "core_update_diag_actions": core_update_diag_actions,
         "logs": _safe_snapshot_step("status_log_items", lambda: _status_log_items(effective_report), []),
         "events": _safe_snapshot_step("event_state", lambda: list(reversed(_event_state())), []),
         "status": display_status,

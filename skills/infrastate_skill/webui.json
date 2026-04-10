@@ -257,6 +257,62 @@
       ]
     },
     {
+      "id": "infrastate-core-update-diag-actions",
+      "type": "ui.actions",
+      "area": "main",
+      "title": "",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/infrastate/core_update_diag_actions"
+      },
+      "inputs": {
+        "size": "small"
+      },
+      "actions": [
+        {
+          "on": "click",
+          "type": "copyToClipboard",
+          "params": {
+            "text": "$event.text",
+            "successMessage": "Diagnostics copied.",
+            "errorMessage": "Copy failed."
+          }
+        }
+      ]
+    },
+    {
+      "id": "infrastate-core-update-diagnostics",
+      "type": "ui.list",
+      "area": "main",
+      "title": "Core update diagnostics",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/infrastate/core_update_diagnostics"
+      },
+      "inputs": {
+        "titleKey": "title",
+        "subtitleKey": "subtitle",
+        "detailsPath": "content",
+        "showDetails": true,
+        "itemAccordion": true,
+        "emptyText": "No core update diagnostics yet",
+        "buttons": [
+          { "id": "copy", "label": "Copy" }
+        ]
+      },
+      "actions": [
+        {
+          "on": "click:copy",
+          "type": "copyToClipboard",
+          "params": {
+            "text": "$event.copy_text",
+            "successMessage": "Diagnostic copied.",
+            "errorMessage": "Copy failed."
+          }
+        }
+      ]
+    },
+    {
       "id": "infrastate-operations",
       "type": "ui.list",
       "area": "main",
@@ -597,6 +653,8 @@
 			"steps": [],
 			"realtime": [],
 			"slots": [],
+      "core_update_diagnostics": [],
+      "core_update_diag_actions": [],
 			"skills": [],
 			"scenarios": [],
 			"operations": { "items": [], "active": [] },
