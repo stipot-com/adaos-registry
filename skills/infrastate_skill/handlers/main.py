@@ -1980,9 +1980,11 @@ def _step_items(status: dict[str, Any], slots_payload: dict[str, Any], lifecycle
     active = str(slots_payload.get("active_slot") or "--")
     previous = str(slots_payload.get("previous_slot") or "--")
     node_state = str(lifecycle.get("node_state") or "ready")
+    supervisor_note = _supervisor_transition_note(status)
     return [
         {"id": "lifecycle", "title": "Lifecycle", "status": node_state, "description": str(lifecycle.get("reason") or "ready")},
         {"id": "update_state", "title": "Update state", "status": state, "description": phase or state},
+        {"id": "supervisor_transition", "title": "Supervisor transition", "status": supervisor_note.get("status"), "description": supervisor_note.get("description")},
         {"id": "active_slot", "title": "Active slot", "status": "ok", "description": active},
         {"id": "previous_slot", "title": "Previous slot", "status": "idle", "description": previous},
         {"id": "build", "title": "Build", "status": "ok", "description": str(build.get("version") or "unknown")},
@@ -2003,6 +2005,37 @@ def _countdown_remaining_sec(status: dict[str, Any]) -> int:
     if scheduled_for <= 0:
         return 0
     return max(0, int(round(scheduled_for - time.time())))
+
+
+def _supervisor_transition_note(status: dict[str, Any]) -> dict[str, str]:
+    state = str(status.get("state") or "idle").strip().lower()
+    phase = str(status.get("phase") or "").strip().lower()
+    message = str(status.get("message") or "").strip()
+    restored_slot = str(status.get("restored_slot") or "").strip()
+    if state == "validated" and phase == "root_promotion_pending":
+        return {
+            "status": "warn",
+            "description": message or "validated slot is running; root promotion is still pending",
+        }
+    if state == "succeeded" and phase == "root_promoted":
+        return {
+            "status": "warn",
+            "description": message or "root bootstrap files were promoted; restart adaos.service to activate",
+        }
+    if state == "failed":
+        description = message or "update failed"
+        if restored_slot:
+            description += f" | restored slot {restored_slot}"
+        return {"status": "warn", "description": description}
+    if state in {"countdown", "draining", "stopping", "restarting", "applying"}:
+        return {
+            "status": "ok" if state == "countdown" else "warn",
+            "description": message or phase or state,
+        }
+    return {
+        "status": "idle",
+        "description": message or phase or state or "idle",
+    }
 
 
 def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2621,6 +2654,10 @@ def _summary(
             message += f" | validation: {validation_summary}"
         if restored_slot:
             message += f" | restored slot {restored_slot}"
+    supervisor_note = _supervisor_transition_note(status)
+    supervisor_desc = str(supervisor_note.get("description") or "").strip()
+    if supervisor_desc and supervisor_desc not in message:
+        message += f" | {supervisor_desc}"
     last_action = str(ui_state.get("last_action") or "").strip()
     last_action_at = float(ui_state.get("last_action_ts") or 0.0)
     if last_action:
