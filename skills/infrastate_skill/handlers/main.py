@@ -2012,36 +2012,55 @@ def _supervisor_transition_note(status: dict[str, Any]) -> dict[str, str]:
     phase = str(status.get("phase") or "").strip().lower()
     message = str(status.get("message") or "").strip()
     restored_slot = str(status.get("restored_slot") or "").strip()
+    subsequent = bool(status.get("subsequent_transition"))
+    scheduled_for = _countdown_remaining_sec(status)
+    suffix = ""
+    if subsequent:
+        suffix = " | subsequent transition queued"
+    if state == "planned":
+        planned_reason = str(status.get("planned_reason") or "").strip().lower()
+        description = message or "core update is scheduled"
+        if scheduled_for > 0:
+            description += f" | defer {scheduled_for}s"
+        if planned_reason == "minimum_update_period":
+            description += " | minimum update interval"
+        return {
+            "status": "warn",
+            "description": description + suffix,
+        }
     if state == "validated" and phase == "root_promotion_pending":
         return {
             "status": "warn",
-            "description": message or "validated slot is running; root promotion is still pending",
+            "description": (message or "validated slot is running; root promotion is still pending") + suffix,
         }
     if state == "succeeded" and phase == "root_promoted":
         return {
             "status": "warn",
-            "description": message or "root bootstrap files were promoted; restart adaos.service to activate",
+            "description": (message or "root bootstrap files were promoted; restart adaos.service to activate") + suffix,
         }
     if state == "failed":
         description = message or "update failed"
         if restored_slot:
             description += f" | restored slot {restored_slot}"
-        return {"status": "warn", "description": description}
+        return {"status": "warn", "description": description + suffix}
     if state in {"countdown", "draining", "stopping", "restarting", "applying"}:
+        description = message or phase or state
+        if state == "countdown" and scheduled_for > 0:
+            description += f" | remaining={scheduled_for}s"
         return {
             "status": "ok" if state == "countdown" else "warn",
-            "description": message or phase or state,
+            "description": description + suffix,
         }
     return {
         "status": "idle",
-        "description": message or phase or state or "idle",
+        "description": (message or phase or state or "idle") + suffix,
     }
 
 
 def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
     state = str(status.get("state") or "")
     remaining_sec = _countdown_remaining_sec(status)
-    if state not in {"countdown", "draining", "stopping"}:
+    if state not in {"planned", "countdown", "draining", "stopping"}:
         return []
     if remaining_sec <= 0 and state == "countdown":
         return []
@@ -2049,6 +2068,9 @@ def _summary_buttons(status: dict[str, Any]) -> list[dict[str, Any]]:
     if remaining_sec > 0:
         label = f"{label} ({remaining_sec}s)"
     buttons = [{"id": "cancel_update", "label": label, "title": label, "kind": "danger"}]
+    if state in {"planned", "countdown"}:
+        buttons.insert(0, {"id": "defer_update_15m", "label": "Delay 15m", "title": "Delay 15m", "kind": "secondary"})
+        buttons.insert(0, {"id": "defer_update_5m", "label": "Delay 5m", "title": "Delay 5m", "kind": "secondary"})
     reason = str(status.get("reason") or "").strip().lower()
     if reason.startswith("github.push:") or reason.startswith("root.release:"):
         buttons.insert(0, {"id": "refuse_update", "label": "Refuse update", "title": "Refuse update", "kind": "danger"})
@@ -2978,9 +3000,23 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
         {
             "id": "cancel_update",
             "title": "Cancel update",
-            "status": "warn" if state in {"countdown", "draining", "stopping"} else "idle",
+            "status": "warn" if state in {"planned", "countdown", "draining", "stopping"} else "idle",
             "description": "Cancel current countdown/update task",
             "subtitle": last_action if last_action == "cancel_update" else "",
+        },
+        {
+            "id": "defer_update_5m",
+            "title": "Delay 5m",
+            "status": "ok" if state in {"planned", "countdown"} else "idle",
+            "description": "Defer current scheduled update by five minutes",
+            "subtitle": last_action if last_action == "defer_update_5m" else "",
+        },
+        {
+            "id": "defer_update_15m",
+            "title": "Delay 15m",
+            "status": "ok" if state in {"planned", "countdown"} else "idle",
+            "description": "Defer current scheduled update by fifteen minutes",
+            "subtitle": last_action if last_action == "defer_update_15m" else "",
         },
         {
             "id": "rollback",
@@ -3565,6 +3601,13 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
         )
     elif action_id in {"cancel_update", "refuse_update"}:
         result = _post_local_admin(conf, "/api/admin/update/cancel", {"reason": "infrastate.cancel"})
+    elif action_id in {"defer_update_5m", "defer_update_15m"}:
+        delay_sec = 300 if action_id == "defer_update_5m" else 900
+        result = _post_local_admin(
+            conf,
+            "/api/admin/update/defer",
+            {"reason": f"infrastate.{action_id}", "delay_sec": delay_sec},
+        )
     elif action_id == "rollback":
         result = _post_local_admin(conf, "/api/admin/update/rollback", {"reason": "infrastate.rollback"})
     elif action_id == "drain":
