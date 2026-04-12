@@ -110,6 +110,20 @@
               }
             },
             {
+              "id": "adaos-connect-expires-at",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Valid until",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "expires_at_display",
+                "languageField": "expires_at_language"
+              }
+            },
+            {
               "id": "adaos-connect-qr",
               "type": "visual.qrCode",
               "area": "main",
@@ -244,6 +258,11 @@
         "mode": "browser",
         "summary": "Select Join browser, Join telegram, or Join node to generate connection data. Generation may take a few seconds and the panel will update automatically.",
         "summary_language": "text",
+        "expires_at": "",
+        "expires_at_display": "",
+        "expires_at_language": "text",
+        "expires_at_epoch": 0,
+        "expires_in_seconds": 0,
         "qr_text": "",
         "link": "",
         "link_language": "text",

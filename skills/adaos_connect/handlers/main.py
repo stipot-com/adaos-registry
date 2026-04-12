@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import logging
 import os
 import shlex
+import time
 from itertools import count
 from typing import Any, Dict
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -21,9 +23,13 @@ _log = logging.getLogger("skills.adaos_connect")
 
 _APP_BASE_DEFAULT = "https://myinimatic.web.app"
 _DEFAULT_ROOT_BASES = {"https://api.inimatic.com", "http://api.inimatic.com"}
+_BROWSER_PAIR_TTL_S = 600
+_TELEGRAM_PAIR_TTL_S = 600
+_NODE_JOIN_CODE_TTL_S = 15 * 60
 _prepare_request_counter = count(1)
 _prepare_latest_request: dict[str, str] = {}
 _prepare_tasks: dict[str, asyncio.Task[None]] = {}
+_prepare_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
 
 def _payload(evt: Any) -> Dict[str, Any]:
@@ -129,6 +135,109 @@ def _resolve_context() -> Dict[str, Any]:
     }
 
 
+def _parse_expiry_epoch(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        stamp = float(value)
+        return stamp if stamp > 0 else None
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        stamp = float(text)
+    except ValueError:
+        normalized = text.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).timestamp()
+    return stamp if stamp > 0 else None
+
+
+def _format_expiry_iso(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _format_expiry_display(epoch: float) -> str:
+    return f"{datetime.fromtimestamp(epoch, tz=timezone.utc):%Y-%m-%d %H:%M:%S} UTC"
+
+
+def _apply_expiry_fields(
+    current: Dict[str, Any],
+    *,
+    expires_at: Any = None,
+    fallback_ttl_seconds: int | None = None,
+) -> Dict[str, Any]:
+    epoch = _parse_expiry_epoch(expires_at)
+    if epoch is None and fallback_ttl_seconds:
+        epoch = time.time() + max(1, int(fallback_ttl_seconds))
+    if epoch is None:
+        current["expires_at"] = ""
+        current["expires_at_display"] = ""
+        current["expires_at_epoch"] = 0
+        current["expires_in_seconds"] = 0
+        return current
+    current["expires_at"] = _format_expiry_iso(epoch)
+    current["expires_at_display"] = _format_expiry_display(epoch)
+    current["expires_at_epoch"] = int(epoch)
+    current["expires_in_seconds"] = max(0, int(epoch - time.time()))
+    return current
+
+
+def _context_signature(context: Dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(context.get("hub_id") or ""),
+        str(context.get("zone_id") or ""),
+        str(context.get("root_base_url") or ""),
+        str(context.get("app_base_url") or ""),
+    )
+
+
+def _cache_key(webspace_id: str, mode: str) -> tuple[str, str]:
+    return (str(webspace_id or "").strip() or default_webspace_id(), str(mode or "browser").strip().lower() or "browser")
+
+
+def _cache_current(webspace_id: str, mode: str, context: Dict[str, Any], current: Dict[str, Any]) -> None:
+    expires_at_epoch = _parse_expiry_epoch(current.get("expires_at_epoch") or current.get("expires_at"))
+    key = _cache_key(webspace_id, mode)
+    if expires_at_epoch is None or expires_at_epoch <= time.time():
+        _prepare_cache.pop(key, None)
+        return
+    _prepare_cache[key] = {
+        "context_signature": _context_signature(context),
+        "expires_at_epoch": expires_at_epoch,
+        "current": dict(current),
+    }
+
+
+def _cached_current(webspace_id: str, mode: str, context: Dict[str, Any], *, request_id: str) -> Dict[str, Any] | None:
+    key = _cache_key(webspace_id, mode)
+    entry = _prepare_cache.get(key)
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("context_signature") != _context_signature(context):
+        _prepare_cache.pop(key, None)
+        return None
+    expires_at_epoch = _parse_expiry_epoch(entry.get("expires_at_epoch"))
+    if expires_at_epoch is None or expires_at_epoch <= time.time():
+        _prepare_cache.pop(key, None)
+        return None
+    current = _base_current(mode)
+    cached_payload = entry.get("current")
+    if isinstance(cached_payload, dict):
+        current.update(cached_payload)
+    cached_zone_id = str(current.get("zone_id") or "").strip()
+    _apply_expiry_fields(current, expires_at=expires_at_epoch)
+    current = _decorate_current(current, context, request_id=request_id, status="ready", busy=False)
+    if cached_zone_id:
+        current["zone_id"] = cached_zone_id
+    return current
+
+
 def _root_client(context: Dict[str, Any], *, use_cert: bool) -> RootHttpClient:
     cert_tuple = context.get("cert_tuple") if use_cert else None
     return RootHttpClient(
@@ -166,6 +275,10 @@ def _powershell_quote(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _cmd_quote(value: str) -> str:
+    return '"' + str(value).replace('"', '""') + '"'
+
+
 def _windows_ps_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
     parts = [
         f"iwr -UseBasicParsing {_powershell_quote(f'{asset_base_url}/assets/windows/init.ps1')} -OutFile init.ps1;",
@@ -179,15 +292,23 @@ def _windows_ps_bootstrap_command(*, asset_base_url: str, code: str, root_base_u
 
 
 def _windows_cmd_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
+    ps_download = (
+        "$ProgressPreference='SilentlyContinue'; "
+        f"Invoke-WebRequest -UseBasicParsing {_powershell_quote(f'{asset_base_url}/assets/windows/init.ps1')} "
+        "-OutFile '.\\init.ps1'"
+    )
     parts = [
-        f'curl -fsSL -o init.bat "{asset_base_url}/assets/windows/init.bat"',
+        "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command",
+        _cmd_quote(ps_download),
         "&&",
-        f'init.bat -JoinCode "{code}"',
+        "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\\init.ps1",
+        "-JoinCode",
+        _cmd_quote(code),
     ]
     if root_base_url:
-        parts.append(f'-RootUrl "{root_base_url}"')
+        parts.extend(["-RootUrl", _cmd_quote(root_base_url)])
     if zone_id:
-        parts.append(f'-ZoneId "{zone_id}"')
+        parts.extend(["-ZoneId", _cmd_quote(zone_id)])
     return " ".join(parts)
 
 
@@ -217,6 +338,11 @@ def _base_current(mode: str) -> Dict[str, Any]:
         "app_base_url": "",
         "summary": "Preparing connection data...",
         "summary_language": "text",
+        "expires_at": "",
+        "expires_at_display": "",
+        "expires_at_language": "text",
+        "expires_at_epoch": 0,
+        "expires_in_seconds": 0,
         "qr_text": "",
         "link": "",
         "link_language": "text",
@@ -263,7 +389,7 @@ def _pending_current(mode: str, context: Dict[str, Any], *, request_id: str) -> 
 
 
 def _browser_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {"ttl": 600}
+    payload: Dict[str, Any] = {"ttl": _BROWSER_PAIR_TTL_S}
     if context.get("zone_id"):
         payload["zone_id"] = context["zone_id"]
     data = _root_client(context, use_cert=False).request("POST", "/v1/browser/pair/create", json=payload)
@@ -274,13 +400,16 @@ def _browser_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, A
     effective_zone_id = canonical_zone_id((data or {}).get("zone_id")) or str(context.get("zone_id") or "").strip() or None
     if effective_zone_id:
         current["zone_id"] = effective_zone_id
+    _apply_expiry_fields(current, expires_at=(data or {}).get("expires_at"), fallback_ttl_seconds=_BROWSER_PAIR_TTL_S)
     link = _browser_link(
         app_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
         code=code,
         zone_id=effective_zone_id,
     )
     zone_text = f" in zone {_zone_label(effective_zone_id)}" if effective_zone_id else ""
-    current["summary"] = f"Scan this QR code to connect another browser to the current web workspace{zone_text}."
+    expiry_text = str(current.get("expires_at_display") or "").strip()
+    expiry_suffix = f" Valid until {expiry_text}." if expiry_text else ""
+    current["summary"] = f"Scan this QR code to connect another browser to the current web workspace{zone_text}.{expiry_suffix}"
     current["qr_text"] = link
     current["link"] = link
     current["code"] = code
@@ -291,14 +420,21 @@ def _telegram_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, 
     hub_id = str(context.get("hub_id") or "").strip()
     if not hub_id:
         raise RuntimeError("hub_id is not available")
-    data = _root_client(context, use_cert=False).request("POST", "/io/tg/pair/create", json={"hub_id": hub_id, "ttl": 600})
+    data = _root_client(context, use_cert=False).request(
+        "POST",
+        "/io/tg/pair/create",
+        json={"hub_id": hub_id, "ttl": _TELEGRAM_PAIR_TTL_S},
+    )
     code = str((data or {}).get("pair_code") or (data or {}).get("code") or "").strip()
     if not code:
         raise RuntimeError("telegram pair code is empty")
     deep_link = str((data or {}).get("deep_link") or "").strip() or f"https://t.me/adaos_home_bot?start={code}"
     current = _decorate_current(_base_current("telegram"), context, request_id=request_id, status="ready", busy=False)
+    _apply_expiry_fields(current, expires_at=(data or {}).get("expires_at"), fallback_ttl_seconds=_TELEGRAM_PAIR_TTL_S)
     zone_text = f" in zone {_zone_label(context.get('zone_id'))}" if context.get("zone_id") else ""
-    current["summary"] = f"Scan this QR code to open the Telegram join link for subnet {hub_id}{zone_text}."
+    expiry_text = str(current.get("expires_at_display") or "").strip()
+    expiry_suffix = f" Valid until {expiry_text}." if expiry_text else ""
+    current["summary"] = f"Scan this QR code to open the Telegram join link for subnet {hub_id}{zone_text}.{expiry_suffix}"
     current["qr_text"] = deep_link
     current["link"] = deep_link
     current["code"] = code
@@ -319,7 +455,7 @@ def _request_join_code(context: Dict[str, Any]) -> Dict[str, Any]:
     hub_id = str(context.get("hub_id") or "").strip()
     if not hub_id:
         raise RuntimeError("hub_id is not available")
-    payload = {"subnet_id": hub_id, "ttl_minutes": 15, "length": 8}
+    payload = {"subnet_id": hub_id, "ttl_minutes": _NODE_JOIN_CODE_TTL_S // 60, "length": 8}
     mtls_error: RootHttpError | None = None
     data: Any | None = None
 
@@ -373,9 +509,16 @@ def _node_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]
     if not code:
         raise RuntimeError("join code is empty")
     current = _decorate_current(_base_current("node"), context, request_id=request_id, status="ready", busy=False)
+    _apply_expiry_fields(
+        current,
+        expires_at=(data or {}).get("expires_at_utc") or (data or {}).get("expires_at"),
+        fallback_ttl_seconds=_NODE_JOIN_CODE_TTL_S,
+    )
     zone_id = str(context.get("zone_id") or "").strip() or None
     zone_text = f" in zone {_zone_label(zone_id)}" if zone_id else ""
-    current["summary"] = f"Use the generated join code on Linux or Windows to add a node to subnet {hub_id}{zone_text}."
+    expiry_text = str(current.get("expires_at_display") or "").strip()
+    expiry_suffix = f" Valid until {expiry_text}." if expiry_text else ""
+    current["summary"] = f"Use the generated join code on Linux or Windows to add a node to subnet {hub_id}{zone_text}.{expiry_suffix}"
     current["code"] = code
     current["linux_command"] = _linux_bootstrap_command(
         asset_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
@@ -425,6 +568,9 @@ async def _finish_prepare(mode: str, webspace_id: str, request_id: str, context:
         _log.warning("adaos_connect.prepare failed mode=%s webspace=%s", mode, webspace_id, exc_info=True)
         current = _decorate_current(_base_current(mode or "browser"), context, request_id=request_id, status="error", busy=False)
         current["summary"] = f"Failed to prepare connection data: {exc}"
+    else:
+        if current.get("status") == "ready":
+            _cache_current(webspace_id, mode, context, current)
     if not _is_current_request(webspace_id, request_id):
         return
     await _write_current(webspace_id, current)
@@ -437,6 +583,12 @@ async def on_prepare(evt: Any) -> None:
     webspace_id = _webspace_id(payload)
     context = _resolve_context()
     request_id = _next_request_id(webspace_id)
+    refresh = bool(payload.get("refresh") or payload.get("force_new") or payload.get("renew"))
+    if not refresh:
+        cached = _cached_current(webspace_id, mode, context, request_id=request_id)
+        if cached is not None:
+            await _write_current(webspace_id, cached)
+            return
     await _write_current(webspace_id, _pending_current(mode, context, request_id=request_id))
     task = asyncio.create_task(
         _finish_prepare(mode, webspace_id, request_id, context),
