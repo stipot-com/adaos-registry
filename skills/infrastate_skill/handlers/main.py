@@ -2682,11 +2682,9 @@ def _summary(
         message += f" | {supervisor_desc}"
     last_action = str(ui_state.get("last_action") or "").strip()
     last_action_at = float(ui_state.get("last_action_ts") or 0.0)
+    last_refresh_at = float(ui_state.get("last_refresh_ts") or 0.0)
     if last_action:
-        suffix = f" | action: {last_action}"
-        if last_action_at:
-            suffix += f" @ {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_action_at))}"
-        message += suffix
+        message += f" | action: {last_action}"
     reliability_note = _reliability_summary_note(reliability, transport_diag)
     if reliability_note:
         message += f" | {reliability_note}"
@@ -2831,6 +2829,9 @@ def _summary(
         "subnet_id": str(getattr(conf, "subnet_id", "") or ""),
         "root_url": str(getattr(getattr(conf, "root_settings", None), "base_url", "") or ""),
         "updated_at": float(status.get("updated_at") or time.time()),
+        "last_action": last_action,
+        "last_action_at": last_action_at or None,
+        "last_refresh_at": last_refresh_at or None,
         "draining": bool(lifecycle.get("draining")),
         "version": str(build.get("version") or ""),
         "git_short_sha": str(build.get("git_short_sha") or ""),
@@ -2951,7 +2952,8 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                 "title": "Refresh snapshot",
                 "status": "ok",
                 "description": "Request fresh member snapshot from hub link",
-                "subtitle": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_refresh)) if last_refresh else "",
+                "subtitle": "",
+                "updated_at": last_refresh or None,
             },
             {
                 "id": "member_start_update",
@@ -2995,7 +2997,8 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
             "title": "Refresh snapshot",
             "status": "ok",
             "description": "Reload current local update state",
-            "subtitle": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_refresh)) if last_refresh else "",
+            "subtitle": "",
+            "updated_at": last_refresh or None,
         },
         {
             "id": "cancel_update",
