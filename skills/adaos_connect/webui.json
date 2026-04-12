@@ -242,7 +242,7 @@
     "data/adaos_connect": {
       "current": {
         "mode": "browser",
-        "summary": "Select Join browser, Join telegram, or Join node to generate connection data.",
+        "summary": "Select Join browser, Join telegram, or Join node to generate connection data. Generation may take a few seconds and the panel will update automatically.",
         "summary_language": "text",
         "qr_text": "",
         "link": "",

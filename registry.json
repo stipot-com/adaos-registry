@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updated_at": "2026-04-12T06:30:18+00:00",
+  "updated_at": "2026-04-12T14:20:53+00:00",
   "skills": [
     {
       "kind": "skill",
       "id": "adaos_connect",
       "name": "adaos_connect",
-      "version": "0.5.0",
-      "updated_at": "2026-04-08T21:37:45+00:00",
+      "version": "0.6.0",
+      "updated_at": "2026-04-12T14:20:53+00:00",
       "path": "skills/adaos_connect",
       "manifest": "skills/adaos_connect/skill.yaml",
       "source": {

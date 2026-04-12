@@ -1,16 +1,29 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+import shlex
+from itertools import count
 from typing import Any, Dict
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from adaos.sdk.core.decorators import subscribe
 from adaos.services.agent_context import get_ctx
 from adaos.services.node_config import _expand_path, load_config
-from adaos.services.root.client import RootHttpClient
+from adaos.services.root.client import RootHttpClient, RootHttpError
+from adaos.services.root.service import RootAuthError, RootAuthService
 from adaos.services.yjs.doc import async_get_ydoc
 from adaos.services.yjs.webspace import default_webspace_id
+from adaos.services.zone_hosts import canonical_zone_id, zone_public_base_url
 
 _log = logging.getLogger("skills.adaos_connect")
+
+_APP_BASE_DEFAULT = "https://myinimatic.web.app"
+_DEFAULT_ROOT_BASES = {"https://api.inimatic.com", "http://api.inimatic.com"}
+_prepare_request_counter = count(1)
+_prepare_latest_request: dict[str, str] = {}
+_prepare_tasks: dict[str, asyncio.Task[None]] = {}
 
 
 def _payload(evt: Any) -> Dict[str, Any]:
@@ -35,7 +48,62 @@ def _webspace_id(payload: Dict[str, Any]) -> str:
     return default_webspace_id()
 
 
-def _root_client() -> tuple[RootHttpClient, str]:
+def _zone_label(zone_id: str | None) -> str:
+    token = str(zone_id or "").strip().upper()
+    return token or "current zone"
+
+
+def _zone_id_from_url(url: str | None) -> str | None:
+    text = str(url or "").strip()
+    if not text:
+        return None
+    try:
+        host = str(urlsplit(text).hostname or "").strip().lower()
+    except Exception:
+        return None
+    if host == "ru.api.inimatic.com":
+        return "ru"
+    return None
+
+
+def _current_zone_id(ctx: Any, cfg: Any) -> str | None:
+    for candidate in (
+        os.getenv("ADAOS_ZONE_ID"),
+        os.getenv("ZONE_ID"),
+        getattr(cfg, "zone_id", None),
+        _zone_id_from_url(getattr(getattr(cfg, "root_settings", None), "base_url", None)),
+        _zone_id_from_url(getattr(getattr(ctx, "settings", None), "api_base", None)),
+    ):
+        zone_id = canonical_zone_id(candidate)
+        if zone_id:
+            return zone_id
+    return None
+
+
+def _resolve_root_base_url(*, ctx: Any, cfg: Any, zone_id: str | None) -> str:
+    base = str(getattr(getattr(cfg, "root_settings", None), "base_url", "") or getattr(ctx.settings, "api_base", "") or "").strip()
+    if not base:
+        base = "https://api.inimatic.com"
+    base = base.rstrip("/")
+    if zone_id and base in _DEFAULT_ROOT_BASES:
+        return zone_public_base_url(zone_id)
+    return base
+
+
+def _app_base_url(ctx: Any) -> str:
+    app_base = str(getattr(ctx.settings, "app_base", "") or "").strip().rstrip("/")
+    if not app_base:
+        return _APP_BASE_DEFAULT
+    try:
+        host = str(urlsplit(app_base).hostname or "").strip().lower()
+    except Exception:
+        host = ""
+    if host == "app.inimatic.com":
+        return _APP_BASE_DEFAULT
+    return app_base
+
+
+def _resolve_context() -> Dict[str, Any]:
     ctx = get_ctx()
     cfg = load_config(ctx=ctx)
     ca = _expand_path(cfg.root_settings.ca_cert, "keys/ca.cert")
@@ -45,19 +113,82 @@ def _root_client() -> tuple[RootHttpClient, str]:
     if ca.exists():
         verify = str(ca)
     cert_tuple = (str(cert), str(key)) if cert.exists() and key.exists() else None
-    base = cfg.root_settings.base_url or ctx.settings.api_base
     hub_id = str(getattr(cfg, "subnet_id", "") or "").strip()
     if not hub_id:
         hub_id = str(getattr(ctx.settings, "subnet_id", "") or getattr(ctx.settings, "default_hub", "") or "").strip()
-    return RootHttpClient(base_url=base, verify=verify, cert=cert_tuple), hub_id
+    zone_id = _current_zone_id(ctx, cfg)
+    root_base_url = _resolve_root_base_url(ctx=ctx, cfg=cfg, zone_id=zone_id)
+    return {
+        "cfg": cfg,
+        "hub_id": hub_id,
+        "zone_id": zone_id,
+        "verify": verify,
+        "cert_tuple": cert_tuple,
+        "root_base_url": root_base_url,
+        "app_base_url": _app_base_url(ctx),
+    }
 
 
-def _app_base_url() -> str:
-    ctx = get_ctx()
-    app_base = str(getattr(ctx.settings, "app_base", "") or "").strip()
-    if app_base:
-        return app_base.rstrip("/")
-    return "https://app.inimatic.com"
+def _root_client(context: Dict[str, Any], *, use_cert: bool) -> RootHttpClient:
+    cert_tuple = context.get("cert_tuple") if use_cert else None
+    return RootHttpClient(
+        base_url=str(context.get("root_base_url") or "https://api.inimatic.com"),
+        verify=context.get("verify", True),
+        cert=cert_tuple if isinstance(cert_tuple, tuple) else None,
+    )
+
+
+def _browser_link(*, app_base_url: str, code: str, zone_id: str | None) -> str:
+    parsed = urlsplit(app_base_url)
+    query = {"pair_code": code}
+    if zone_id:
+        query["zone"] = zone_id
+    path = parsed.path.rstrip("/") or "/"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, urlencode(query), ""))
+
+
+def _linux_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
+    parts = [
+        "curl -fsSL",
+        shlex.quote(f"{asset_base_url}/assets/linux/init.sh"),
+        "| bash -s --",
+        "--join-code",
+        shlex.quote(code),
+    ]
+    if root_base_url:
+        parts.extend(["--root-url", shlex.quote(root_base_url)])
+    if zone_id:
+        parts.extend(["--zone", shlex.quote(zone_id)])
+    return " ".join(parts)
+
+
+def _powershell_quote(value: str) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _windows_ps_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
+    parts = [
+        f"iwr -UseBasicParsing {_powershell_quote(f'{asset_base_url}/assets/windows/init.ps1')} -OutFile init.ps1;",
+        f".\\init.ps1 -JoinCode {_powershell_quote(code)}",
+    ]
+    if root_base_url:
+        parts.append(f"-RootUrl {_powershell_quote(root_base_url)}")
+    if zone_id:
+        parts.append(f"-ZoneId {_powershell_quote(zone_id)}")
+    return " ".join(parts)
+
+
+def _windows_cmd_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
+    parts = [
+        f'curl -fsSL -o init.bat "{asset_base_url}/assets/windows/init.bat"',
+        "&&",
+        f'init.bat -JoinCode "{code}"',
+    ]
+    if root_base_url:
+        parts.append(f'-RootUrl "{root_base_url}"')
+    if zone_id:
+        parts.append(f'-ZoneId "{zone_id}"')
+    return " ".join(parts)
 
 
 async def _write_current(webspace_id: str, current: Dict[str, Any]) -> None:
@@ -77,6 +208,13 @@ async def _write_current(webspace_id: str, current: Dict[str, Any]) -> None:
 def _base_current(mode: str) -> Dict[str, Any]:
     return {
         "mode": mode,
+        "status": "idle",
+        "busy": False,
+        "request_id": "",
+        "zone_id": "",
+        "subnet_id": "",
+        "root_base_url": "",
+        "app_base_url": "",
         "summary": "Preparing connection data...",
         "summary_language": "text",
         "qr_text": "",
@@ -93,71 +231,221 @@ def _base_current(mode: str) -> Dict[str, Any]:
     }
 
 
-def _browser_current() -> Dict[str, Any]:
-    client, _hub_id = _root_client()
-    data = client.request("POST", "/v1/browser/pair/create", json={"ttl": 600})
+def _decorate_current(current: Dict[str, Any], context: Dict[str, Any], *, request_id: str, status: str, busy: bool) -> Dict[str, Any]:
+    current["request_id"] = request_id
+    current["status"] = status
+    current["busy"] = busy
+    current["zone_id"] = str(context.get("zone_id") or "")
+    current["subnet_id"] = str(context.get("hub_id") or "")
+    current["root_base_url"] = str(context.get("root_base_url") or "")
+    current["app_base_url"] = str(context.get("app_base_url") or "")
+    return current
+
+
+def _pending_current(mode: str, context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]:
+    current = _decorate_current(_base_current(mode), context, request_id=request_id, status="pending", busy=True)
+    hub_id = str(context.get("hub_id") or "").strip()
+    zone_id = str(context.get("zone_id") or "").strip()
+    if mode == "browser":
+        zone_text = f" for zone {_zone_label(zone_id)}" if zone_id else ""
+        current["summary"] = f"Preparing browser pairing data{zone_text}. This can take a few seconds."
+    elif mode == "telegram":
+        subnet_text = f" for subnet {hub_id}" if hub_id else ""
+        zone_text = f" in zone {_zone_label(zone_id)}" if zone_id else ""
+        current["summary"] = f"Preparing Telegram connection data{subnet_text}{zone_text}. This can take a few seconds."
+    elif mode == "node":
+        subnet_text = f" for subnet {hub_id}" if hub_id else ""
+        zone_text = f" in zone {_zone_label(zone_id)}" if zone_id else ""
+        current["summary"] = f"Generating a node join code{subnet_text}{zone_text}. This can take a few seconds."
+    else:
+        current["summary"] = "Preparing connection data. This can take a few seconds."
+    return current
+
+
+def _browser_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"ttl": 600}
+    if context.get("zone_id"):
+        payload["zone_id"] = context["zone_id"]
+    data = _root_client(context, use_cert=False).request("POST", "/v1/browser/pair/create", json=payload)
     code = str((data or {}).get("pair_code") or "").strip()
     if not code:
         raise RuntimeError("browser pair code is empty")
-    current = _base_current("browser")
-    link = f"{_app_base_url()}/?pair_code={code}"
-    current["summary"] = "Scan this QR code to connect another browser to the current web workspace."
+    current = _decorate_current(_base_current("browser"), context, request_id=request_id, status="ready", busy=False)
+    effective_zone_id = canonical_zone_id((data or {}).get("zone_id")) or str(context.get("zone_id") or "").strip() or None
+    if effective_zone_id:
+        current["zone_id"] = effective_zone_id
+    link = _browser_link(
+        app_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
+        code=code,
+        zone_id=effective_zone_id,
+    )
+    zone_text = f" in zone {_zone_label(effective_zone_id)}" if effective_zone_id else ""
+    current["summary"] = f"Scan this QR code to connect another browser to the current web workspace{zone_text}."
     current["qr_text"] = link
     current["link"] = link
     current["code"] = code
     return current
 
 
-def _telegram_current(client: RootHttpClient, hub_id: str) -> Dict[str, Any]:
-    data = client.request("POST", "/io/tg/pair/create", json={"hub_id": hub_id, "ttl": 600})
+def _telegram_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]:
+    hub_id = str(context.get("hub_id") or "").strip()
+    if not hub_id:
+        raise RuntimeError("hub_id is not available")
+    data = _root_client(context, use_cert=False).request("POST", "/io/tg/pair/create", json={"hub_id": hub_id, "ttl": 600})
     code = str((data or {}).get("pair_code") or (data or {}).get("code") or "").strip()
     if not code:
         raise RuntimeError("telegram pair code is empty")
     deep_link = str((data or {}).get("deep_link") or "").strip() or f"https://t.me/adaos_home_bot?start={code}"
-    current = _base_current("telegram")
-    current["summary"] = "Scan this QR code to open the Telegram join link for the current hub."
+    current = _decorate_current(_base_current("telegram"), context, request_id=request_id, status="ready", busy=False)
+    zone_text = f" in zone {_zone_label(context.get('zone_id'))}" if context.get("zone_id") else ""
+    current["summary"] = f"Scan this QR code to open the Telegram join link for subnet {hub_id}{zone_text}."
     current["qr_text"] = deep_link
     current["link"] = deep_link
     current["code"] = code
     return current
 
 
-def _node_current(client: RootHttpClient, hub_id: str) -> Dict[str, Any]:
-    data = client.request(
-        "POST",
-        "/v1/subnets/join-code",
-        json={"subnet_id": hub_id, "ttl_minutes": 15, "length": 8},
-    )
+def _root_token_value() -> str:
+    return (
+        os.getenv("HUB_ROOT_TOKEN")
+        or os.getenv("ADAOS_ROOT_TOKEN")
+        or os.getenv("ROOT_TOKEN")
+        or os.getenv("ADAOS_ROOT_OWNER_TOKEN")
+        or ""
+    ).strip()
+
+
+def _request_join_code(context: Dict[str, Any]) -> Dict[str, Any]:
+    hub_id = str(context.get("hub_id") or "").strip()
+    if not hub_id:
+        raise RuntimeError("hub_id is not available")
+    payload = {"subnet_id": hub_id, "ttl_minutes": 15, "length": 8}
+    mtls_error: RootHttpError | None = None
+    data: Any | None = None
+
+    if context.get("cert_tuple"):
+        try:
+            data = _root_client(context, use_cert=True).request("POST", "/v1/subnets/join-code", json=payload)
+        except RootHttpError as exc:
+            if exc.status_code in (401, 403):
+                mtls_error = exc
+            else:
+                raise
+
+    if data is None:
+        root_token = _root_token_value()
+        if root_token:
+            try:
+                data = _root_client(context, use_cert=False).request(
+                    "POST",
+                    "/v1/subnets/join-code",
+                    json=payload,
+                    headers={"X-Root-Token": root_token},
+                )
+            except RootHttpError as exc:
+                if exc.status_code not in (401, 403):
+                    raise
+        if data is None:
+            try:
+                access_token = RootAuthService(http=_root_client(context, use_cert=False)).get_access_token(context["cfg"])
+            except RootAuthError as exc:
+                if mtls_error is not None:
+                    raise RuntimeError(
+                        "Root rejected hub authentication for join-code generation. Configure ROOT_TOKEN or run adaos dev root login."
+                    ) from exc
+                raise
+            data = _root_client(context, use_cert=False).request(
+                "POST",
+                "/v1/subnets/join-code",
+                json=payload,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+
+    if not isinstance(data, dict):
+        raise RuntimeError("join-code response is invalid")
+    return data
+
+
+def _node_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]:
+    hub_id = str(context.get("hub_id") or "").strip()
+    data = _request_join_code(context)
     code = str((data or {}).get("code") or "").strip()
-    current = _base_current("node")
-    current["summary"] = "Use the generated join code on Linux or Windows to add a node to the current subnet."
+    if not code:
+        raise RuntimeError("join code is empty")
+    current = _decorate_current(_base_current("node"), context, request_id=request_id, status="ready", busy=False)
+    zone_id = str(context.get("zone_id") or "").strip() or None
+    zone_text = f" in zone {_zone_label(zone_id)}" if zone_id else ""
+    current["summary"] = f"Use the generated join code on Linux or Windows to add a node to subnet {hub_id}{zone_text}."
     current["code"] = code
-    current["linux_command"] = f"curl -fsSL https://app.inimatic.com/assets/linux/init.sh | bash -s -- --join-code {code}"
-    current["windows_ps_command"] = f"iwr -UseBasicParsing https://app.inimatic.com/assets/windows/init.ps1 | iex; init.ps1 -JoinCode {code}"
-    current["windows_cmd_command"] = f"curl -fsSL -o init.bat https://app.inimatic.com/assets/windows/init.bat && init.bat -JoinCode {code}"
+    current["linux_command"] = _linux_bootstrap_command(
+        asset_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
+        code=code,
+        root_base_url=str(context.get("root_base_url") or ""),
+        zone_id=zone_id,
+    )
+    current["windows_ps_command"] = _windows_ps_bootstrap_command(
+        asset_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
+        code=code,
+        root_base_url=str(context.get("root_base_url") or ""),
+        zone_id=zone_id,
+    )
+    current["windows_cmd_command"] = _windows_cmd_bootstrap_command(
+        asset_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
+        code=code,
+        root_base_url=str(context.get("root_base_url") or ""),
+        zone_id=zone_id,
+    )
     return current
+
+
+def _prepare_current(mode: str, context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]:
+    if mode == "browser":
+        return _browser_current(context, request_id=request_id)
+    if mode == "telegram":
+        return _telegram_current(context, request_id=request_id)
+    if mode == "node":
+        return _node_current(context, request_id=request_id)
+    raise RuntimeError(f"unsupported mode: {mode}")
+
+
+def _next_request_id(webspace_id: str) -> str:
+    request_id = f"{webspace_id}:{next(_prepare_request_counter)}"
+    _prepare_latest_request[webspace_id] = request_id
+    return request_id
+
+
+def _is_current_request(webspace_id: str, request_id: str) -> bool:
+    return _prepare_latest_request.get(webspace_id) == request_id
+
+
+async def _finish_prepare(mode: str, webspace_id: str, request_id: str, context: Dict[str, Any]) -> None:
+    try:
+        current = await asyncio.to_thread(_prepare_current, mode, context, request_id=request_id)
+    except Exception as exc:
+        _log.warning("adaos_connect.prepare failed mode=%s webspace=%s", mode, webspace_id, exc_info=True)
+        current = _decorate_current(_base_current(mode or "browser"), context, request_id=request_id, status="error", busy=False)
+        current["summary"] = f"Failed to prepare connection data: {exc}"
+    if not _is_current_request(webspace_id, request_id):
+        return
+    await _write_current(webspace_id, current)
 
 
 @subscribe("adaos_connect.prepare")
 async def on_prepare(evt: Any) -> None:
     payload = _payload(evt)
-    mode = str(payload.get("mode") or "browser").strip().lower()
+    mode = str(payload.get("mode") or "browser").strip().lower() or "browser"
     webspace_id = _webspace_id(payload)
-    try:
-        if mode == "browser":
-            current = _browser_current()
-        else:
-            client, hub_id = _root_client()
-            if not hub_id:
-                raise RuntimeError("hub_id is not available")
-            if mode == "telegram":
-                current = _telegram_current(client, hub_id)
-            elif mode == "node":
-                current = _node_current(client, hub_id)
-            else:
-                raise RuntimeError(f"unsupported mode: {mode}")
-    except Exception as exc:
-        _log.warning("adaos_connect.prepare failed mode=%s webspace=%s", mode, webspace_id, exc_info=True)
-        current = _base_current(mode or "browser")
-        current["summary"] = f"Failed to prepare connection data: {exc}"
-    await _write_current(webspace_id, current)
+    context = _resolve_context()
+    request_id = _next_request_id(webspace_id)
+    await _write_current(webspace_id, _pending_current(mode, context, request_id=request_id))
+    task = asyncio.create_task(
+        _finish_prepare(mode, webspace_id, request_id, context),
+        name=f"adaos-connect-prepare:{webspace_id}:{mode}",
+    )
+    _prepare_tasks[webspace_id] = task
+
+    def _cleanup(done: asyncio.Task[None], *, ws: str) -> None:
+        if _prepare_tasks.get(ws) is done:
+            _prepare_tasks.pop(ws, None)
+
+    task.add_done_callback(lambda done, ws=webspace_id: _cleanup(done, ws=ws))
