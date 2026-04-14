@@ -623,6 +623,7 @@ def _fallback_inspector(object_id: str, *, warning: str) -> dict[str, Any]:
         "recent_changes": [],
         "topology": {"edges": []},
         "task_packet": {},
+        "subnet_planning": {},
         "object_id": object_id,
         "object_title": object_id,
     }
@@ -945,6 +946,12 @@ def get_object_inspector(
     inspector.setdefault("recent_changes", list(context.get("recent_changes") or []))
     inspector.setdefault("topology", coerce_mapping(context.get("topology")))
     inspector.setdefault("task_packet", coerce_mapping(context.get("task_packet")))
+    inspector.setdefault(
+        "subnet_planning",
+        coerce_mapping(context.get("subnet_planning"))
+        or coerce_mapping(coerce_mapping(context.get("task_packet")).get("context")).get("subnet_planning")
+        or {},
+    )
     inspector["object_id"] = subject_id
     inspector["object_title"] = subject_title
     return inspector
