@@ -1,25 +1,20 @@
 {
   "id": "infrascope",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "name": "Infrascope",
-  "title": "Infrascope",
-  "description": "Operator control-plane workspace for overview, inventory, and unified object inspection.",
   "type": "desktop",
+  "title": "Infrascope",
+  "description": "Operator control-plane scenario for overview, inventory, and in-context object inspection.",
+  "depends": [
+    "infrascope_skill"
+  ],
   "ui": {
     "application": {
-      "version": "0.2",
+      "version": "0.1",
       "desktop": {
-        "topbar": [],
         "pageSchema": {
           "id": "infrascope",
           "title": "Infrascope",
-          "initialState": {
-            "infrascopeMode": "overview",
-            "inventoryKind": "hubs",
-            "inspectorTab": "summary",
-            "selectedObjectId": "local",
-            "selectedObjectTitle": "Local node"
-          },
           "layout": {
             "type": "split",
             "areas": [
@@ -34,19 +29,21 @@
               {
                 "id": "right",
                 "role": "aux"
-              },
-              {
-                "id": "bottom",
-                "role": "footer"
               }
             ]
+          },
+          "initialState": {
+            "infrascopeMode": "overview",
+            "inventoryKind": "all",
+            "inspectorTab": "summary",
+            "selectedObjectId": "local"
           },
           "widgets": [
             {
               "id": "infrascope-mode",
               "type": "input.commandBar",
               "area": "sidebar",
-              "title": "Modes",
+              "title": "Mode",
               "inputs": {
                 "selectedStateKey": "infrascopeMode",
                 "buttons": [
@@ -84,9 +81,13 @@
               "title": "Inventory",
               "visibleIf": "$state.infrascopeMode === 'inventory'",
               "inputs": {
-                "variant": "stack",
+                "size": "small",
                 "selectedStateKey": "inventoryKind",
                 "buttons": [
+                  {
+                    "id": "all",
+                    "label": "All"
+                  },
                   {
                     "id": "hubs",
                     "label": "Hubs"
@@ -110,10 +111,25 @@
                   {
                     "id": "scenarios",
                     "label": "Scenarios"
+                  },
+                  {
+                    "id": "runtimes",
+                    "label": "Runtimes"
+                  },
+                  {
+                    "id": "quotas",
+                    "label": "Quotas"
                   }
                 ]
               },
               "actions": [
+                {
+                  "on": "click:all",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "all"
+                  }
+                },
                 {
                   "on": "click:hubs",
                   "type": "updateState",
@@ -155,33 +171,68 @@
                   "params": {
                     "inventoryKind": "scenarios"
                   }
+                },
+                {
+                  "on": "click:runtimes",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "runtimes"
+                  }
+                },
+                {
+                  "on": "click:quotas",
+                  "type": "updateState",
+                  "params": {
+                    "inventoryKind": "quotas"
+                  }
                 }
               ]
             },
             {
-              "id": "overview-summary",
-              "type": "visual.metricTile",
-              "area": "main",
-              "title": "Overview",
-              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "id": "inventory-list",
+              "type": "ui.list",
+              "area": "sidebar",
+              "title": "Objects",
+              "visibleIf": "$state.infrascopeMode === 'inventory'",
               "dataSource": {
                 "kind": "y",
-                "path": "data/infrascope/summary"
+                "path": "data/infrascope/inventory/$state.inventoryKind"
+              },
+              "inputs": {
+                "emptyText": "No objects available",
+                "inset": true,
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "iconKey": "icon",
+                "itemAccordion": true,
+                "detailsPath": "details",
+                "detailsModal": true,
+                "detailsModalTitleKey": "title"
               },
               "actions": [
                 {
-                  "on": "click:inspect_local",
+                  "on": "select",
                   "type": "updateState",
                   "params": {
                     "selectedObjectId": "$event.object_id",
-                    "selectedObjectTitle": "$event.object_title",
                     "inspectorTab": "summary"
                   }
                 }
               ]
             },
             {
-              "id": "overview-health",
+              "id": "overview-summary",
+              "type": "item.details",
+              "area": "main",
+              "title": "Overview summary",
+              "visibleIf": "$state.infrascopeMode === 'overview'",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infrascope/summary"
+              }
+            },
+            {
+              "id": "overview-health-strip",
               "type": "ui.list",
               "area": "main",
               "title": "Health strip",
@@ -191,12 +242,15 @@
                 "path": "data/infrascope/overview/health_strip"
               },
               "inputs": {
+                "emptyText": "No health signals",
                 "inset": true,
-                "emptyText": "No health items yet",
                 "titleKey": "title",
                 "subtitleKey": "subtitle",
-                "showDetails": false,
-                "itemAccordion": false
+                "iconKey": "icon",
+                "itemAccordion": true,
+                "detailsPath": "details",
+                "detailsModal": true,
+                "detailsModalTitleKey": "title"
               },
               "actions": [
                 {
@@ -204,7 +258,6 @@
                   "type": "updateState",
                   "params": {
                     "selectedObjectId": "$event.object_id",
-                    "selectedObjectTitle": "$event.object_title",
                     "inspectorTab": "summary"
                   }
                 }
@@ -221,12 +274,15 @@
                 "path": "data/infrascope/overview/active_incidents"
               },
               "inputs": {
-                "inset": true,
                 "emptyText": "No active incidents",
+                "inset": true,
                 "titleKey": "title",
                 "subtitleKey": "subtitle",
-                "showDetails": false,
-                "itemAccordion": false
+                "iconKey": "icon",
+                "itemAccordion": true,
+                "detailsPath": "details",
+                "detailsModal": true,
+                "detailsModalTitleKey": "title"
               },
               "actions": [
                 {
@@ -234,98 +290,7 @@
                   "type": "updateState",
                   "params": {
                     "selectedObjectId": "$event.object_id",
-                    "selectedObjectTitle": "$event.object_title",
                     "inspectorTab": "incidents"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "overview-runtimes",
-              "type": "ui.list",
-              "area": "main",
-              "title": "Active runtimes",
-              "visibleIf": "$state.infrascopeMode === 'overview'",
-              "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/overview/active_runtimes"
-              },
-              "inputs": {
-                "inset": true,
-                "emptyText": "No runtime items yet",
-                "titleKey": "title",
-                "subtitleKey": "subtitle",
-                "showDetails": false,
-                "itemAccordion": false
-              },
-              "actions": [
-                {
-                  "on": "select",
-                  "type": "updateState",
-                  "params": {
-                    "selectedObjectId": "$event.object_id",
-                    "selectedObjectTitle": "$event.object_title",
-                    "inspectorTab": "summary"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "overview-quotas",
-              "type": "ui.list",
-              "area": "main",
-              "title": "Quota summary",
-              "visibleIf": "$state.infrascopeMode === 'overview'",
-              "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/overview/quota_summary"
-              },
-              "inputs": {
-                "inset": true,
-                "emptyText": "No quota pressure detected",
-                "titleKey": "title",
-                "subtitleKey": "subtitle",
-                "showDetails": false,
-                "itemAccordion": false
-              },
-              "actions": [
-                {
-                  "on": "select",
-                  "type": "updateState",
-                  "params": {
-                    "selectedObjectId": "$event.object_id",
-                    "selectedObjectTitle": "$event.object_title",
-                    "inspectorTab": "summary"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "overview-changes",
-              "type": "ui.list",
-              "area": "main",
-              "title": "Recent changes",
-              "visibleIf": "$state.infrascopeMode === 'overview'",
-              "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/overview/recent_changes"
-              },
-              "inputs": {
-                "inset": true,
-                "emptyText": "No recent changes detected",
-                "titleKey": "title",
-                "subtitleKey": "subtitle",
-                "showDetails": false,
-                "itemAccordion": false
-              },
-              "actions": [
-                {
-                  "on": "select",
-                  "type": "updateState",
-                  "params": {
-                    "selectedObjectId": "$event.object_id",
-                    "selectedObjectTitle": "$event.object_title",
-                    "inspectorTab": "changes"
                   }
                 }
               ]
@@ -334,59 +299,22 @@
               "id": "overview-operations",
               "type": "ui.list",
               "area": "main",
-              "title": "Active operations",
+              "title": "Operations",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
                 "kind": "y",
                 "path": "data/infrascope/operations/items"
               },
               "inputs": {
-                "inset": true,
                 "emptyText": "No active operations",
-                "titleKey": "title",
-                "subtitleKey": "subtitle",
-                "showDetails": false,
-                "itemAccordion": false
-              }
-            },
-            {
-              "id": "inventory-list",
-              "type": "ui.list",
-              "area": "main",
-              "title": "Inventory",
-              "visibleIf": "$state.infrascopeMode === 'inventory'",
-              "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inventory/$state.inventoryKind"
-              },
-              "inputs": {
                 "inset": true,
-                "emptyText": "No inventory objects for the selected tab",
                 "titleKey": "title",
                 "subtitleKey": "subtitle",
-                "showDetails": false,
-                "itemAccordion": false
-              },
-              "actions": [
-                {
-                  "on": "select",
-                  "type": "updateState",
-                  "params": {
-                    "selectedObjectId": "$event.object_id",
-                    "selectedObjectTitle": "$event.object_title",
-                    "inspectorTab": "summary"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "selected-object-summary",
-              "type": "visual.metricTile",
-              "area": "right",
-              "title": "Object inspector",
-              "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId"
+                "iconKey": "icon",
+                "itemAccordion": true,
+                "detailsPath": "details",
+                "detailsModal": true,
+                "detailsModalTitleKey": "title"
               }
             },
             {
@@ -395,6 +323,7 @@
               "area": "right",
               "title": "Inspector",
               "inputs": {
+                "size": "small",
                 "selectedStateKey": "inspectorTab",
                 "buttons": [
                   {
@@ -406,20 +335,20 @@
                     "label": "Incidents"
                   },
                   {
-                    "id": "actions",
-                    "label": "Actions"
-                  },
-                  {
-                    "id": "changes",
-                    "label": "Changes"
-                  },
-                  {
                     "id": "topology",
                     "label": "Topology"
                   },
                   {
-                    "id": "packet",
-                    "label": "Task packet"
+                    "id": "task",
+                    "label": "Task"
+                  },
+                  {
+                    "id": "planning",
+                    "label": "Planning"
+                  },
+                  {
+                    "id": "actions",
+                    "label": "Actions"
                   }
                 ]
               },
@@ -439,20 +368,6 @@
                   }
                 },
                 {
-                  "on": "click:actions",
-                  "type": "updateState",
-                  "params": {
-                    "inspectorTab": "actions"
-                  }
-                },
-                {
-                  "on": "click:changes",
-                  "type": "updateState",
-                  "params": {
-                    "inspectorTab": "changes"
-                  }
-                },
-                {
                   "on": "click:topology",
                   "type": "updateState",
                   "params": {
@@ -460,16 +375,30 @@
                   }
                 },
                 {
-                  "on": "click:packet",
+                  "on": "click:task",
                   "type": "updateState",
                   "params": {
-                    "inspectorTab": "packet"
+                    "inspectorTab": "task"
+                  }
+                },
+                {
+                  "on": "click:planning",
+                  "type": "updateState",
+                  "params": {
+                    "inspectorTab": "planning"
+                  }
+                },
+                {
+                  "on": "click:actions",
+                  "type": "updateState",
+                  "params": {
+                    "inspectorTab": "actions"
                   }
                 }
               ]
             },
             {
-              "id": "inspector-object",
+              "id": "selected-object-summary",
               "type": "item.details",
               "area": "right",
               "title": "Selected object",
@@ -477,79 +406,84 @@
               "dataSource": {
                 "kind": "y",
                 "path": "data/infrascope/inspectors/$state.selectedObjectId"
-              },
-              "inputs": {
-                "bindField": "object"
               }
             },
             {
-              "id": "inspector-incidents",
-              "type": "item.details",
+              "id": "selected-object-incidents",
+              "type": "ui.list",
               "area": "right",
-              "title": "Incidents",
+              "title": "Object incidents",
               "visibleIf": "$state.inspectorTab === 'incidents'",
               "dataSource": {
                 "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId"
+                "path": "data/infrascope/inspectors/$state.selectedObjectId/incidents"
               },
               "inputs": {
-                "bindField": "incidents"
+                "emptyText": "No incidents on this object",
+                "inset": true,
+                "titleKey": "title",
+                "subtitleKey": "summary",
+                "showDetails": true
               }
             },
             {
-              "id": "inspector-actions",
-              "type": "item.details",
+              "id": "selected-object-topology",
+              "type": "ui.jsonViewer",
               "area": "right",
-              "title": "Actions",
-              "visibleIf": "$state.inspectorTab === 'actions'",
-              "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId"
-              },
-              "inputs": {
-                "bindField": "actions"
-              }
-            },
-            {
-              "id": "inspector-changes",
-              "type": "item.details",
-              "area": "right",
-              "title": "Recent changes",
-              "visibleIf": "$state.inspectorTab === 'changes'",
-              "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId"
-              },
-              "inputs": {
-                "bindField": "recent_changes"
-              }
-            },
-            {
-              "id": "inspector-topology",
-              "type": "item.details",
-              "area": "bottom",
-              "title": "Topology slice",
+              "title": "Topology",
               "visibleIf": "$state.inspectorTab === 'topology'",
               "dataSource": {
                 "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId"
+                "path": "data/infrascope/inspectors/$state.selectedObjectId/topology"
               },
               "inputs": {
-                "bindField": "topology"
+                "emptyText": "No topology data"
               }
             },
             {
-              "id": "inspector-packet",
-              "type": "item.details",
-              "area": "bottom",
+              "id": "selected-object-task-packet",
+              "type": "ui.jsonViewer",
+              "area": "right",
               "title": "Task packet",
-              "visibleIf": "$state.inspectorTab === 'packet'",
+              "visibleIf": "$state.inspectorTab === 'task'",
               "dataSource": {
                 "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId"
+                "path": "data/infrascope/inspectors/$state.selectedObjectId/task_packet"
               },
               "inputs": {
-                "bindField": "task_packet"
+                "emptyText": "No task packet"
+              }
+            },
+            {
+              "id": "selected-object-planning",
+              "type": "ui.jsonViewer",
+              "area": "right",
+              "title": "Subnet planning",
+              "visibleIf": "$state.inspectorTab === 'planning'",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId/subnet_planning"
+              },
+              "inputs": {
+                "emptyText": "No subnet planning context"
+              }
+            },
+            {
+              "id": "selected-object-actions",
+              "type": "ui.list",
+              "area": "right",
+              "title": "Recommended actions",
+              "visibleIf": "$state.inspectorTab === 'actions'",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infrascope/inspectors/$state.selectedObjectId/actions"
+              },
+              "inputs": {
+                "emptyText": "No actions available",
+                "inset": true,
+                "titleKey": "title",
+                "subtitleKey": "risk",
+                "showDetails": true
               }
             }
           ]
@@ -558,16 +492,12 @@
     }
   },
   "registry": {
-    "widgets": [
-      "input.commandBar",
-      "visual.metricTile",
-      "ui.list",
-      "item.details"
-    ],
+    "widgets": [],
     "modals": []
   },
   "catalog": {
     "apps": [],
     "widgets": []
-  }
+  },
+  "data": {}
 }
