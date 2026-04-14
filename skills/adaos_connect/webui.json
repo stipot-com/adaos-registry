@@ -60,7 +60,8 @@
                   "type": "callHost",
                   "target": "adaos_connect.prepare",
                   "params": {
-                    "mode": "browser"
+                    "mode": "browser",
+                    "refresh": true
                   }
                 },
                 {
@@ -75,7 +76,8 @@
                   "type": "callHost",
                   "target": "adaos_connect.prepare",
                   "params": {
-                    "mode": "telegram"
+                    "mode": "telegram",
+                    "refresh": true
                   }
                 },
                 {
@@ -90,7 +92,8 @@
                   "type": "callHost",
                   "target": "adaos_connect.prepare",
                   "params": {
-                    "mode": "node"
+                    "mode": "node",
+                    "refresh": true
                   }
                 }
               ]
@@ -106,7 +109,8 @@
               },
               "inputs": {
                 "bindField": "summary",
-                "languageField": "summary_language"
+                "languageField": "summary_language",
+                "copyButton": true
               }
             },
             {
@@ -119,8 +123,10 @@
                 "path": "data/adaos_connect/current"
               },
               "inputs": {
-                "bindField": "expires_at_display",
-                "languageField": "expires_at_language"
+                "bindField": "expires_at",
+                "languageField": "expires_at_language",
+                "browserDateTime": true,
+                "copyButton": true
               }
             },
             {
@@ -168,7 +174,8 @@
               },
               "inputs": {
                 "bindField": "link",
-                "languageField": "link_language"
+                "languageField": "link_language",
+                "copyButton": true
               },
               "visibleIf": "$state.adaosConnectMode === 'browser'"
             },
@@ -183,7 +190,8 @@
               },
               "inputs": {
                 "bindField": "link",
-                "languageField": "link_language"
+                "languageField": "link_language",
+                "copyButton": true
               },
               "visibleIf": "$state.adaosConnectMode === 'telegram'"
             },
@@ -198,7 +206,8 @@
               },
               "inputs": {
                 "bindField": "code",
-                "languageField": "code_language"
+                "languageField": "code_language",
+                "copyButton": true
               }
             },
             {
@@ -212,7 +221,8 @@
               },
               "inputs": {
                 "bindField": "linux_command",
-                "languageField": "linux_language"
+                "languageField": "linux_language",
+                "copyButton": true
               },
               "visibleIf": "$state.adaosConnectMode === 'node'"
             },
@@ -227,7 +237,8 @@
               },
               "inputs": {
                 "bindField": "windows_ps_command",
-                "languageField": "windows_ps_language"
+                "languageField": "windows_ps_language",
+                "copyButton": true
               },
               "visibleIf": "$state.adaosConnectMode === 'node'"
             },
@@ -242,7 +253,8 @@
               },
               "inputs": {
                 "bindField": "windows_cmd_command",
-                "languageField": "windows_cmd_language"
+                "languageField": "windows_cmd_language",
+                "copyButton": true
               },
               "visibleIf": "$state.adaosConnectMode === 'node'"
             }

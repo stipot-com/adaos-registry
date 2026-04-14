@@ -8,7 +8,7 @@ import shlex
 import time
 from itertools import count
 from typing import Any, Dict
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from adaos.sdk.core.decorators import subscribe
 from adaos.services.agent_context import get_ctx
@@ -64,11 +64,21 @@ def _zone_id_from_url(url: str | None) -> str | None:
     if not text:
         return None
     try:
-        host = str(urlsplit(text).hostname or "").strip().lower()
+        parsed = urlsplit(text)
+        host = str(parsed.hostname or "").strip().lower()
     except Exception:
         return None
     if host == "ru.api.inimatic.com":
         return "ru"
+    try:
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+            if key.strip().lower() != "zone":
+                continue
+            zone_id = canonical_zone_id(value)
+            if zone_id:
+                return zone_id
+    except Exception:
+        return None
     return None
 
 
@@ -256,6 +266,29 @@ def _browser_link(*, app_base_url: str, code: str, zone_id: str | None) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, path, urlencode(query), ""))
 
 
+def _browser_registration_link(
+    *,
+    verification_uri_complete: str | None,
+    verification_uri: str | None,
+    user_code: str,
+    zone_id: str | None,
+) -> str:
+    complete = str(verification_uri_complete or "").strip()
+    if complete:
+        return complete
+    base = str(verification_uri or "").strip()
+    if not base:
+        raise RuntimeError("browser registration link is empty")
+    parsed = urlsplit(base)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    if user_code and not str(query.get("user_code") or "").strip():
+        query["user_code"] = user_code
+    if zone_id and not str(query.get("zone") or "").strip():
+        query["zone"] = zone_id
+    path = parsed.path.rstrip("/") or "/"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, urlencode(query), ""))
+
+
 def _linux_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
     parts = [
         "curl -fsSL",
@@ -389,27 +422,49 @@ def _pending_current(mode: str, context: Dict[str, Any], *, request_id: str) -> 
 
 
 def _browser_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {"ttl": _BROWSER_PAIR_TTL_S}
+    payload: Dict[str, Any] = {
+        "owner_id": str(context.get("hub_id") or "").strip() or "local-owner",
+    }
     if context.get("zone_id"):
         payload["zone_id"] = context["zone_id"]
-    data = _root_client(context, use_cert=False).request("POST", "/v1/browser/pair/create", json=payload)
-    code = str((data or {}).get("pair_code") or "").strip()
+    data: Dict[str, Any] | None = None
+    try:
+        data = _root_client(context, use_cert=False).device_authorize(payload=payload)
+    except RootHttpError as exc:
+        if exc.status_code not in (401, 403) or not context.get("cert_tuple"):
+            raise
+    if data is None:
+        data = _root_client(context, use_cert=True).device_authorize(payload=payload)
+    code = str((data or {}).get("user_code") or (data or {}).get("user_code_short") or "").strip()
     if not code:
-        raise RuntimeError("browser pair code is empty")
+        raise RuntimeError("browser registration code is empty")
     current = _decorate_current(_base_current("browser"), context, request_id=request_id, status="ready", busy=False)
-    effective_zone_id = canonical_zone_id((data or {}).get("zone_id")) or str(context.get("zone_id") or "").strip() or None
+    effective_zone_id = (
+        canonical_zone_id((data or {}).get("zone_id"))
+        or _zone_id_from_url((data or {}).get("verification_uri_complete"))
+        or _zone_id_from_url((data or {}).get("verify_uri") or (data or {}).get("verification_uri"))
+        or str(context.get("zone_id") or "").strip()
+        or None
+    )
     if effective_zone_id:
         current["zone_id"] = effective_zone_id
-    _apply_expiry_fields(current, expires_at=(data or {}).get("expires_at"), fallback_ttl_seconds=_BROWSER_PAIR_TTL_S)
-    link = _browser_link(
-        app_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
-        code=code,
+    _apply_expiry_fields(
+        current,
+        expires_at=(data or {}).get("expires_at"),
+        fallback_ttl_seconds=(data or {}).get("expires_in") or _BROWSER_PAIR_TTL_S,
+    )
+    link = _browser_registration_link(
+        verification_uri_complete=(data or {}).get("verification_uri_complete"),
+        verification_uri=(data or {}).get("verify_uri") or (data or {}).get("verification_uri"),
+        user_code=code,
         zone_id=effective_zone_id,
     )
+    subnet_text = f" for subnet {payload['owner_id']}" if payload["owner_id"] else ""
     zone_text = f" in zone {_zone_label(effective_zone_id)}" if effective_zone_id else ""
-    expiry_text = str(current.get("expires_at_display") or "").strip()
-    expiry_suffix = f" Valid until {expiry_text}." if expiry_text else ""
-    current["summary"] = f"Scan this QR code to connect another browser to the current web workspace{zone_text}.{expiry_suffix}"
+    current["summary"] = (
+        "Open the link or scan the QR code to register a new browser"
+        f"{subnet_text}{zone_text}. Use the code below if the registration page asks for it."
+    )
     current["qr_text"] = link
     current["link"] = link
     current["code"] = code
@@ -432,9 +487,7 @@ def _telegram_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, 
     current = _decorate_current(_base_current("telegram"), context, request_id=request_id, status="ready", busy=False)
     _apply_expiry_fields(current, expires_at=(data or {}).get("expires_at"), fallback_ttl_seconds=_TELEGRAM_PAIR_TTL_S)
     zone_text = f" in zone {_zone_label(context.get('zone_id'))}" if context.get("zone_id") else ""
-    expiry_text = str(current.get("expires_at_display") or "").strip()
-    expiry_suffix = f" Valid until {expiry_text}." if expiry_text else ""
-    current["summary"] = f"Scan this QR code to open the Telegram join link for subnet {hub_id}{zone_text}.{expiry_suffix}"
+    current["summary"] = f"Scan this QR code to open the Telegram join link for subnet {hub_id}{zone_text}."
     current["qr_text"] = deep_link
     current["link"] = deep_link
     current["code"] = code
@@ -516,9 +569,7 @@ def _node_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]
     )
     zone_id = str(context.get("zone_id") or "").strip() or None
     zone_text = f" in zone {_zone_label(zone_id)}" if zone_id else ""
-    expiry_text = str(current.get("expires_at_display") or "").strip()
-    expiry_suffix = f" Valid until {expiry_text}." if expiry_text else ""
-    current["summary"] = f"Use the generated join code on Linux or Windows to add a node to subnet {hub_id}{zone_text}.{expiry_suffix}"
+    current["summary"] = f"Use the generated join code on Linux or Windows to add a node to subnet {hub_id}{zone_text}."
     current["code"] = code
     current["linux_command"] = _linux_bootstrap_command(
         asset_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
