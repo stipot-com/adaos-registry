@@ -688,7 +688,7 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
         + _skill_rollback_operation_rows()
         + _skill_post_commit_operation_rows()
     )
-    return {
+    snapshot = {
         "summary": summary,
         "overview": {
             **overview,
@@ -704,6 +704,8 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
             "task_goal": goal,
             "webspace_id": str(webspace_id or "").strip() or default_webspace_id(),
             "object_total": len(inspectors),
+            "partial": bool(errors),
+            "error_total": len(errors),
         },
     }
     if errors:
