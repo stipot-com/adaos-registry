@@ -39,6 +39,7 @@ from packaging.version import Version, InvalidVersion
 _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
 _EVENTS_STATE_KEY = "infrastate.events"
+_SUMMARY_RENDER_STATE_KEY = "infrastate.summary_render_state"
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
 _REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}
 _background_refresh_task: asyncio.Task[Any] | None = None
@@ -1170,6 +1171,93 @@ def _write_ui_state(**updates: Any) -> dict[str, Any]:
     payload = dict(_ui_state())
     payload.update(updates)
     skill_memory_set(_UI_STATE_KEY, payload)
+    return payload
+
+
+def _summary_render_state() -> dict[str, Any]:
+    raw = skill_memory_get(_SUMMARY_RENDER_STATE_KEY, {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def _write_summary_render_state(payload: dict[str, Any]) -> dict[str, Any]:
+    skill_memory_set(_SUMMARY_RENDER_STATE_KEY, payload)
+    return payload
+
+
+def _summary_render_context_key(selected_kind: str, selected_node_id: str, selected_yjs_webspace_id: str) -> str:
+    kind = str(selected_kind or "local").strip() or "local"
+    node_id = str(selected_node_id or "local").strip() or "local"
+    webspace_id = str(selected_yjs_webspace_id or "-").strip() or "-"
+    return f"{kind}:{node_id}:{webspace_id}"
+
+
+def _summary_segment_key(segment: str, index: int) -> str:
+    text = str(segment or "").strip()
+    if "=" in text:
+        head = text.split("=", 1)[0].strip()
+        if head:
+            return f"eq:{head}"
+    if ":" in text:
+        head = text.split(":", 1)[0].strip()
+        if head and " " not in head and len(head) <= 32:
+            return f"colon:{head}"
+    return f"index:{index}"
+
+
+def _unicode_bold_text(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    upper_src = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    lower_src = "abcdefghijklmnopqrstuvwxyz"
+    digit_src = "0123456789"
+    upper_dst = "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙"
+    lower_dst = "𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳"
+    digit_dst = "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗"
+    translation = str.maketrans(
+        {src: dst for src, dst in zip(upper_src + lower_src + digit_src, upper_dst + lower_dst + digit_dst)}
+    )
+    return text.translate(translation)
+
+
+def _highlight_changed_summary_text(current: Any, previous: Any) -> str:
+    current_text = str(current or "").strip()
+    previous_text = str(previous or "").strip()
+    if not current_text:
+        return ""
+    if not previous_text:
+        return current_text
+    if " | " not in current_text:
+        return current_text if current_text == previous_text else _unicode_bold_text(current_text)
+    current_segments = [part.strip() for part in current_text.split(" | ")]
+    previous_segments = [part.strip() for part in previous_text.split(" | ")] if previous_text else []
+    previous_map = {
+        _summary_segment_key(segment, index): segment
+        for index, segment in enumerate(previous_segments)
+        if segment
+    }
+    rendered: list[str] = []
+    for index, segment in enumerate(current_segments):
+        if not segment:
+            continue
+        prev_segment = previous_map.get(_summary_segment_key(segment, index))
+        rendered.append(segment if segment == prev_segment else _unicode_bold_text(segment))
+    return " | ".join(rendered)
+
+
+def _highlight_summary_changes(summary: dict[str, Any], *, context_key: str) -> dict[str, Any]:
+    payload = dict(summary or {})
+    state = _summary_render_state()
+    previous = state.get(context_key) if isinstance(state.get(context_key), dict) else {}
+    for field in ("value", "subtitle", "description"):
+        payload[field] = _highlight_changed_summary_text(payload.get(field), previous.get(field))
+    next_state = dict(state)
+    next_state[context_key] = {
+        "value": str(summary.get("value") or "").strip(),
+        "subtitle": str(summary.get("subtitle") or "").strip(),
+        "description": str(summary.get("description") or "").strip(),
+    }
+    _write_summary_render_state(next_state)
     return payload
 
 
@@ -2805,7 +2893,7 @@ def _summary(
         if selected_member.get("last_snapshot_ago_s") is not None:
             message += f" snapshot_ago={selected_member.get('last_snapshot_ago_s')}"
         message += " yjs=hub-local-only"
-    return {
+    summary_payload = {
         "label": summary_label,
         "value": summary_value,
         "subtitle": summary_subtitle,
@@ -2892,6 +2980,10 @@ def _summary(
             else _member_summary_buttons(status, lifecycle, selected_member, conf)
         ),
     }
+    return _highlight_summary_changes(
+        summary_payload,
+        context_key=_summary_render_context_key(selected_kind, selected_node_id, selected_yjs_webspace_id),
+    )
 
 
 def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability: dict[str, Any]) -> list[dict[str, Any]]:
