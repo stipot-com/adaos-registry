@@ -114,6 +114,13 @@ def _snapshot_cache_key(webspace_id: str | None = None) -> str:
     return str(webspace_id or "").strip() or default_webspace_id()
 
 
+def _invalidate_runtime_caches(*, webspace_id: str | None = None, marketplace: bool = False) -> None:
+    cache_key = _snapshot_cache_key(webspace_id)
+    _snapshot_cache.pop(cache_key, None)
+    if marketplace:
+        _marketplace_catalog_cache.clear()
+
+
 def _snapshot_projection_fingerprint(snapshot: dict[str, Any]) -> str:
     payload = _sanitize_snapshot_for_fingerprint(snapshot)
     return hashlib.sha1(_stable_json_bytes(payload)).hexdigest()
@@ -4248,6 +4255,7 @@ def on_refresh(evt: Any) -> None:
 @subscribe("operations.")
 def on_operations_changed(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
+    _invalidate_runtime_caches(webspace_id=_webspace_id_from_payload(payload))
     _schedule_snapshot_refresh(
         webspace_id=_webspace_id_from_payload(payload),
         reason="operations.changed",
@@ -4286,18 +4294,33 @@ def on_skill_activated(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     if not isinstance(payload, dict):
         return
+    _invalidate_runtime_caches(
+        webspace_id=_webspace_id_from_payload(payload),
+        marketplace=True,
+    )
     _schedule_snapshot_refresh(
         webspace_id=_webspace_id_from_payload(payload),
         reason="skills.activated",
     )
 
 
+@subscribe("skill.installed")
+@subscribe("skill.uninstalled")
+@subscribe("scenario.installed")
+@subscribe("scenario.removed")
+@subscribe("scenarios.synced")
+@subscribe("skills.rolledback")
 @subscribe("skills.updated")
-def on_skill_updated(evt: Any) -> None:
+def on_registry_changed(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
+    event_type = str(getattr(evt, "type", "") or "skills.updated")
+    _invalidate_runtime_caches(
+        webspace_id=_webspace_id_from_payload(payload),
+        marketplace=True,
+    )
     _schedule_snapshot_refresh(
         webspace_id=_webspace_id_from_payload(payload),
-        reason="skills.updated",
+        reason=event_type,
     )
 
 
