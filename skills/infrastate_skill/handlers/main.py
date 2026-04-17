@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -42,10 +43,95 @@ _EVENTS_STATE_KEY = "infrastate.events"
 _SUMMARY_RENDER_STATE_KEY = "infrastate.summary_render_state"
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
 _REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}
+_MARKETPLACE_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_CACHE_TTL_S") or "30"))
+_SNAPSHOT_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CACHE_TTL_S") or "1.5"))
 _background_refresh_task: asyncio.Task[Any] | None = None
 _background_refresh_pending = False
 _background_refresh_webspace_id: str | None = None
 _background_refresh_reason = ""
+_marketplace_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
+_snapshot_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_projection_fingerprints: dict[str, str] = {}
+_projection_diag = {
+    "apply_total": 0,
+    "skip_total": 0,
+    "cache_hit_total": 0,
+}
+
+
+def _stable_json_bytes(value: Any) -> bytes:
+    try:
+        text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    except Exception:
+        text = json.dumps(_clone_json_like_for_cache(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return text.encode("utf-8")
+
+
+def _clone_json_like_for_cache(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value))
+    except Exception:
+        if isinstance(value, dict):
+            return {str(k): _clone_json_like_for_cache(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_clone_json_like_for_cache(v) for v in value]
+        if isinstance(value, tuple):
+            return [_clone_json_like_for_cache(v) for v in value]
+        items = getattr(value, "items", None)
+        if callable(items):
+            try:
+                return {str(k): _clone_json_like_for_cache(v) for k, v in items()}
+            except Exception:
+                return value
+        return value
+
+
+def _sanitize_snapshot_for_fingerprint(value: Any) -> Any:
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for raw_key, raw_value in value.items():
+            key = str(raw_key or "")
+            folded = key.casefold()
+            if (
+                folded == "projection_diag"
+                or folded == "last_refresh_ts"
+                or folded.endswith("_ts")
+                or folded.endswith("_at")
+                or folded.endswith("_age_s")
+                or folded.endswith("_ago_s")
+            ):
+                continue
+            sanitized[key] = _sanitize_snapshot_for_fingerprint(raw_value)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_snapshot_for_fingerprint(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_snapshot_for_fingerprint(item) for item in value]
+    return value
+
+
+def _snapshot_cache_key(webspace_id: str | None = None) -> str:
+    return str(webspace_id or "").strip() or default_webspace_id()
+
+
+def _snapshot_projection_fingerprint(snapshot: dict[str, Any]) -> str:
+    payload = _sanitize_snapshot_for_fingerprint(snapshot)
+    return hashlib.sha1(_stable_json_bytes(payload)).hexdigest()
+
+
+def _cache_copy(value: Any) -> Any:
+    return _clone_json_like_for_cache(value)
+
+
+def _projection_diag_snapshot() -> dict[str, Any]:
+    return {
+        "marketplace_cache_ttl_s": _MARKETPLACE_CACHE_TTL_S,
+        "snapshot_cache_ttl_s": _SNAPSHOT_CACHE_TTL_S,
+        "apply_total": int(_projection_diag.get("apply_total") or 0),
+        "skip_total": int(_projection_diag.get("skip_total") or 0),
+        "cache_hit_total": int(_projection_diag.get("cache_hit_total") or 0),
+        "fingerprinted_webspaces": sorted(_projection_fingerprints),
+    }
 
 def _normalize_node_names(value: Any, *, limit: int = 8) -> list[str]:
     # Local copy for backward/forward compatibility with core.
@@ -281,6 +367,14 @@ def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
         return []
 
     workspace_root = Path(ctx.paths.workspace_dir())
+    cache_key = (str(workspace_root), str(kind_plural or "").strip())
+    cache_now = time.monotonic()
+    cached = _marketplace_catalog_cache.get(cache_key)
+    if cached is not None and _MARKETPLACE_CACHE_TTL_S > 0:
+        cached_at, cached_items = cached
+        if cache_now - cached_at <= _MARKETPLACE_CACHE_TTL_S:
+            return [dict(item) for item in cached_items]
+
     merged: dict[str, dict[str, Any]] = {}
 
     def _merge(items: list[dict[str, Any]] | Any) -> None:
@@ -310,7 +404,9 @@ def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
     if isinstance(scanned_payload, dict):
         _merge(scanned_payload.get(kind_plural))
 
-    return [merged[key] for key in sorted(merged, key=str.lower)]
+    result = [merged[key] for key in sorted(merged, key=str.lower)]
+    _marketplace_catalog_cache[cache_key] = (cache_now, [dict(item) for item in result])
+    return result
 
 
 def _skills_items() -> list[dict[str, Any]]:
@@ -1305,7 +1401,7 @@ async def _background_refresh_worker() -> None:
                 background_refresh_error="",
             )
             try:
-                refresh_snapshot(webspace_id=webspace_id)
+                await _refresh_snapshot_async(webspace_id=webspace_id, allow_cache=True)
             except Exception as exc:
                 _write_ui_state(
                     background_refresh_running=False,
@@ -3947,6 +4043,7 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
         "lifecycle": display_lifecycle,
         "reliability": reliability,
         "transport_diag": transport_diag,
+        "projection_diag": _projection_diag_snapshot(),
         "build_meta": display_build,
         "ui_state": ui_state,
         "slots_meta": display_slots_payload,
@@ -4025,6 +4122,7 @@ def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None) -> dic
         "lifecycle": lifecycle if isinstance(lifecycle, dict) else {},
         "reliability": reliability,
         "yjs_runtime": yjs_runtime,
+        "projection_diag": _projection_diag_snapshot(),
         "last_refresh_ts": time.time(),
         "fallback": True,
         "errors": [error_text],
@@ -4047,6 +4145,21 @@ def _snapshot_or_fallback(*, webspace_id: str | None = None) -> dict[str, Any]:
         return _fallback_snapshot(exc, webspace_id=webspace_id)
 
 
+def _snapshot_or_fallback_cached(*, webspace_id: str | None = None, allow_cache: bool = True) -> dict[str, Any]:
+    cache_key = _snapshot_cache_key(webspace_id)
+    now = time.monotonic()
+    if allow_cache and _SNAPSHOT_CACHE_TTL_S > 0:
+        cached = _snapshot_cache.get(cache_key)
+        if cached is not None:
+            cached_at, cached_snapshot = cached
+            if now - cached_at <= _SNAPSHOT_CACHE_TTL_S:
+                _projection_diag["cache_hit_total"] = int(_projection_diag.get("cache_hit_total") or 0) + 1
+                return _cache_copy(cached_snapshot)
+    snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
+    _snapshot_cache[cache_key] = (now, _cache_copy(snapshot))
+    return snapshot
+
+
 def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
     ids: set[str] = set()
     token = str(webspace_id or "").strip()
@@ -4063,9 +4176,31 @@ def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
     return sorted(ids)
 
 
-def _project(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
+async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
+    fingerprint = _snapshot_projection_fingerprint(snapshot)
     for target_ws in _projection_webspace_ids(webspace_id):
-        ctx_subnet.set("infrastate.snapshot", snapshot, webspace_id=target_ws)
+        if _projection_fingerprints.get(target_ws) == fingerprint:
+            _projection_diag["skip_total"] = int(_projection_diag.get("skip_total") or 0) + 1
+            continue
+        await ctx_subnet.set_async("infrastate.snapshot", snapshot, webspace_id=target_ws)
+        _projection_fingerprints[target_ws] = fingerprint
+        _projection_diag["apply_total"] = int(_projection_diag.get("apply_total") or 0) + 1
+
+
+def _project(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_project_async(snapshot, webspace_id=webspace_id))
+        return
+    loop.create_task(_project_async(snapshot, webspace_id=webspace_id))
+
+
+async def _refresh_snapshot_async(*, webspace_id: str | None = None, allow_cache: bool = True) -> dict[str, Any]:
+    _write_ui_state(last_refresh_ts=time.time())
+    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=allow_cache)
+    await _project_async(snapshot, webspace_id=webspace_id)
+    return {"ok": True, **snapshot}
 
 
 def _webspace_id_from_payload(payload: Any) -> str | None:
@@ -4084,15 +4219,19 @@ def _webspace_id_from_payload(payload: Any) -> str | None:
 
 @tool("get_snapshot")
 def get_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
-    snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
+    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
     _project(snapshot, webspace_id=webspace_id)
     return snapshot
 
 
 @tool("refresh_snapshot")
 def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_refresh_snapshot_async(webspace_id=webspace_id, allow_cache=False))
     _write_ui_state(last_refresh_ts=time.time())
-    snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
+    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=False)
     _project(snapshot, webspace_id=webspace_id)
     return {"ok": True, **snapshot}
 
@@ -4100,7 +4239,10 @@ def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
 @subscribe("infrastate.refresh")
 def on_refresh(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
-    refresh_snapshot(webspace_id=_webspace_id_from_payload(payload))
+    _schedule_snapshot_refresh(
+        webspace_id=_webspace_id_from_payload(payload),
+        reason="infrastate.refresh",
+    )
 
 
 @subscribe("operations.")
@@ -4124,7 +4266,10 @@ def on_action(evt: Any) -> None:
     except Exception as exc:
         _write_ui_state(last_action=action_id, last_action_ts=time.time(), last_error=str(exc))
         _log.warning("infrastate action failed: %s", action_id, exc_info=True)
-    refresh_snapshot(webspace_id=webspace_id)
+    _schedule_snapshot_refresh(
+        webspace_id=webspace_id,
+        reason=f"infrastate.action:{action_id or '-'}",
+    )
 
 
 @tool("adaos_update")
