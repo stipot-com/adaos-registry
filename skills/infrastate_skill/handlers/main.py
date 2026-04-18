@@ -1171,6 +1171,8 @@ def _git_text(*args: str) -> str:
             ["git", "-C", str(repo), *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             check=True,
         )
@@ -4205,7 +4207,11 @@ def _project(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
 
 async def _refresh_snapshot_async(*, webspace_id: str | None = None, allow_cache: bool = True) -> dict[str, Any]:
     _write_ui_state(last_refresh_ts=time.time())
-    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=allow_cache)
+    snapshot = await asyncio.to_thread(
+        _snapshot_or_fallback_cached,
+        webspace_id=webspace_id,
+        allow_cache=allow_cache,
+    )
     await _project_async(snapshot, webspace_id=webspace_id)
     return {"ok": True, **snapshot}
 
