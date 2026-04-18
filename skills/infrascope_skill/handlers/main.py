@@ -16,7 +16,10 @@ from adaos.sdk.data import ctx_subnet
 from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.operations.manager import get_operation_manager
-from adaos.services.scenario.webspace_runtime import WebspaceService
+from adaos.services.scenario.webspace_runtime import (
+    WebspaceService,
+    describe_webspace_operational_state,
+)
 from adaos.services.system_model.mappers import coerce_mapping
 from adaos.services.system_model.model import CanonicalObject, CanonicalStatus
 from adaos.services.system_model.service import (
@@ -24,11 +27,13 @@ from adaos.services.system_model.service import (
     current_object_inspector,
     current_overview_projection,
 )
+from adaos.services.yjs.doc import try_read_live_map_value
 from adaos.services.yjs.webspace import default_webspace_id
 
 _log = logging.getLogger("skills.infrascope_skill")
 
 _DEFAULT_TASK_GOAL = "assist operator in Infrascope"
+_SCENARIO_ID = "infrascope"
 _OVERVIEW_SECTIONS = (
     "health_strip",
     "active_incidents",
@@ -784,6 +789,45 @@ def _refresh_projection_targets(*, webspace_id: str | None = None) -> list[str]:
     return _projection_webspace_ids()
 
 
+def _is_infrascope_live_in_webspace(webspace_id: str) -> bool | None:
+    live_hit, raw_current = try_read_live_map_value(webspace_id, "ui", "current_scenario")
+    if not live_hit:
+        return None
+    return str(raw_current or "").strip() == _SCENARIO_ID
+
+
+async def _is_infrascope_active_webspace(webspace_id: str) -> bool:
+    token = str(webspace_id or "").strip() or default_webspace_id()
+    live_match = _is_infrascope_live_in_webspace(token)
+    if live_match is not None:
+        return live_match
+    try:
+        state = await describe_webspace_operational_state(token)
+    except Exception:
+        return False
+    return str(getattr(state, "current_scenario", "") or "").strip() == _SCENARIO_ID
+
+
+def _is_infrascope_active_webspace_sync(webspace_id: str) -> bool:
+    token = str(webspace_id or "").strip() or default_webspace_id()
+    live_match = _is_infrascope_live_in_webspace(token)
+    if live_match is not None:
+        return live_match
+    try:
+        state = asyncio.run(describe_webspace_operational_state(token))
+    except Exception:
+        return False
+    return str(getattr(state, "current_scenario", "") or "").strip() == _SCENARIO_ID
+
+
+async def _filter_active_targets(targets: list[str]) -> list[str]:
+    active: list[str] = []
+    for target_ws in targets:
+        if await _is_infrascope_active_webspace(target_ws):
+            active.append(target_ws)
+    return active
+
+
 def _refresh_snapshot_targets(targets: list[str]) -> dict[str, Any]:
     _ensure_skill_data_projections()
     projected = 0
@@ -823,7 +867,10 @@ async def _background_refresh_worker() -> None:
                     if wait_s > 0:
                         await asyncio.sleep(wait_s)
                 _last_refresh_at_mono = time.monotonic()
-                _refresh_snapshot_targets(targets)
+                targets = await _filter_active_targets(targets)
+                if not targets:
+                    continue
+                await asyncio.to_thread(_refresh_snapshot_targets, targets)
             except Exception:
                 _log.warning("background infrascope refresh failed reason=%s", reason, exc_info=True)
             await asyncio.sleep(0)
@@ -845,13 +892,16 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
         loop = asyncio.get_running_loop()
     except RuntimeError:
         _log.debug("no running loop for infrascope refresh; running inline reason=%s", reason)
+        target_ws = str(webspace_id or "").strip() or _event_webspace_fallback()
+        if not _is_infrascope_active_webspace_sync(target_ws):
+            return
         debounce_s = _refresh_debounce_s()
         if debounce_s > 0:
             now = time.monotonic()
             if now - float(_last_refresh_at_mono or 0.0) < debounce_s:
                 return
             _last_refresh_at_mono = now
-        _refresh_snapshot_targets(_refresh_projection_targets(webspace_id=str(webspace_id or "").strip() or _event_webspace_fallback()))
+        _refresh_snapshot_targets(_refresh_projection_targets(webspace_id=target_ws))
         _background_refresh_pending_all = False
         _background_refresh_reason = ""
         _background_refresh_webspace_ids.clear()
