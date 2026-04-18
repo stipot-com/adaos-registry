@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-18T18:26:39+00:00",
+  "updated_at": "2026-04-18T18:35:29+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -162,8 +162,8 @@
       "kind": "scenario",
       "id": "infrascope",
       "name": "infrascope",
-      "version": "0.6.0",
-      "updated_at": "2026-04-14T11:45:07+00:00",
+      "version": "0.7.0",
+      "updated_at": "2026-04-18T18:35:29+00:00",
       "path": "scenarios/infrascope",
       "manifest": "scenarios/infrascope/scenario.yaml",
       "source": {
@@ -175,7 +175,12 @@
         "name": "infrascope",
         "id": "infrascope"
       },
-      "description": "Operator control-plane scenario for overview, inventory, and in-context object inspection."
+      "description": "Operator control-plane scenario for overview, inventory, and in-context object inspection.",
+      "skills": {
+        "required": [
+          "infrascope_skill"
+        ]
+      }
     },
     {
       "kind": "scenario",
