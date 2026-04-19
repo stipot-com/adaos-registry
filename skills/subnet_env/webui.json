@@ -1,0 +1,206 @@
+{
+  "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "apps": [
+    {
+      "id": "subnet_env_app",
+      "title": "Subnet Env",
+      "icon": "git-network-outline",
+      "launchModal": "subnet_env_modal"
+    }
+  ],
+  "registry": {
+    "modals": {
+      "subnet_env_modal": {
+        "title": "Subnet Environment",
+        "schema": {
+          "id": "subnet_env_modal",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "subnet-env-summary",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Runtime mode",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/summary"
+              }
+            },
+            {
+              "id": "subnet-env-overview",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Overview",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/overview"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "",
+                "showDetails": false,
+                "itemAccordion": false,
+                "emptyText": "No environment details yet"
+              }
+            },
+            {
+              "id": "subnet-env-env-type",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "ENV_TYPE",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/actions/env_type"
+              },
+              "inputs": {
+                "variant": "stack",
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click",
+                  "type": "callSkill",
+                  "target": "subnet_env.apply_action",
+                  "params": {
+                    "action_id": "$event.id"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "subnet-env-git-user",
+              "type": "input.text",
+              "area": "main",
+              "title": "GIT_USER",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/forms/git_user"
+              },
+              "inputs": {
+                "bindField": "value",
+                "placeholder": "adaos"
+              },
+              "actions": [
+                {
+                  "on": "change",
+                  "type": "callSkill",
+                  "target": "subnet_env.set_env_value",
+                  "params": {
+                    "key": "GIT_USER",
+                    "value": "$event.value"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "subnet-env-git-email",
+              "type": "input.text",
+              "area": "main",
+              "title": "GIT_EMAIL",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/forms/git_email"
+              },
+              "inputs": {
+                "bindField": "value",
+                "placeholder": "adaos@local"
+              },
+              "actions": [
+                {
+                  "on": "change",
+                  "type": "callSkill",
+                  "target": "subnet_env.set_env_value",
+                  "params": {
+                    "key": "GIT_EMAIL",
+                    "value": "$event.value"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "subnet-env-subnet-actions",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "Subnet sync",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/actions/subnet"
+              },
+              "inputs": {
+                "variant": "stack",
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click",
+                  "type": "callSkill",
+                  "target": "subnet_env.apply_action",
+                  "params": {
+                    "action_id": "$event.id"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "subnet-env-diag-actions",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "Diagnostics",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/actions/diagnostics"
+              },
+              "inputs": {
+                "variant": "stack",
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click",
+                  "type": "callSkill",
+                  "target": "subnet_env.apply_action",
+                  "params": {
+                    "action_id": "$event.id"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "subnet-env-general-actions",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "Refresh",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/actions/general"
+              },
+              "inputs": {
+                "variant": "stack",
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click",
+                  "type": "callSkill",
+                  "target": "subnet_env.apply_action",
+                  "params": {
+                    "action_id": "$event.id"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

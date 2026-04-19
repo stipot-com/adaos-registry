@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-19T04:12:15+00:00",
+  "updated_at": "2026-04-19T13:40:01+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -155,6 +155,40 @@
       "entry": "handlers/main.py",
       "runtime_python": "3.11",
       "tools_count": 1
+    },
+    {
+      "kind": "skill",
+      "id": "subnet_env",
+      "name": "subnet_env",
+      "version": "0.2.0",
+      "updated_at": "2026-04-19T13:40:01+00:00",
+      "path": "skills/subnet_env",
+      "manifest": "skills/subnet_env/skill.yaml",
+      "source": {
+        "path": "skills/subnet_env",
+        "manifest": "skills/subnet_env/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "subnet_env",
+        "id": "subnet_env"
+      },
+      "description": "Local subnet environment operator skill for web_desktop modal workflows.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "activation": {
+        "mode": "lazy",
+        "when": {
+          "scenarios_active": [
+            "web_desktop"
+          ],
+          "client_presence": true,
+          "webspace_scope": "active"
+        },
+        "startup_allowed": false,
+        "background_refresh": false
+      },
+      "tools_count": 4
     }
   ],
   "scenarios": [

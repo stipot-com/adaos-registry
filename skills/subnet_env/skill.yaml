@@ -1,0 +1,82 @@
+name: subnet_env
+version: 0.2.0
+description: Local subnet environment operator skill for web_desktop modal workflows.
+runtime:
+  python: '3.11'
+  activation:
+    mode: lazy
+    startup_allowed: false
+    background_refresh: false
+    when:
+      scenarios_active:
+      - web_desktop
+      client_presence: true
+      webspace_scope: active
+entry: handlers/main.py
+dependencies: []
+events: {}
+data_projections:
+- scope: subnet
+  slot: subnet_env.snapshot
+  targets:
+  - backend: yjs
+    path: data/subnet_env
+default_tool: get_snapshot
+tools:
+- name: get_snapshot
+  description: Return the current local subnet environment snapshot.
+  entry: handlers.main:get_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+  output_schema:
+    type: object
+- name: refresh_snapshot
+  description: Refresh and project the subnet environment snapshot.
+  entry: handlers.main:refresh_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+  output_schema:
+    type: object
+- name: set_env_value
+  description: Update one allowlisted environment key and refresh the projection.
+  entry: handlers.main:set_env_value
+  input_schema:
+    type: object
+    properties:
+      key:
+        type: string
+      value:
+        type:
+        - string
+        - number
+        - boolean
+        - 'null'
+      webspace_id:
+        type: string
+    required:
+    - key
+  output_schema:
+    type: object
+- name: apply_action
+  description: Apply a predefined subnet_env UI action and refresh the projection.
+  entry: handlers.main:apply_action
+  input_schema:
+    type: object
+    properties:
+      action_id:
+        type: string
+      webspace_id:
+        type: string
+    required:
+    - action_id
+  output_schema:
+    type: object
+exports: {}
+updated_at: '2026-04-19T13:40:01+00:00'
+
