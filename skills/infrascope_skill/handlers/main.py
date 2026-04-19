@@ -16,10 +16,7 @@ from adaos.sdk.data import ctx_subnet
 from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.operations.manager import get_operation_manager
-from adaos.services.scenario.webspace_runtime import (
-    WebspaceService,
-    describe_webspace_operational_state,
-)
+from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.system_model.mappers import coerce_mapping
 from adaos.services.system_model.model import CanonicalObject, CanonicalStatus
 from adaos.services.system_model.service import (
@@ -799,25 +796,13 @@ def _is_infrascope_live_in_webspace(webspace_id: str) -> bool | None:
 async def _is_infrascope_active_webspace(webspace_id: str) -> bool:
     token = str(webspace_id or "").strip() or default_webspace_id()
     live_match = _is_infrascope_live_in_webspace(token)
-    if live_match is not None:
-        return live_match
-    try:
-        state = await describe_webspace_operational_state(token)
-    except Exception:
-        return False
-    return str(getattr(state, "current_scenario", "") or "").strip() == _SCENARIO_ID
+    return bool(live_match)
 
 
 def _is_infrascope_active_webspace_sync(webspace_id: str) -> bool:
     token = str(webspace_id or "").strip() or default_webspace_id()
     live_match = _is_infrascope_live_in_webspace(token)
-    if live_match is not None:
-        return live_match
-    try:
-        state = asyncio.run(describe_webspace_operational_state(token))
-    except Exception:
-        return False
-    return str(getattr(state, "current_scenario", "") or "").strip() == _SCENARIO_ID
+    return bool(live_match)
 
 
 async def _filter_active_targets(targets: list[str]) -> list[str]:
@@ -871,6 +856,10 @@ async def _background_refresh_worker() -> None:
                 if not targets:
                     continue
                 await asyncio.to_thread(_refresh_snapshot_targets, targets)
+            except (asyncio.CancelledError, RuntimeError) as exc:
+                if isinstance(exc, RuntimeError) and "Executor shutdown has been called" not in str(exc):
+                    raise
+                break
             except Exception:
                 _log.warning("background infrascope refresh failed reason=%s", reason, exc_info=True)
             await asyncio.sleep(0)
