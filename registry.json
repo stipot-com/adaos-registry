@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-19T13:40:01+00:00",
+  "updated_at": "2026-04-19T14:53:10+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -160,8 +160,8 @@
       "kind": "skill",
       "id": "subnet_env",
       "name": "subnet_env",
-      "version": "0.2.0",
-      "updated_at": "2026-04-19T13:40:01+00:00",
+      "version": "0.4.0",
+      "updated_at": "2026-04-19T14:53:10+00:00",
       "path": "skills/subnet_env",
       "manifest": "skills/subnet_env/skill.yaml",
       "source": {
@@ -173,7 +173,7 @@
         "name": "subnet_env",
         "id": "subnet_env"
       },
-      "description": "Local subnet environment operator skill for web_desktop modal workflows.",
+      "description": "Local subnet environment operator skill for safe SDK-first web_desktop workflows.",
       "entry": "handlers/main.py",
       "runtime_python": "3.11",
       "activation": {

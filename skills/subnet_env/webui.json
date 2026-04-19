@@ -8,6 +8,17 @@
       "launchModal": "subnet_env_modal"
     }
   ],
+  "widgets": [
+    {
+      "id": "subnet_env_widget",
+      "title": "Subnet Env",
+      "type": "visual.metricTile",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/subnet_env/summary"
+      }
+    }
+  ],
   "registry": {
     "modals": {
       "subnet_env_modal": {
@@ -35,6 +46,24 @@
               }
             },
             {
+              "id": "subnet-env-notices",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Operator Notes",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/notices"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "subtitle",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No notices"
+              }
+            },
+            {
               "id": "subnet-env-overview",
               "type": "ui.list",
               "area": "main",
@@ -46,9 +75,9 @@
               "inputs": {
                 "titleKey": "title",
                 "subtitleKey": "description",
-                "detailsPath": "",
-                "showDetails": false,
-                "itemAccordion": false,
+                "detailsPath": "subtitle",
+                "showDetails": true,
+                "itemAccordion": true,
                 "emptyText": "No environment details yet"
               }
             },
@@ -87,7 +116,7 @@
               },
               "inputs": {
                 "bindField": "value",
-                "placeholder": "adaos"
+                "placeholder": "AdaOS operator"
               },
               "actions": [
                 {
@@ -112,7 +141,7 @@
               },
               "inputs": {
                 "bindField": "value",
-                "placeholder": "adaos@local"
+                "placeholder": "operator@example.com"
               },
               "actions": [
                 {
@@ -130,7 +159,7 @@
               "id": "subnet-env-subnet-actions",
               "type": "input.commandBar",
               "area": "main",
-              "title": "Subnet sync",
+              "title": "Subnet Sync",
               "dataSource": {
                 "kind": "y",
                 "path": "data/subnet_env/actions/subnet"
@@ -154,7 +183,7 @@
               "id": "subnet-env-diag-actions",
               "type": "input.commandBar",
               "area": "main",
-              "title": "Diagnostics",
+              "title": "Diagnostics Actions",
               "dataSource": {
                 "kind": "y",
                 "path": "data/subnet_env/actions/diagnostics"
@@ -173,6 +202,78 @@
                   }
                 }
               ]
+            },
+            {
+              "id": "subnet-env-diagnostics",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Diagnostics State",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/diagnostics"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "subtitle",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No diagnostics state"
+              }
+            },
+            {
+              "id": "subnet-env-effective",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Effective Environment",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/effective_env"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "subtitle",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No effective environment data"
+              }
+            },
+            {
+              "id": "subnet-env-persisted",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Persisted .env",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/persisted_env"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "subtitle",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No persisted environment data"
+              }
+            },
+            {
+              "id": "subnet-env-drift",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Drift",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/subnet_env/drift"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "subtitle",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No drift between process env and .env"
+              }
             },
             {
               "id": "subnet-env-general-actions",

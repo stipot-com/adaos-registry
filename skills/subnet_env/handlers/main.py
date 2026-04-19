@@ -10,39 +10,125 @@ import yaml
 from adaos.sdk.core.decorators import tool
 from adaos.sdk.data import ctx_subnet
 from adaos.sdk.data.control_plane import get_reliability_projection, get_self_object
-from adaos.services.agent_context import get_ctx
 from adaos.services import node_config as _node_config
+from adaos.services.agent_context import get_ctx
 
-_ALLOWED_ENV_KEYS = {
-    "ENV_TYPE",
-    "GIT_USER",
-    "GIT_EMAIL",
-    "ADAOS_SUBNET_YJS_REPLICATION",
-    "ADAOS_CLI_DEBUG",
-    "ADAOS_LOG_LEVEL",
-    "ADAOS_SCENARIO_LOG_LEVEL",
-    "HUB_NATS_VERBOSE",
-    "HUB_NATS_TRACE",
-    "HUB_NATS_TRACE_INPUT",
-    "HUB_ROUTE_VERBOSE",
-    "ROUTE_PROXY_VERBOSE",
-    "HUB_TG_DEBUG",
+_BOOL_TRUE = {"1", "true", "yes", "on"}
+_BOOL_FALSE = {"0", "false", "no", "off"}
+_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "TRACE"}
+
+_ENV_META: dict[str, dict[str, Any]] = {
+    "ENV_TYPE": {
+        "title": "ENV_TYPE",
+        "group": "general",
+        "kind": "enum",
+        "description": "Runtime environment profile for this node.",
+        "clearable": True,
+        "restart": "recommended",
+    },
+    "GIT_USER": {
+        "title": "GIT_USER",
+        "group": "git",
+        "kind": "text",
+        "description": "Git author/identity name used by local workflows.",
+        "clearable": True,
+        "restart": "none",
+    },
+    "GIT_EMAIL": {
+        "title": "GIT_EMAIL",
+        "group": "git",
+        "kind": "text",
+        "description": "Git author email used by local workflows.",
+        "clearable": True,
+        "restart": "none",
+    },
+    "ADAOS_SUBNET_YJS_REPLICATION": {
+        "title": "ADAOS_SUBNET_YJS_REPLICATION",
+        "group": "subnet",
+        "kind": "bool",
+        "description": "Enable YJS replication for subnet-level data.",
+        "clearable": False,
+        "restart": "recommended",
+    },
+    "ADAOS_CLI_DEBUG": {
+        "title": "ADAOS_CLI_DEBUG",
+        "group": "diagnostics",
+        "kind": "bool",
+        "description": "Increase CLI-side debug noise.",
+        "clearable": False,
+        "restart": "maybe",
+    },
+    "ADAOS_LOG_LEVEL": {
+        "title": "ADAOS_LOG_LEVEL",
+        "group": "diagnostics",
+        "kind": "log_level",
+        "description": "Primary runtime log level.",
+        "clearable": False,
+        "restart": "recommended",
+    },
+    "ADAOS_SCENARIO_LOG_LEVEL": {
+        "title": "ADAOS_SCENARIO_LOG_LEVEL",
+        "group": "diagnostics",
+        "kind": "log_level",
+        "description": "Scenario runtime log level.",
+        "clearable": False,
+        "restart": "recommended",
+    },
+    "HUB_NATS_VERBOSE": {
+        "title": "HUB_NATS_VERBOSE",
+        "group": "diagnostics",
+        "kind": "bool",
+        "description": "Verbose NATS transport diagnostics.",
+        "clearable": False,
+        "restart": "maybe",
+    },
+    "HUB_NATS_TRACE": {
+        "title": "HUB_NATS_TRACE",
+        "group": "diagnostics",
+        "kind": "bool",
+        "description": "Trace NATS traffic at runtime.",
+        "clearable": False,
+        "restart": "maybe",
+    },
+    "HUB_NATS_TRACE_INPUT": {
+        "title": "HUB_NATS_TRACE_INPUT",
+        "group": "diagnostics",
+        "kind": "bool",
+        "description": "Trace inbound NATS payloads.",
+        "clearable": False,
+        "restart": "maybe",
+    },
+    "HUB_ROUTE_VERBOSE": {
+        "title": "HUB_ROUTE_VERBOSE",
+        "group": "diagnostics",
+        "kind": "bool",
+        "description": "Verbose routing diagnostics on hub side.",
+        "clearable": False,
+        "restart": "maybe",
+    },
+    "ROUTE_PROXY_VERBOSE": {
+        "title": "ROUTE_PROXY_VERBOSE",
+        "group": "diagnostics",
+        "kind": "bool",
+        "description": "Verbose route proxy diagnostics.",
+        "clearable": False,
+        "restart": "maybe",
+    },
+    "HUB_TG_DEBUG": {
+        "title": "HUB_TG_DEBUG",
+        "group": "diagnostics",
+        "kind": "bool",
+        "description": "Telegram integration debug mode.",
+        "clearable": False,
+        "restart": "maybe",
+    },
 }
 
-_DIAGNOSTIC_FLAG_KEYS = [
-    "ADAOS_CLI_DEBUG",
-    "HUB_NATS_VERBOSE",
-    "HUB_NATS_TRACE",
-    "HUB_NATS_TRACE_INPUT",
-    "HUB_ROUTE_VERBOSE",
-    "ROUTE_PROXY_VERBOSE",
-    "HUB_TG_DEBUG",
-]
-
-_LOG_LEVEL_KEYS = [
-    "ADAOS_LOG_LEVEL",
-    "ADAOS_SCENARIO_LOG_LEVEL",
-]
+_ALLOWED_ENV_KEYS = set(_ENV_META)
+_DIAGNOSTIC_FLAG_KEYS = [key for key, meta in _ENV_META.items() if meta.get("group") == "diagnostics" and meta.get("kind") == "bool"]
+_LOG_LEVEL_KEYS = [key for key, meta in _ENV_META.items() if meta.get("kind") == "log_level"]
+_TEXT_KEYS = [key for key, meta in _ENV_META.items() if meta.get("kind") == "text"]
+_RESTART_RECOMMENDED_KEYS = {key for key, meta in _ENV_META.items() if meta.get("restart") == "recommended"}
 
 _ENV_TYPE_ACTIONS = {
     "env_type_default": ("ENV_TYPE", ""),
@@ -62,25 +148,58 @@ _LOG_LEVEL_ACTIONS = {
     "scenario_log_level_debug": ("ADAOS_SCENARIO_LOG_LEVEL", "DEBUG"),
 }
 
-_BOOL_TRUE = {"1", "true", "yes", "on"}
-
 
 def lang_res() -> dict[str, str]:
     return {}
 
 
-def _repo_root() -> Path:
-    for parent in Path(__file__).resolve().parents:
-        if (parent / ".git").exists():
-            return parent
-    return Path.cwd().resolve()
+def _search_dotenv_in_parents(start: Path | None, *, name: str = ".env") -> Path | None:
+    if start is None:
+        return None
+    try:
+        current = start.resolve()
+    except Exception:
+        return None
+    for candidate in [current, *current.parents]:
+        path = candidate / name
+        if path.exists():
+            return path.resolve()
+    return None
+
+
+def _repo_root() -> Path | None:
+    try:
+        ctx = get_ctx()
+        raw = getattr(ctx.paths, "repo_root", None)
+        path = raw() if callable(raw) else raw
+        if path:
+            return Path(path).expanduser().resolve()
+    except Exception:
+        pass
+    try:
+        return Path(__file__).resolve().parents[5]
+    except Exception:
+        return None
 
 
 def _dotenv_path() -> Path:
     explicit = str(os.getenv("ADAOS_SHARED_DOTENV_PATH") or "").strip()
     if explicit:
         return Path(explicit).expanduser().resolve()
-    return (_repo_root() / ".env").resolve()
+    repo_root = _repo_root()
+    if repo_root is not None:
+        candidate = (repo_root / ".env").resolve()
+        if candidate.exists():
+            return candidate
+    found = _search_dotenv_in_parents(Path.cwd())
+    if found is not None:
+        return found
+    found = _search_dotenv_in_parents(Path(__file__).resolve().parent)
+    if found is not None:
+        return found
+    if repo_root is not None:
+        return (repo_root / ".env").resolve()
+    return (Path.cwd() / ".env").resolve()
 
 
 def _read_text(path: Path) -> str:
@@ -111,38 +230,50 @@ def _read_dotenv(path: Path) -> dict[str, str]:
     return payload
 
 
+def _meta(key: str) -> dict[str, Any]:
+    return dict(_ENV_META.get(key) or {"title": key, "group": "general", "kind": "text", "description": "", "clearable": False, "restart": "none"})
+
+
 def _normalize_env_value(key: str, value: Any) -> str:
     token = "" if value is None else str(value).strip()
-    if key == "ENV_TYPE":
+    meta = _meta(key)
+    kind = str(meta.get("kind") or "text")
+    if kind == "enum":
         lowered = token.lower()
-        if lowered in {"", "dev", "prod"}:
-            return lowered
-        return token
-    if key in _LOG_LEVEL_KEYS:
-        return token.upper() or "INFO"
-    if key in _ALLOWED_ENV_KEYS and (
-        key.endswith("_DEBUG")
-        or key.endswith("_VERBOSE")
-        or key.endswith("_TRACE")
-        or key.endswith("_TRACE_INPUT")
-        or key == "ADAOS_SUBNET_YJS_REPLICATION"
-    ):
+        if lowered not in {"", "dev", "prod"}:
+            raise ValueError("allowed values: '', dev, prod")
+        return lowered
+    if kind == "bool":
         lowered = token.lower()
-        return "1" if lowered in _BOOL_TRUE else "0"
+        if lowered in _BOOL_TRUE:
+            return "1"
+        if lowered in _BOOL_FALSE or not lowered:
+            return "0"
+        raise ValueError("expected boolean-like value")
+    if kind == "log_level":
+        upper = token.upper()
+        if not upper:
+            return "INFO"
+        if upper not in _LOG_LEVELS:
+            raise ValueError(f"expected one of: {', '.join(sorted(_LOG_LEVELS))}")
+        return upper
+    if "\n" in token or "\r" in token:
+        raise ValueError("multiline values are not allowed")
+    if key == "GIT_EMAIL" and token and "@" not in token:
+        raise ValueError("email must contain '@'")
     return token
 
 
-def _dotenv_line(key: str, value: Any) -> str:
-    normalized = _normalize_env_value(key, value)
-    escaped = normalized.replace('"', '\\"')
-    if not normalized:
+def _dotenv_line(key: str, value: str) -> str:
+    escaped = value.replace('"', '\\"')
+    if not value:
         return f"{key}=\n"
-    if any(ch.isspace() for ch in normalized) or "#" in normalized:
+    if any(ch.isspace() for ch in value) or "#" in value:
         return f'{key}="{escaped}"\n'
-    return f"{key}={normalized}\n"
+    return f"{key}={value}\n"
 
 
-def _write_dotenv_value(path: Path, key: str, value: Any) -> None:
+def _write_dotenv_value(path: Path, key: str, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = _read_text(path)
     lines = existing.splitlines(keepends=True) if existing else []
@@ -163,6 +294,23 @@ def _write_dotenv_value(path: Path, key: str, value: Any) -> None:
     path.write_text("".join(next_lines), encoding="utf-8")
 
 
+def _delete_dotenv_value(path: Path, key: str) -> None:
+    existing = _read_text(path)
+    if not existing:
+        return
+    pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
+    lines = existing.splitlines(keepends=True)
+    next_lines = [line for line in lines if not pattern.match(line)]
+    path.write_text("".join(next_lines), encoding="utf-8")
+
+
+def _persist_env_value(path: Path, key: str, value: str) -> None:
+    if not value and _meta(key).get("clearable"):
+        _delete_dotenv_value(path, key)
+        return
+    _write_dotenv_value(path, key, value)
+
+
 def _env_file_value(file_env: dict[str, str], key: str) -> str:
     return str(file_env.get(key) or "").strip()
 
@@ -175,7 +323,19 @@ def _effective_env_value(file_env: dict[str, str], key: str) -> str:
 
 
 def _env_flag_enabled(file_env: dict[str, str], key: str) -> bool:
-    return _effective_env_value(file_env, key).strip().lower() in _BOOL_TRUE
+    return _effective_env_value(file_env, key).lower() in _BOOL_TRUE
+
+
+def _mask_empty(value: str, *, fallback: str = "<unset>") -> str:
+    return value if str(value or "").strip() else fallback
+
+
+def _effective_source(file_env: dict[str, str], key: str) -> str:
+    if os.getenv(key) is not None:
+        return "process env"
+    if key in file_env:
+        return ".env"
+    return "default"
 
 
 def _ensure_skill_data_projections() -> None:
@@ -208,113 +368,195 @@ def _node_payload() -> dict[str, Any]:
     }
 
 
-def _overview_items(file_env: dict[str, str], node: dict[str, Any], reliability: dict[str, Any], dotenv_path: Path) -> list[dict[str, Any]]:
+def _env_rows(file_env: dict[str, str], *, view: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in sorted(_ALLOWED_ENV_KEYS):
+        meta = _meta(key)
+        file_value = _env_file_value(file_env, key)
+        effective_value = _effective_env_value(file_env, key)
+        if view == "file":
+            shown = file_value
+            subtitle = f"{meta['group']} | persisted"
+        else:
+            shown = effective_value
+            subtitle = f"{meta['group']} | source={_effective_source(file_env, key)}"
+            if file_value != effective_value and file_value:
+                subtitle += f" | file={file_value}"
+        rows.append(
+            {
+                "id": f"{view}:{key}",
+                "title": meta["title"],
+                "description": _mask_empty(shown),
+                "subtitle": subtitle,
+            }
+        )
+    rows.append(
+        {
+            "id": f"{view}:ADAOS_ZONE_ID",
+            "title": "ADAOS_ZONE_ID",
+            "description": _mask_empty(_effective_env_value(file_env, "ADAOS_ZONE_ID") if view == "effective" else _env_file_value(file_env, "ADAOS_ZONE_ID")),
+            "subtitle": "identity | read-only",
+        }
+    )
+    return rows
+
+
+def _diagnostic_rows(file_env: dict[str, str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in _DIAGNOSTIC_FLAG_KEYS + _LOG_LEVEL_KEYS:
+        meta = _meta(key)
+        effective = _effective_env_value(file_env, key)
+        rows.append(
+            {
+                "id": f"diag:{key}",
+                "title": key,
+                "description": _mask_empty(effective, fallback="0" if meta.get("kind") == "bool" else "INFO"),
+                "subtitle": meta.get("description") or "",
+            }
+        )
+    return rows
+
+
+def _drift_rows(file_env: dict[str, str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in sorted(_ALLOWED_ENV_KEYS | {"ADAOS_ZONE_ID"}):
+        file_value = _env_file_value(file_env, key)
+        effective_value = _effective_env_value(file_env, key)
+        if file_value == effective_value or (not file_value and not os.getenv(key)):
+            continue
+        rows.append(
+            {
+                "id": f"drift:{key}",
+                "title": key,
+                "description": f"effective={_mask_empty(effective_value)} | file={_mask_empty(file_value)}",
+                "subtitle": "process env overrides persisted value",
+            }
+        )
+    return rows
+
+
+def _overview_items(file_env: dict[str, str], node: dict[str, Any], reliability: dict[str, Any], dotenv_path: Path, drift_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     runtime = node.get("runtime") if isinstance(node.get("runtime"), dict) else {}
     route_mode = str(runtime.get("route_mode") or "").strip()
     connected = runtime.get("connected_to_hub")
     projection = reliability.get("subject") if isinstance(reliability.get("subject"), dict) else {}
     health = projection.get("health") if isinstance(projection.get("health"), dict) else {}
     return [
-        {
-            "id": "env-file",
-            "title": "dotenv source",
-            "description": str(dotenv_path),
-        },
-        {
-            "id": "env-type",
-            "title": "ENV_TYPE",
-            "description": _effective_env_value(file_env, "ENV_TYPE") or "<default>",
-        },
-        {
-            "id": "zone-id",
-            "title": "zone_id",
-            "description": node.get("zone_id") or _effective_env_value(file_env, "ADAOS_ZONE_ID") or "<unset>",
-        },
+        {"id": "env-file", "title": "dotenv source", "description": str(dotenv_path), "subtitle": "shared runtime env file"},
+        {"id": "env-type", "title": "ENV_TYPE", "description": _mask_empty(_effective_env_value(file_env, "ENV_TYPE"), fallback="<default>"), "subtitle": f"source={_effective_source(file_env, 'ENV_TYPE')}"},
+        {"id": "zone-id", "title": "zone_id", "description": node.get("zone_id") or _effective_env_value(file_env, "ADAOS_ZONE_ID") or "<unset>", "subtitle": "node config or ADAOS_ZONE_ID"},
         {
             "id": "node",
             "title": "node",
-            "description": (
-                f"{node.get('primary_node_name') or node.get('node_id') or '-'} | "
-                f"role={node.get('role') or '-'} | subnet={node.get('subnet_id') or '-'}"
-            ),
+            "description": f"{node.get('primary_node_name') or node.get('node_id') or '-'} | role={node.get('role') or '-'}",
+            "subtitle": f"subnet={node.get('subnet_id') or '-'}",
         },
         {
             "id": "routing",
             "title": "routing",
             "description": f"route_mode={route_mode or '-'} | connected_to_hub={connected}",
+            "subtitle": "runtime projection",
         },
         {
-            "id": "projection",
+            "id": "reliability",
             "title": "reliability",
-            "description": (
-                f"status={projection.get('status') or '-'} | "
-                f"connectivity={health.get('connectivity') or '-'} | "
-                f"runtime_freshness={health.get('runtime_freshness') or '-'}"
-            ),
+            "description": f"status={projection.get('status') or '-'} | connectivity={health.get('connectivity') or '-'}",
+            "subtitle": f"runtime_freshness={health.get('runtime_freshness') or '-'}",
         },
         {
             "id": "git",
             "title": "git identity",
-            "description": (
-                f"{_effective_env_value(file_env, 'GIT_USER') or '<unset>'} "
-                f"<{_effective_env_value(file_env, 'GIT_EMAIL') or '<unset>'}>"
-            ),
+            "description": f"{_mask_empty(_effective_env_value(file_env, 'GIT_USER'))} <{_mask_empty(_effective_env_value(file_env, 'GIT_EMAIL'))}>",
+            "subtitle": "local author identity",
         },
         {
             "id": "subnet-sync",
             "title": "subnet yjs replication",
             "description": "enabled" if _env_flag_enabled(file_env, "ADAOS_SUBNET_YJS_REPLICATION") else "disabled",
+            "subtitle": "runtime flag",
+        },
+        {
+            "id": "drift",
+            "title": "effective vs file drift",
+            "description": str(len(drift_rows)),
+            "subtitle": "keys where process env differs from persisted .env",
         },
     ]
+
+
+def _notice_items(file_env: dict[str, str], drift_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    notices: list[dict[str, Any]] = []
+    if drift_rows:
+        notices.append(
+            {
+                "id": "notice:drift",
+                "title": "Effective environment differs from .env",
+                "description": f"{len(drift_rows)} key(s) are overridden in the current process environment.",
+                "subtitle": "The modal shows both views so operators can see drift explicitly.",
+            }
+        )
+    restart_keys = [
+        key
+        for key in sorted(_RESTART_RECOMMENDED_KEYS)
+        if _env_file_value(file_env, key) or os.getenv(key) is not None
+    ]
+    notices.append(
+        {
+            "id": "notice:restart",
+            "title": "Some changes may need restart",
+            "description": "ENV_TYPE, subnet replication and log-level updates can require runtime/service restart.",
+            "subtitle": ", ".join(restart_keys) if restart_keys else "No restart-sensitive keys are currently set.",
+        }
+    )
+    notices.append(
+        {
+            "id": "notice:safety",
+            "title": "Secrets are intentionally excluded",
+            "description": "subnet_env edits only a small allowlist and does not expose tokens or certificates.",
+            "subtitle": "This keeps the SDK-facing skill surface safe for LLM-authored workflows.",
+        }
+    )
+    return notices
 
 
 def _action_groups(file_env: dict[str, str]) -> dict[str, list[dict[str, Any]]]:
     env_type = _effective_env_value(file_env, "ENV_TYPE")
-    env_label = env_type or "<default>"
     env_actions = [
-        {"id": "env_type_default", "label": f"Use default ({env_label})" if not env_type else "Clear ENV_TYPE"},
-        {"id": "env_type_dev", "label": "Set ENV_TYPE=dev"},
-        {"id": "env_type_prod", "label": "Set ENV_TYPE=prod"},
+        {"id": "env_type_default", "label": "Use default" if not env_type else "Clear ENV_TYPE"},
+        {"id": "env_type_dev", "label": "Set dev"},
+        {"id": "env_type_prod", "label": "Set prod"},
     ]
-
     subnet_actions = [
-        {
-            "id": "subnet_yjs_replication_on",
-            "label": f"YJS replication: {'on' if _env_flag_enabled(file_env, 'ADAOS_SUBNET_YJS_REPLICATION') else 'turn on'}",
-        },
-        {
-            "id": "subnet_yjs_replication_off",
-            "label": f"YJS replication: {'turn off' if _env_flag_enabled(file_env, 'ADAOS_SUBNET_YJS_REPLICATION') else 'off'}",
-        },
+        {"id": "subnet_yjs_replication_on", "label": "Replication on"},
+        {"id": "subnet_yjs_replication_off", "label": "Replication off"},
     ]
-
     diag_actions: list[dict[str, Any]] = []
     for key in _DIAGNOSTIC_FLAG_KEYS:
         enabled = _env_flag_enabled(file_env, key)
-        diag_actions.append(
-            {
-                "id": f"toggle::{key}",
-                "label": f"{key}: {'on' if enabled else 'off'}",
-            }
-        )
+        diag_actions.append({"id": f"toggle::{key}", "label": f"{key}: {'on' if enabled else 'off'}"})
     for action_id, (key, value) in _LOG_LEVEL_ACTIONS.items():
         current = _effective_env_value(file_env, key).upper() or "INFO"
-        diag_actions.append(
-            {
-                "id": action_id,
-                "label": f"{key}: {current} -> {value}",
-            }
-        )
-
-    general_actions = [
-        {"id": "refresh_snapshot", "label": "Refresh snapshot"},
-    ]
-
+        diag_actions.append({"id": action_id, "label": f"{key}: {current} -> {value}"})
     return {
         "env_type": env_actions,
         "subnet": subnet_actions,
         "diagnostics": diag_actions,
-        "general": general_actions,
+        "general": [{"id": "refresh_snapshot", "label": "Refresh snapshot"}],
+    }
+
+
+def _field_forms(file_env: dict[str, str]) -> dict[str, dict[str, Any]]:
+    return {
+        "git_user": {
+            "value": _effective_env_value(file_env, "GIT_USER"),
+            "placeholder": "AdaOS operator",
+            "hint": "Blank value clears persisted GIT_USER.",
+        },
+        "git_email": {
+            "value": _effective_env_value(file_env, "GIT_EMAIL"),
+            "placeholder": "operator@example.com",
+            "hint": "Blank value clears persisted GIT_EMAIL.",
+        },
     }
 
 
@@ -327,18 +569,22 @@ def _build_snapshot() -> dict[str, Any]:
     env_type = _effective_env_value(file_env, "ENV_TYPE") or "default"
     zone_id = node.get("zone_id") or _effective_env_value(file_env, "ADAOS_ZONE_ID") or "unset"
     yjs_enabled = _env_flag_enabled(file_env, "ADAOS_SUBNET_YJS_REPLICATION")
+    drift_rows = _drift_rows(file_env)
 
     snapshot = {
         "summary": {
             "value": env_type,
             "label": f"zone={zone_id} | yjs={'on' if yjs_enabled else 'off'}",
+            "subtitle": f"node={node.get('primary_node_name') or node.get('node_id') or '-'}",
         },
-        "overview": _overview_items(file_env, node, reliability, dotenv_path),
-        "forms": {
-            "git_user": {"value": _effective_env_value(file_env, "GIT_USER")},
-            "git_email": {"value": _effective_env_value(file_env, "GIT_EMAIL")},
-        },
+        "overview": _overview_items(file_env, node, reliability, dotenv_path, drift_rows),
+        "notices": _notice_items(file_env, drift_rows),
+        "forms": _field_forms(file_env),
         "actions": _action_groups(file_env),
+        "effective_env": _env_rows(file_env, view="effective"),
+        "persisted_env": _env_rows(file_env, view="file"),
+        "diagnostics": _diagnostic_rows(file_env),
+        "drift": drift_rows,
         "env": {
             "dotenv_path": str(dotenv_path),
             "exists": dotenv_path.exists(),
@@ -346,11 +592,17 @@ def _build_snapshot() -> dict[str, Any]:
             "file": {key: _env_file_value(file_env, key) for key in sorted(_ALLOWED_ENV_KEYS | {"ADAOS_ZONE_ID"})},
         },
         "node": node,
+        "state": {
+            "zone_id": zone_id,
+            "env_type": env_type,
+            "drift_count": len(drift_rows),
+            "restart_recommended": any(_effective_env_value(file_env, key) for key in _RESTART_RECOMMENDED_KEYS),
+        },
         "safety": {
             "editable_keys": sorted(_ALLOWED_ENV_KEYS),
             "read_only_notes": [
-                "Secrets and tokens are intentionally excluded from subnet_env MVP.",
-                "Some dotenv changes may require runtime restart to fully apply.",
+                "ADAOS_ZONE_ID is visible but read-only in subnet_env MVP.",
+                "Secrets, tokens, certificates and transport bootstrap parameters stay outside this skill.",
             ],
         },
     }
@@ -384,9 +636,16 @@ def set_env_value(key: str, value: Any = None, webspace_id: str | None = None) -
     token = str(key or "").strip()
     if token not in _ALLOWED_ENV_KEYS:
         return {"ok": False, "error": "key_not_allowed", "key": token}
-    normalized = _normalize_env_value(token, value)
-    _write_dotenv_value(_dotenv_path(), token, normalized)
-    os.environ[token] = normalized
+    try:
+        normalized = _normalize_env_value(token, value)
+    except ValueError as exc:
+        return {"ok": False, "error": "invalid_value", "key": token, "message": str(exc)}
+    dotenv_path = _dotenv_path()
+    _persist_env_value(dotenv_path, token, normalized)
+    if normalized:
+        os.environ[token] = normalized
+    else:
+        os.environ.pop(token, None)
     snapshot = _refresh(webspace_id=webspace_id)
     return {"ok": True, "key": token, "value": normalized, **snapshot}
 
