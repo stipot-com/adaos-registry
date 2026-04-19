@@ -1411,6 +1411,15 @@ async def _background_refresh_worker() -> None:
             )
             try:
                 await _refresh_snapshot_async(webspace_id=webspace_id, allow_cache=True)
+            except (asyncio.CancelledError, RuntimeError) as exc:
+                if isinstance(exc, RuntimeError) and "Executor shutdown has been called" not in str(exc):
+                    raise
+                _write_ui_state(
+                    background_refresh_running=False,
+                    background_refresh_finished_at=time.time(),
+                    background_refresh_error="",
+                )
+                break
             except Exception as exc:
                 _write_ui_state(
                     background_refresh_running=False,
