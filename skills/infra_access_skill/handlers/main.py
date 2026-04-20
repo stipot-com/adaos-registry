@@ -42,6 +42,22 @@ def _format_when(value: Any) -> str:
     return token or "unknown"
 
 
+def _mcp_http_url(root_url: str) -> str:
+    token = str(root_url or "").strip()
+    return token.rstrip("/") + "/v1/root/mcp" if token else ""
+
+
+def _prepare_codex_command(*, root_url: str, target_id: str, capability_profile: str = "ProfileOpsRead") -> str:
+    resolved_root_url = str(root_url or "").strip()
+    resolved_target_id = str(target_id or "").strip()
+    if not resolved_root_url or not resolved_target_id:
+        return ""
+    return (
+        f"adaos dev root mcp prepare-codex --target-id {resolved_target_id} "
+        f"--root-url {resolved_root_url} --capability-profile {capability_profile} --apply-codex"
+    )
+
+
 def _result_block(payload: Mapping[str, Any]) -> dict[str, Any]:
     response = payload.get("response")
     if isinstance(response, Mapping):
@@ -84,7 +100,7 @@ def _credential_rows(
     sessions: list[dict[str, Any]],
     access_tokens: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    mcp_http_url = root_url.rstrip("/") + "/v1/root/mcp"
+    mcp_http_url = _mcp_http_url(root_url)
     rows: list[dict[str, Any]] = []
     for item in sessions:
         session_id = str(item.get("session_id") or "").strip()
@@ -145,9 +161,10 @@ def _credential_rows(
 
 
 def _codex_help(*, root_url: str, target_id: str, capability_profile: str = "ProfileOpsRead") -> list[dict[str, Any]]:
-    command = (
-        f"adaos dev root mcp prepare-codex --target-id {target_id} "
-        f"--root-url {root_url} --capability-profile {capability_profile} --apply-codex"
+    command = _prepare_codex_command(
+        root_url=root_url,
+        target_id=target_id,
+        capability_profile=capability_profile,
     )
     return [
         {
@@ -158,7 +175,8 @@ def _codex_help(*, root_url: str, target_id: str, capability_profile: str = "Pro
                 "step_1": f"Issue a new MCP session for target {target_id}",
                 "step_2": command,
                 "note": "Existing sessions and access tokens are listed below without bearer secrets; a fresh bearer is returned only when you issue a new session.",
-                "mcp_http_url": root_url.rstrip("/") + "/v1/root/mcp",
+                "root_url": root_url,
+                "mcp_http_url": _mcp_http_url(root_url),
             },
         }
     ]
@@ -205,6 +223,11 @@ def _summary_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
             "description": str(snapshot.get("root_url") or "unknown"),
         },
         {
+            "id": "mcp-http-url",
+            "title": "MCP HTTP URL",
+            "description": _mcp_http_url(str(snapshot.get("root_url") or "")) or "unknown",
+        },
+        {
             "id": "bootstrap",
             "title": "Preferred bootstrap",
             "description": str(snapshot.get("preferred_bootstrap") or "MCP Session Lease"),
@@ -231,16 +254,15 @@ def _connection_block(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "root_url": root_url,
         "root_url_language": "text",
-        "mcp_http_url": root_url.rstrip("/") + "/v1/root/mcp" if root_url else "",
+        "mcp_http_url": _mcp_http_url(root_url),
         "mcp_http_url_language": "text",
         "target_id": target_id,
         "bootstrap_mode": "mcp_session_lease",
         "generated_at": str(snapshot.get("generated_at") or "").strip(),
-        "codex_prepare_command": (
-            f"adaos dev root mcp prepare-codex --target-id {target_id} "
-            f"--root-url {root_url} --capability-profile {capability_profile} --apply-codex"
-            if root_url and target_id
-            else ""
+        "codex_prepare_command": _prepare_codex_command(
+            root_url=root_url,
+            target_id=target_id,
+            capability_profile=capability_profile,
         ),
         "codex_prepare_language": "bash",
     }
@@ -308,19 +330,25 @@ def _fallback_snapshot(
             "description": "Fix Root access for this node first, then issue a fresh MCP session.",
             "content": {
                 "error": error_text,
-                "hint": "The UI will show root_url and MCP HTTP URL after the next successful refresh.",
+                "hint": "Issue a fresh MCP session after Root access is restored. The URL below is already the stable zonal MCP endpoint.",
+                "root_url": root_url,
+                "mcp_http_url": _mcp_http_url(root_url),
             },
         }
     ]
     snapshot["connection"] = {
         "root_url": root_url,
         "root_url_language": "text",
-        "mcp_http_url": root_url.rstrip("/") + "/v1/root/mcp" if root_url else "",
+        "mcp_http_url": _mcp_http_url(root_url),
         "mcp_http_url_language": "text",
         "target_id": requested_target_id,
         "bootstrap_mode": "mcp_session_lease",
         "generated_at": snapshot["generated_at"],
-        "codex_prepare_command": "",
+        "codex_prepare_command": _prepare_codex_command(
+            root_url=root_url,
+            target_id=requested_target_id,
+            capability_profile="ProfileOpsRead",
+        ),
         "codex_prepare_language": "bash",
         "error": error_text,
     }
@@ -470,15 +498,16 @@ def issue_codex_connection(
     payload = {
         "ok": True,
         "root_url": context.get("root_url"),
-        "mcp_http_url": str(context.get("root_url") or "").rstrip("/") + "/v1/root/mcp",
+        "mcp_http_url": _mcp_http_url(str(context.get("root_url") or "")),
         "target_id": context.get("target_id"),
         "session_id": result.get("session_id"),
         "access_token": result.get("access_token"),
         "expires_at": result.get("expires_at"),
         "capability_profile": result.get("capability_profile") or capability_profile,
-        "codex_prepare_command": (
-            f"adaos dev root mcp prepare-codex --target-id {context.get('target_id')} "
-            f"--root-url {context.get('root_url')} --capability-profile {result.get('capability_profile') or capability_profile} --apply-codex"
+        "codex_prepare_command": _prepare_codex_command(
+            root_url=str(context.get("root_url") or ""),
+            target_id=str(context.get("target_id") or ""),
+            capability_profile=str(result.get("capability_profile") or capability_profile),
         ),
     }
     try:
