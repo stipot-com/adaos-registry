@@ -169,17 +169,31 @@ def _summary(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     access_tokens = list(snapshot.get("access_tokens") or [])
     target_id = str(snapshot.get("target_id") or "unknown").strip() or "unknown"
     root_url = str(snapshot.get("root_url") or "").strip() or "unknown"
+    generated_at = str(snapshot.get("generated_at") or "unknown").strip() or "unknown"
+    ok = bool(snapshot.get("ok"))
     return {
         "value": len(sessions) + len(access_tokens),
         "label": "Active MCP credentials",
         "subtitle": target_id,
-        "description": root_url,
+        "description": f"{root_url} | updated {generated_at} | {'live' if ok else 'fallback'}",
     }
 
 
 def _summary_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
     profiles = list(snapshot.get("session_capability_profiles") or [])
+    generated_at = str(snapshot.get("generated_at") or "unknown").strip() or "unknown"
+    ok = bool(snapshot.get("ok"))
     items = [
+        {
+            "id": "snapshot-updated-at",
+            "title": "Snapshot updated",
+            "description": generated_at,
+        },
+        {
+            "id": "snapshot-state",
+            "title": "Snapshot state",
+            "description": "live" if ok else "fallback",
+        },
         {
             "id": "target",
             "title": "Managed target",
@@ -221,6 +235,7 @@ def _connection_block(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         "mcp_http_url_language": "text",
         "target_id": target_id,
         "bootstrap_mode": "mcp_session_lease",
+        "generated_at": str(snapshot.get("generated_at") or "").strip(),
         "codex_prepare_command": (
             f"adaos dev root mcp prepare-codex --target-id {target_id} "
             f"--root-url {root_url} --capability-profile {capability_profile} --apply-codex"
@@ -295,6 +310,7 @@ def _fallback_snapshot(exc: Exception, *, target_id: str | None = None) -> dict[
         "mcp_http_url_language": "text",
         "target_id": requested_target_id,
         "bootstrap_mode": "mcp_session_lease",
+        "generated_at": snapshot["generated_at"],
         "codex_prepare_command": "",
         "codex_prepare_language": "bash",
         "error": error_text,
