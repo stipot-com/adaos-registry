@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
@@ -11,6 +12,7 @@ from adaos.sdk.data import root_mcp as sdk_root_mcp
 
 _CACHE: dict[str, Any] = {"ts": 0.0, "snapshot": None}
 _CACHE_TTL_S = 5.0
+_log = logging.getLogger("skills.infra_access_skill")
 
 
 def lang_res() -> Dict[str, str]:
@@ -229,6 +231,77 @@ def _connection_block(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fallback_snapshot(exc: Exception, *, target_id: str | None = None) -> dict[str, Any]:
+    requested_target_id = str(target_id or "").strip()
+    error_text = f"{type(exc).__name__}: {exc}"
+    snapshot = {
+        "ok": False,
+        "generated_at": _iso_now(),
+        "target_id": requested_target_id or "unknown",
+        "root_url": "",
+        "subnet_id": None,
+        "zone": None,
+        "preferred_bootstrap": "root-issued MCP Session Lease",
+        "session_capability_profiles": ["ProfileOpsRead", "ProfileOpsControl"],
+        "operational_surface": {},
+        "sessions": [],
+        "access_tokens": [],
+        "errors": [error_text],
+    }
+    snapshot["summary"] = {
+        "value": 0,
+        "label": "Active MCP credentials",
+        "subtitle": requested_target_id or "unresolved target",
+        "description": f"infra_access fallback snapshot: {error_text}",
+    }
+    snapshot["summary_items"] = [
+        {
+            "id": "error",
+            "title": "Snapshot error",
+            "description": error_text,
+        },
+        {
+            "id": "hint",
+            "title": "What to check",
+            "description": "Verify Root auth context for this node and then press Refresh.",
+        },
+    ]
+    snapshot["tokens"] = []
+    snapshot["events"] = [
+        {
+            "id": "snapshot-error",
+            "title": "infra_access snapshot failed",
+            "description": error_text,
+            "content": {
+                "error": error_text,
+            },
+        }
+    ]
+    snapshot["codex_help"] = [
+        {
+            "id": "codex-bootstrap-error",
+            "title": "Connect Root MCP to VS Code Codex",
+            "description": "Fix Root access for this node first, then issue a fresh MCP session.",
+            "content": {
+                "error": error_text,
+                "hint": "The UI will show root_url and MCP HTTP URL after the next successful refresh.",
+            },
+        }
+    ]
+    snapshot["connection"] = {
+        "root_url": "",
+        "root_url_language": "text",
+        "mcp_http_url": "",
+        "mcp_http_url_language": "text",
+        "target_id": requested_target_id,
+        "bootstrap_mode": "mcp_session_lease",
+        "codex_prepare_command": "",
+        "codex_prepare_language": "bash",
+        "error": error_text,
+    }
+    return snapshot
+
+
 def _build_snapshot(*, target_id: str | None = None) -> dict[str, Any]:
     context = sdk_root_mcp.get_local_target_context(target_id=target_id)
     effective_target_id = str(context.get("target_id") or "").strip()
@@ -288,15 +361,49 @@ def _build_snapshot(*, target_id: str | None = None) -> dict[str, Any]:
     return snapshot
 
 
+def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
+    from adaos.services.yjs.webspace import default_webspace_id
+
+    ids: set[str] = set()
+    token = str(webspace_id or "").strip()
+    if token:
+        ids.add(token)
+    ids.add(default_webspace_id())
+    try:
+        from adaos.services.scenario.webspace_runtime import WebspaceService
+
+        for info in WebspaceService().list(mode="mixed"):
+            current = str(getattr(info, "id", "") or "").strip()
+            if current:
+                ids.add(current)
+    except Exception:
+        _log.debug("failed to enumerate webspaces for infra_access projection", exc_info=True)
+    return sorted(ids)
+
+
+async def _project_async(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> None:
+    for target_ws in _projection_webspace_ids(webspace_id):
+        await ctx_subnet.set_async("infra_access.snapshot", snapshot, webspace_id=target_ws)
+
+
 def _project(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> None:
-    ctx_subnet.set("infra_access.snapshot", snapshot, webspace_id=webspace_id)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_project_async(snapshot, webspace_id=webspace_id))
+        return
+    loop.create_task(_project_async(snapshot, webspace_id=webspace_id))
 
 
 def _snapshot_or_cached(*, force: bool = False, target_id: str | None = None) -> dict[str, Any]:
     cached = _CACHE.get("snapshot")
     if not force and isinstance(cached, dict) and (time.time() - float(_CACHE.get("ts") or 0.0)) <= _CACHE_TTL_S:
         return dict(cached)
-    snapshot = _build_snapshot(target_id=target_id)
+    try:
+        snapshot = _build_snapshot(target_id=target_id)
+    except Exception as exc:
+        _log.warning("infra_access snapshot failed; projecting fallback snapshot", exc_info=True)
+        snapshot = _fallback_snapshot(exc, target_id=target_id)
     _CACHE["ts"] = time.time()
     _CACHE["snapshot"] = dict(snapshot)
     return snapshot
@@ -348,7 +455,7 @@ def issue_codex_connection(
         snapshot = _snapshot_or_cached(force=True, target_id=target_id)
         _project(snapshot, webspace_id=webspace_id)
     except Exception:
-        pass
+        _log.warning("infra_access failed to refresh projected snapshot after issuing MCP session", exc_info=True)
     return payload
 
 
@@ -364,7 +471,7 @@ def _on_action(evt: Any) -> None:
         try:
             refresh_snapshot(webspace_id=webspace_id, target_id=target_id)
         except Exception:
-            pass
+            _log.warning("infra_access refresh action failed", exc_info=True)
         return
     if action_id == "issue_codex_session":
         capability_profile = str(payload.get("capability_profile") or "ProfileOpsRead").strip() or "ProfileOpsRead"
@@ -377,7 +484,7 @@ def _on_action(evt: Any) -> None:
                 webspace_id=webspace_id,
             )
         except Exception:
-            pass
+            _log.warning("infra_access issue_codex_session action failed", exc_info=True)
 
 
 @subscribe("sys.ready")
@@ -394,7 +501,7 @@ def _on_refresh(evt: Any) -> None:
         snapshot = _snapshot_or_cached(force=True)
         _project(snapshot, webspace_id=webspace_id)
     except Exception:
-        pass
+        _log.warning("infra_access refresh subscription failed", exc_info=True)
 
 
 def handle(topic: str, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
