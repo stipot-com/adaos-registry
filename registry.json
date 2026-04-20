@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-20T04:44:17+00:00",
+  "updated_at": "2026-04-20T06:14:55+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -49,8 +49,8 @@
       "kind": "skill",
       "id": "infra_access_skill",
       "name": "infra_access_skill",
-      "version": "0.6.0",
-      "updated_at": "2026-04-20T04:44:17+00:00",
+      "version": "0.7.0",
+      "updated_at": "2026-04-20T06:14:55+00:00",
       "path": "skills/infra_access_skill",
       "manifest": "skills/infra_access_skill/skill.yaml",
       "source": {
@@ -74,7 +74,7 @@
           "client_presence": true,
           "webspace_scope": "active"
         },
-        "startup_allowed": false,
+        "startup_allowed": true,
         "background_refresh": false
       },
       "tools_count": 3

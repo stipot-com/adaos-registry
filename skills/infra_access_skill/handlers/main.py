@@ -336,6 +336,10 @@ def issue_codex_connection(
 
 @subscribe("sys.ready")
 @subscribe("desktop.webspace.refresh")
+@subscribe("desktop.webspace.reload")
+@subscribe("desktop.webspace.reloaded")
+@subscribe("desktop.scenario.set")
+@subscribe("skills.activated")
 @subscribe("operations.")
 def _on_refresh(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
