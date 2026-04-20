@@ -246,16 +246,25 @@ def _connection_block(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _fallback_snapshot(exc: Exception, *, target_id: str | None = None) -> dict[str, Any]:
-    requested_target_id = str(target_id or "").strip()
+def _fallback_snapshot(
+    exc: Exception,
+    *,
+    target_id: str | None = None,
+    context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    context_block = dict(context or {})
+    requested_target_id = str(target_id or context_block.get("target_id") or "").strip()
+    root_url = str(context_block.get("root_url") or "").strip()
+    subnet_id = str(context_block.get("subnet_id") or "").strip() or None
+    zone = str(context_block.get("zone") or "").strip() or None
     error_text = f"{type(exc).__name__}: {exc}"
     snapshot = {
         "ok": False,
         "generated_at": _iso_now(),
         "target_id": requested_target_id or "unknown",
-        "root_url": "",
-        "subnet_id": None,
-        "zone": None,
+        "root_url": root_url,
+        "subnet_id": subnet_id,
+        "zone": zone,
         "preferred_bootstrap": "root-issued MCP Session Lease",
         "session_capability_profiles": ["ProfileOpsRead", "ProfileOpsControl"],
         "operational_surface": {},
@@ -304,9 +313,9 @@ def _fallback_snapshot(exc: Exception, *, target_id: str | None = None) -> dict[
         }
     ]
     snapshot["connection"] = {
-        "root_url": "",
+        "root_url": root_url,
         "root_url_language": "text",
-        "mcp_http_url": "",
+        "mcp_http_url": root_url.rstrip("/") + "/v1/root/mcp" if root_url else "",
         "mcp_http_url_language": "text",
         "target_id": requested_target_id,
         "bootstrap_mode": "mcp_session_lease",
@@ -415,11 +424,16 @@ def _snapshot_or_cached(*, force: bool = False, target_id: str | None = None) ->
     cached = _CACHE.get("snapshot")
     if not force and isinstance(cached, dict) and (time.time() - float(_CACHE.get("ts") or 0.0)) <= _CACHE_TTL_S:
         return dict(cached)
+    context: dict[str, Any] | None = None
     try:
+        try:
+            context = sdk_root_mcp.get_local_target_context(target_id=target_id)
+        except Exception:
+            context = None
         snapshot = _build_snapshot(target_id=target_id)
     except Exception as exc:
         _log.warning("infra_access snapshot failed; projecting fallback snapshot", exc_info=True)
-        snapshot = _fallback_snapshot(exc, target_id=target_id)
+        snapshot = _fallback_snapshot(exc, target_id=target_id, context=context)
     _CACHE["ts"] = time.time()
     _CACHE["snapshot"] = dict(snapshot)
     return snapshot
