@@ -267,20 +267,8 @@ def _fallback_snapshot(exc: Exception, *, target_id: str | None = None) -> dict[
         "value": 0,
         "label": "Active MCP credentials",
         "subtitle": requested_target_id or "unresolved target",
-        "description": f"infra_access fallback snapshot: {error_text}",
+        "description": f"fallback | updated {snapshot['generated_at']} | {error_text}",
     }
-    snapshot["summary_items"] = [
-        {
-            "id": "error",
-            "title": "Snapshot error",
-            "description": error_text,
-        },
-        {
-            "id": "hint",
-            "title": "What to check",
-            "description": "Verify Root auth context for this node and then press Refresh.",
-        },
-    ]
     snapshot["tokens"] = []
     snapshot["events"] = [
         {
@@ -291,6 +279,18 @@ def _fallback_snapshot(exc: Exception, *, target_id: str | None = None) -> dict[
                 "error": error_text,
             },
         }
+    ]
+    snapshot["summary_items"] = _summary_items(snapshot) + [
+        {
+            "id": "error",
+            "title": "Snapshot error",
+            "description": error_text,
+        },
+        {
+            "id": "hint",
+            "title": "What to check",
+            "description": "Verify Root auth context for this node and then press Refresh.",
+        },
     ]
     snapshot["codex_help"] = [
         {
