@@ -207,6 +207,28 @@ def _summary_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
     return items
 
 
+def _connection_block(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    root_url = str(snapshot.get("root_url") or "").strip()
+    target_id = str(snapshot.get("target_id") or "").strip()
+    capability_profiles = list(snapshot.get("session_capability_profiles") or [])
+    capability_profile = str(capability_profiles[0] if capability_profiles else "ProfileOpsRead")
+    return {
+        "root_url": root_url,
+        "root_url_language": "text",
+        "mcp_http_url": root_url.rstrip("/") + "/v1/root/mcp" if root_url else "",
+        "mcp_http_url_language": "text",
+        "target_id": target_id,
+        "bootstrap_mode": "mcp_session_lease",
+        "codex_prepare_command": (
+            f"adaos dev root mcp prepare-codex --target-id {target_id} "
+            f"--root-url {root_url} --capability-profile {capability_profile} --apply-codex"
+            if root_url and target_id
+            else ""
+        ),
+        "codex_prepare_language": "bash",
+    }
+
+
 def _build_snapshot(*, target_id: str | None = None) -> dict[str, Any]:
     context = sdk_root_mcp.get_local_target_context(target_id=target_id)
     effective_target_id = str(context.get("target_id") or "").strip()
@@ -262,11 +284,7 @@ def _build_snapshot(*, target_id: str | None = None) -> dict[str, Any]:
         root_url=str(snapshot["root_url"]),
         target_id=effective_target_id,
     )
-    snapshot["connections"] = {
-        "mcp_http_url": str(snapshot["root_url"]).rstrip("/") + "/v1/root/mcp",
-        "target_id": effective_target_id,
-        "bootstrap_mode": "mcp_session_lease",
-    }
+    snapshot["connection"] = _connection_block(snapshot)
     return snapshot
 
 
@@ -334,6 +352,34 @@ def issue_codex_connection(
     return payload
 
 
+@subscribe("infra_access.action")
+def _on_action(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    if not isinstance(payload, Mapping):
+        return
+    action_id = str(payload.get("id") or "").strip().lower()
+    webspace_id = _webspace_id_from_payload(payload)
+    target_id = str(payload.get("target_id") or "").strip() or None
+    if action_id == "refresh":
+        try:
+            refresh_snapshot(webspace_id=webspace_id, target_id=target_id)
+        except Exception:
+            pass
+        return
+    if action_id == "issue_codex_session":
+        capability_profile = str(payload.get("capability_profile") or "ProfileOpsRead").strip() or "ProfileOpsRead"
+        ttl_seconds = int(payload.get("ttl_seconds") or 28_800)
+        try:
+            issue_codex_connection(
+                target_id=target_id,
+                capability_profile=capability_profile,
+                ttl_seconds=ttl_seconds,
+                webspace_id=webspace_id,
+            )
+        except Exception:
+            pass
+
+
 @subscribe("sys.ready")
 @subscribe("desktop.webspace.refresh")
 @subscribe("desktop.webspace.reload")
@@ -355,12 +401,23 @@ def handle(topic: str, payload: Mapping[str, Any] | None = None) -> dict[str, An
     data = dict(payload or {})
     topic_token = str(topic or "").strip().lower()
     if topic_token in {"infra_access.refresh", "desktop.webspace.refresh", "sys.ready"}:
-        return refresh_snapshot(webspace_id=_webspace_id_from_payload(data))
+        return refresh_snapshot(webspace_id=_webspace_id_from_payload(data), target_id=str(data.get("target_id") or "").strip() or None)
+    if topic_token == "infra_access.action":
+        action_id = str(data.get("id") or "").strip().lower()
+        if action_id == "refresh":
+            return refresh_snapshot(webspace_id=_webspace_id_from_payload(data), target_id=str(data.get("target_id") or "").strip() or None)
+        if action_id == "issue_codex_session":
+            return issue_codex_connection(
+                target_id=str(data.get("target_id") or "").strip() or None,
+                capability_profile=str(data.get("capability_profile") or "ProfileOpsRead"),
+                ttl_seconds=int(data.get("ttl_seconds") or 28_800),
+                webspace_id=_webspace_id_from_payload(data),
+            )
     return {
         "ok": True,
         "skill": "infra_access_skill",
         "topic": str(topic or ""),
-        "handled": topic_token in {"infra_access.refresh", "desktop.webspace.refresh", "sys.ready"},
+        "handled": topic_token in {"infra_access.refresh", "desktop.webspace.refresh", "sys.ready", "infra_access.action"},
         "message": "infra_access_skill runtime entrypoint is available",
         "payload": data,
     }

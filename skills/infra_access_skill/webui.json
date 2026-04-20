@@ -36,6 +36,45 @@
           },
           "widgets": [
             {
+              "id": "infra-access-actions",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "Actions",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "refresh",
+                    "label": "Refresh"
+                  },
+                  {
+                    "id": "issue_session",
+                    "label": "Issue MCP Session"
+                  }
+                ],
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click:refresh",
+                  "type": "callHost",
+                  "target": "infra_access.action",
+                  "params": {
+                    "id": "refresh"
+                  }
+                },
+                {
+                  "on": "click:issue_session",
+                  "type": "callHost",
+                  "target": "infra_access.action",
+                  "params": {
+                    "id": "issue_codex_session",
+                    "capability_profile": "ProfileOpsRead",
+                    "ttl_seconds": 28800
+                  }
+                }
+              ]
+            },
+            {
               "id": "infra-access-summary",
               "type": "ui.list",
               "area": "main",
@@ -85,6 +124,51 @@
                 "showDetails": true,
                 "itemAccordion": true,
                 "emptyText": "Open MCP guidance will appear here"
+              }
+            },
+            {
+              "id": "infra-access-root-url",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Root URL",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/connection"
+              },
+              "inputs": {
+                "bindField": "root_url",
+                "languageField": "root_url_language",
+                "copyButton": true
+              }
+            },
+            {
+              "id": "infra-access-mcp-url",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "MCP HTTP URL",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/connection"
+              },
+              "inputs": {
+                "bindField": "mcp_http_url",
+                "languageField": "mcp_http_url_language",
+                "copyButton": true
+              }
+            },
+            {
+              "id": "infra-access-codex-command",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Codex Bootstrap Command",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/connection"
+              },
+              "inputs": {
+                "bindField": "codex_prepare_command",
+                "languageField": "codex_prepare_language",
+                "copyButton": true
               }
             },
             {

@@ -1,5 +1,5 @@
 name: infra_access_skill
-version: 0.7.0
+version: 0.8.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -87,5 +87,5 @@ tools:
   output_schema:
     type: object
 exports: {}
-updated_at: '2026-04-20T06:14:55+00:00'
+updated_at: '2026-04-20T06:40:43+00:00'
 
