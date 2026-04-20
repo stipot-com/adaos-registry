@@ -55,7 +55,7 @@
               "id": "infra-access-tokens",
               "type": "ui.list",
               "area": "main",
-              "title": "MCP Tokens",
+              "title": "Credentials and Sessions",
               "dataSource": {
                 "kind": "y",
                 "path": "data/infra_access/tokens"
@@ -67,6 +67,24 @@
                 "showDetails": true,
                 "itemAccordion": true,
                 "emptyText": "No issued tokens yet"
+              }
+            },
+            {
+              "id": "infra-access-codex-help",
+              "type": "ui.list",
+              "area": "main",
+              "title": "VS Code Codex",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/codex_help"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "detailsPath": "content",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "Open MCP guidance will appear here"
               }
             },
             {

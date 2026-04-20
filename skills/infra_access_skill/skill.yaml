@@ -1,13 +1,87 @@
 name: infra_access_skill
-version: 0.5.0
+version: 0.6.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
+  activation:
+    mode: lazy
+    startup_allowed: false
+    background_refresh: false
+    when:
+      scenarios_active:
+      - web_desktop
+      client_presence: true
+      webspace_scope: active
 description: Skill-mediated operational surface for managed infra access, observability,
   and Root MCP token workflows.
 dependencies: []
-events: {}
-tools: []
+events:
+  subscribe:
+  - sys.ready
+  - desktop.webspace.refresh
+  - operations.
+data_projections:
+- scope: subnet
+  slot: infra_access.snapshot
+  targets:
+  - backend: yjs
+    path: data/infra_access
+default_tool: get_snapshot
+tools:
+- name: get_snapshot
+  description: Return the current infra_access UI snapshot with Root MCP connection
+    metadata.
+  entry: handlers.main:get_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type:
+        - string
+        - 'null'
+      target_id:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: object
+- name: refresh_snapshot
+  description: Refresh and project the infra_access UI snapshot.
+  entry: handlers.main:refresh_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type:
+        - string
+        - 'null'
+      target_id:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: object
+- name: issue_codex_connection
+  description: Issue a fresh MCP session lease for VS Code Codex and return connection
+    details.
+  entry: handlers.main:issue_codex_connection
+  input_schema:
+    type: object
+    properties:
+      target_id:
+        type:
+        - string
+        - 'null'
+      capability_profile:
+        type: string
+      ttl_seconds:
+        type: integer
+      webspace_id:
+        type:
+        - string
+        - 'null'
+  output_schema:
+    type: object
 exports: {}
-updated_at: '2026-04-07T18:44:37+00:00'
+updated_at: '2026-04-20T04:44:17+00:00'
 
