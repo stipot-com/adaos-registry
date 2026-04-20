@@ -673,3 +673,19 @@ def apply_action(action_id: str, webspace_id: str | None = None) -> dict[str, An
         current = _env_flag_enabled(file_env, key)
         return set_env_value(key=key, value="0" if current else "1", webspace_id=webspace_id)
     return {"ok": False, "error": "unknown_action", "action_id": token}
+
+
+def handle(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload_map = dict(payload or {})
+    if "action_id" in payload_map:
+        return apply_action(
+            action_id=str(payload_map.get("action_id") or ""),
+            webspace_id=str(payload_map.get("webspace_id") or "").strip() or None,
+        )
+    if "key" in payload_map:
+        return set_env_value(
+            key=str(payload_map.get("key") or ""),
+            value=payload_map.get("value"),
+            webspace_id=str(payload_map.get("webspace_id") or "").strip() or None,
+        )
+    return get_snapshot(webspace_id=str(payload_map.get("webspace_id") or "").strip() or None)
