@@ -172,6 +172,36 @@
               }
             },
             {
+              "id": "infra-access-issued-session-id",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Fresh Session ID",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/issued_connection"
+              },
+              "inputs": {
+                "bindField": "session_id",
+                "languageField": "session_id_language",
+                "copyButton": true
+              }
+            },
+            {
+              "id": "infra-access-issued-bearer",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "Fresh Bearer Token",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/infra_access/issued_connection"
+              },
+              "inputs": {
+                "bindField": "access_token",
+                "languageField": "access_token_language",
+                "copyButton": true
+              }
+            },
+            {
               "id": "infra-access-events",
               "type": "ui.list",
               "area": "main",

@@ -13,6 +13,7 @@ from adaos.sdk.data import root_mcp as sdk_root_mcp
 _CACHE: dict[str, Any] = {"ts": 0.0, "snapshot": None}
 _CACHE_TTL_S = 5.0
 _log = logging.getLogger("skills.infra_access_skill")
+_LAST_ISSUED: dict[str, Any] = {}
 
 
 def lang_res() -> Dict[str, str]:
@@ -268,6 +269,66 @@ def _connection_block(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _issued_connection_block(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    issued = snapshot.get("issued_connection")
+    if not isinstance(issued, Mapping):
+        return {
+            "session_id": "",
+            "access_token": "",
+            "expires_at": "",
+            "capability_profile": "",
+            "issued_at": "",
+            "target_id": str(snapshot.get("target_id") or ""),
+            "root_url": str(snapshot.get("root_url") or ""),
+            "mcp_http_url": _mcp_http_url(str(snapshot.get("root_url") or "")),
+            "access_token_language": "text",
+            "session_id_language": "text",
+            "empty": True,
+        }
+    return {
+        "session_id": str(issued.get("session_id") or ""),
+        "session_id_language": "text",
+        "access_token": str(issued.get("access_token") or ""),
+        "access_token_language": "text",
+        "expires_at": str(issued.get("expires_at") or ""),
+        "capability_profile": str(issued.get("capability_profile") or ""),
+        "issued_at": str(issued.get("issued_at") or snapshot.get("generated_at") or ""),
+        "target_id": str(issued.get("target_id") or snapshot.get("target_id") or ""),
+        "root_url": str(issued.get("root_url") or snapshot.get("root_url") or ""),
+        "mcp_http_url": str(issued.get("mcp_http_url") or _mcp_http_url(str(snapshot.get("root_url") or ""))),
+        "empty": False,
+    }
+
+
+def _with_last_issued(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(snapshot)
+    issued = _LAST_ISSUED.get("payload")
+    if isinstance(issued, Mapping):
+        result["issued_connection"] = dict(issued)
+        summary_items = list(result.get("summary_items") or [])
+        summary_items.append(
+            {
+                "id": "issued-session",
+                "title": "Fresh session",
+                "description": str(issued.get("session_id") or "available"),
+            }
+        )
+        result["summary_items"] = summary_items
+        events = list(result.get("events") or [])
+        events.insert(
+            0,
+            {
+                "id": f"issued:{issued.get('session_id') or 'session'}",
+                "title": "MCP session issued",
+                "description": "A fresh bearer token is available below for immediate Codex bootstrap.",
+                "content": dict(issued),
+            },
+        )
+        result["events"] = events
+    result["issued_connection"] = _issued_connection_block(result)
+    return result
+
+
 def _fallback_snapshot(
     exc: Exception,
     *,
@@ -352,7 +413,7 @@ def _fallback_snapshot(
         "codex_prepare_language": "bash",
         "error": error_text,
     }
-    return snapshot
+    return _with_last_issued(snapshot)
 
 
 def _build_snapshot(*, target_id: str | None = None) -> dict[str, Any]:
@@ -411,7 +472,7 @@ def _build_snapshot(*, target_id: str | None = None) -> dict[str, Any]:
         target_id=effective_target_id,
     )
     snapshot["connection"] = _connection_block(snapshot)
-    return snapshot
+    return _with_last_issued(snapshot)
 
 
 def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
@@ -504,14 +565,17 @@ def issue_codex_connection(
         "access_token": result.get("access_token"),
         "expires_at": result.get("expires_at"),
         "capability_profile": result.get("capability_profile") or capability_profile,
+        "issued_at": _iso_now(),
         "codex_prepare_command": _prepare_codex_command(
             root_url=str(context.get("root_url") or ""),
             target_id=str(context.get("target_id") or ""),
             capability_profile=str(result.get("capability_profile") or capability_profile),
         ),
     }
+    _LAST_ISSUED["payload"] = dict(payload)
     try:
         snapshot = _snapshot_or_cached(force=True, target_id=target_id)
+        snapshot = _with_last_issued(snapshot)
         _project(snapshot, webspace_id=webspace_id)
     except Exception:
         _log.warning("infra_access failed to refresh projected snapshot after issuing MCP session", exc_info=True)
