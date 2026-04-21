@@ -1,0 +1,19 @@
+{
+  "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "webio": {
+    "receivers": {
+      "infrascope.inventory.*": {
+        "mode": "replace",
+        "initialState": []
+      },
+      "infrascope.operations.active": {
+        "mode": "replace",
+        "initialState": []
+      },
+      "infrascope.inspector.*": {
+        "mode": "replace",
+        "initialState": {}
+      }
+    }
+  }
+}

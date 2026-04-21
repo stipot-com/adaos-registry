@@ -13,6 +13,7 @@ import yaml
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet
+from adaos.sdk.io import stream_publish
 from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.operations.manager import get_operation_manager
@@ -533,11 +534,94 @@ def _json_fingerprint(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
 
 
+def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        "summary": coerce_mapping(snapshot.get("summary")),
+        "overview": coerce_mapping(snapshot.get("overview")),
+        "inspectors": coerce_mapping(snapshot.get("inspectors")),
+        "meta": coerce_mapping(snapshot.get("meta")),
+    }
+    errors = list(snapshot.get("errors") or [])
+    if errors:
+        compact["errors"] = errors
+    return compact
+
+
+def _inventory_receiver(kind: str) -> str:
+    token = _inventory_kind_token(kind)
+    return f"infrascope.inventory.{token}"
+
+
+def _operations_receiver() -> str:
+    return "infrascope.operations.active"
+
+
+def _inspector_receiver(object_id: str) -> str:
+    token = str(object_id or "local").strip() or "local"
+    return f"infrascope.inspector.{token}"
+
+
+def _publish_stream_payload(receiver: str, data: Any, *, webspace_id: str) -> None:
+    stream_publish(
+        receiver,
+        data,
+        _meta={"webspace_id": str(webspace_id or "").strip() or default_webspace_id()},
+    )
+
+
+def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any:
+    token = str(receiver or "").strip()
+    if not token:
+        return None
+    if token == _operations_receiver():
+        operations = coerce_mapping(snapshot.get("operations"))
+        return list(operations.get("items") or [])
+    inventory_prefix = "infrascope.inventory."
+    if token.startswith(inventory_prefix):
+        kind = _inventory_kind_token(token[len(inventory_prefix):])
+        inventory = coerce_mapping(snapshot.get("inventory"))
+        return list(inventory.get(kind) or [])
+    inspector_prefix = "infrascope.inspector."
+    if token.startswith(inspector_prefix):
+        object_id = str(token[len(inspector_prefix):] or "local").strip() or "local"
+        inspectors = coerce_mapping(snapshot.get("inspectors"))
+        payload = inspectors.get(object_id)
+        if payload is None and object_id != "local":
+            payload = inspectors.get("local")
+        return coerce_mapping(payload)
+    return None
+
+
+def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str) -> None:
+    for kind in _INVENTORY_KINDS:
+        _publish_stream_payload(
+            _inventory_receiver(kind),
+            _stream_payload_for_receiver(snapshot, _inventory_receiver(kind)),
+            webspace_id=webspace_id,
+        )
+    _publish_stream_payload(
+        _operations_receiver(),
+        _stream_payload_for_receiver(snapshot, _operations_receiver()),
+        webspace_id=webspace_id,
+    )
+    inspectors = coerce_mapping(snapshot.get("inspectors"))
+    for object_id in inspectors.keys():
+        token = str(object_id or "").strip()
+        if not token:
+            continue
+        _publish_stream_payload(
+            _inspector_receiver(token),
+            _stream_payload_for_receiver(snapshot, _inspector_receiver(token)),
+            webspace_id=webspace_id,
+        )
+
+
 def _project_snapshot(snapshot: dict[str, Any], *, webspace_id: str) -> bool:
-    fingerprint = _json_fingerprint(snapshot)
+    compact = _compact_snapshot_for_yjs(snapshot)
+    fingerprint = _json_fingerprint(compact)
     if _last_projected_fingerprints.get(webspace_id) == fingerprint:
         return False
-    ctx_subnet.set("infrascope.snapshot", snapshot, webspace_id=webspace_id)
+    ctx_subnet.set("infrascope.snapshot", compact, webspace_id=webspace_id)
     _last_projected_fingerprints[webspace_id] = fingerprint
     return True
 
@@ -822,6 +906,7 @@ def _refresh_snapshot_targets(targets: list[str]) -> dict[str, Any]:
         last_snapshot = snapshot
         if _project_snapshot(snapshot, webspace_id=target_ws):
             projected += 1
+        _publish_snapshot_streams(snapshot, webspace_id=target_ws)
     return {
         "ok": True,
         "projected": projected,
@@ -1015,8 +1100,27 @@ def refresh_snapshot(webspace_id: str | None = None, task_goal: str | None = Non
             last_snapshot = snapshot
             if _project_snapshot(snapshot, webspace_id=target_ws):
                 projected += 1
+            _publish_snapshot_streams(snapshot, webspace_id=target_ws)
         return {"ok": True, "projected": projected, "webspaces": targets, "snapshot": last_snapshot or {}}
     return _refresh_snapshot_targets(_refresh_projection_targets(webspace_id=webspace_id))
+
+
+@subscribe("webio.stream.snapshot.requested")
+def on_webio_stream_snapshot_requested(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    if not isinstance(payload, dict):
+        return
+    receiver = str(payload.get("receiver") or "").strip()
+    if not receiver.startswith("infrascope."):
+        return
+    webspace_id = _webspace_id_from_payload(payload) or default_webspace_id()
+    snapshot = _last_good_snapshots.get(_snapshot_cache_key(webspace_id=webspace_id))
+    if not isinstance(snapshot, dict):
+        snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
+    stream_payload = _stream_payload_for_receiver(snapshot, receiver)
+    if stream_payload is None:
+        return
+    _publish_stream_payload(receiver, stream_payload, webspace_id=webspace_id)
 
 
 @subscribe("infrascope.refresh")
