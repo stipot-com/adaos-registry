@@ -16,6 +16,7 @@ import yaml
 from adaos.build_info import BUILD_INFO
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet, skill_memory_get, skill_memory_set
+from adaos.sdk.io import stream_publish
 from adaos.services.agent_context import get_ctx
 from adaos.services.core_slots import active_slot_manifest, slot_status
 from adaos.services.core_update import read_last_result as read_core_update_last_result
@@ -57,6 +58,18 @@ _projection_diag = {
     "skip_total": 0,
     "cache_hit_total": 0,
 }
+
+
+def _operations_receiver() -> str:
+    return "infrastate.operations.active"
+
+
+def _logs_receiver() -> str:
+    return "infrastate.logs.recent"
+
+
+def _events_receiver() -> str:
+    return "infrastate.events.recent"
 
 
 def _stable_json_bytes(value: Any) -> bytes:
@@ -108,6 +121,51 @@ def _sanitize_snapshot_for_fingerprint(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_sanitize_snapshot_for_fingerprint(item) for item in value]
     return value
+
+
+def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
+    compact = dict(snapshot or {})
+    compact.pop("logs", None)
+    compact.pop("events", None)
+    operations = compact.get("operations")
+    if isinstance(operations, dict):
+        next_operations = dict(operations)
+        next_operations.pop("items", None)
+        compact["operations"] = next_operations
+    return compact
+
+
+def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any:
+    token = str(receiver or "").strip()
+    if token == _operations_receiver():
+        operations = snapshot.get("operations") if isinstance(snapshot.get("operations"), dict) else {}
+        return list(operations.get("items") or [])
+    if token == _logs_receiver():
+        return list(snapshot.get("logs") or [])
+    if token == _events_receiver():
+        return list(snapshot.get("events") or [])
+    return None
+
+
+def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None) -> None:
+    if data is None:
+        return
+    stream_publish(
+        receiver,
+        data,
+        _meta={
+            "webspace_id": str(webspace_id or "").strip() or default_webspace_id(),
+        },
+    )
+
+
+def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str | None) -> None:
+    for receiver in (_operations_receiver(), _logs_receiver(), _events_receiver()):
+        _publish_stream_payload(
+            receiver=receiver,
+            data=_stream_payload_for_receiver(snapshot, receiver),
+            webspace_id=webspace_id,
+        )
 
 
 def _snapshot_cache_key(webspace_id: str | None = None) -> str:
@@ -4195,14 +4253,16 @@ def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
 
 
 async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
-    fingerprint = _snapshot_projection_fingerprint(snapshot)
+    compact = _compact_snapshot_for_yjs(snapshot)
+    fingerprint = _snapshot_projection_fingerprint(compact)
     for target_ws in _projection_webspace_ids(webspace_id):
         if _projection_fingerprints.get(target_ws) == fingerprint:
             _projection_diag["skip_total"] = int(_projection_diag.get("skip_total") or 0) + 1
             continue
-        await ctx_subnet.set_async("infrastate.snapshot", snapshot, webspace_id=target_ws)
+        await ctx_subnet.set_async("infrastate.snapshot", compact, webspace_id=target_ws)
         _projection_fingerprints[target_ws] = fingerprint
         _projection_diag["apply_total"] = int(_projection_diag.get("apply_total") or 0) + 1
+    _publish_snapshot_streams(snapshot, webspace_id=webspace_id)
 
 
 def _project(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
@@ -4237,6 +4297,23 @@ def _webspace_id_from_payload(payload: Any) -> str | None:
         if isinstance(token, str) and token.strip():
             return token.strip()
     return None
+
+
+@subscribe("webio.stream.snapshot.requested")
+def on_webio_stream_snapshot_requested(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    if not isinstance(payload, dict):
+        return
+    receiver = str(payload.get("receiver") or "").strip()
+    if receiver not in {_operations_receiver(), _logs_receiver(), _events_receiver()}:
+        return
+    webspace_id = _webspace_id_from_payload(payload)
+    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
+    _publish_stream_payload(
+        receiver=receiver,
+        data=_stream_payload_for_receiver(snapshot, receiver),
+        webspace_id=webspace_id,
+    )
 
 
 @tool("get_snapshot")

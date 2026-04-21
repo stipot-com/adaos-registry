@@ -1,5 +1,12 @@
 {
 	"$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "webio": {
+    "receivers": {
+      "infrastate.operations.active": { "mode": "replace", "initialState": [] },
+      "infrastate.logs.recent": { "mode": "replace", "initialState": [] },
+      "infrastate.events.recent": { "mode": "replace", "initialState": [] }
+    }
+  },
 	"apps": [
 		{
 			"id": "infrastate_app",
@@ -318,8 +325,8 @@
       "area": "main",
       "title": "Active operations",
       "dataSource": {
-        "kind": "y",
-        "path": "data/infrastate/operations/items"
+        "kind": "stream",
+        "receiver": "infrastate.operations.active"
       },
       "inputs": {
         "titleKey": "target_id",
@@ -414,8 +421,8 @@
 							"area": "main",
 							"title": "Last logs",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/logs"
+								"kind": "stream",
+								"receiver": "infrastate.logs.recent"
 							},
 							"inputs": {
 								"titleKey": "title",
@@ -432,8 +439,8 @@
 							"area": "main",
 							"title": "Event history",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/events"
+								"kind": "stream",
+								"receiver": "infrastate.events.recent"
 							},
 							"inputs": {
 								"titleKey": "type",
@@ -528,8 +535,8 @@
 							"area": "main",
 							"title": "Active operations",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/operations/items"
+								"kind": "stream",
+								"receiver": "infrastate.operations.active"
 							},
 							"inputs": {
 								"titleKey": "target_id",
