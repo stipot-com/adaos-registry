@@ -512,7 +512,7 @@ def _project(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> Non
 def _snapshot_or_cached(*, force: bool = False, target_id: str | None = None) -> dict[str, Any]:
     cached = _CACHE.get("snapshot")
     if not force and isinstance(cached, dict) and (time.time() - float(_CACHE.get("ts") or 0.0)) <= _CACHE_TTL_S:
-        return dict(cached)
+        return _with_last_issued(dict(cached))
     context: dict[str, Any] | None = None
     try:
         try:
@@ -525,7 +525,7 @@ def _snapshot_or_cached(*, force: bool = False, target_id: str | None = None) ->
         snapshot = _fallback_snapshot(exc, target_id=target_id, context=context)
     _CACHE["ts"] = time.time()
     _CACHE["snapshot"] = dict(snapshot)
-    return snapshot
+    return _with_last_issued(dict(snapshot))
 
 
 @tool("get_snapshot")
