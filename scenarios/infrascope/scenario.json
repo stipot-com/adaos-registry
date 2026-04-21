@@ -195,8 +195,8 @@
               "title": "Objects",
               "visibleIf": "$state.infrascopeMode === 'inventory'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inventory/$state.inventoryKind"
+                "kind": "stream",
+                "receiver": "infrascope.inventory.$state.inventoryKind"
               },
               "inputs": {
                 "emptyText": "No objects available",
@@ -302,8 +302,8 @@
               "title": "Operations",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/operations/items"
+                "kind": "stream",
+                "receiver": "infrascope.operations.active"
               },
               "inputs": {
                 "emptyText": "No active operations",
