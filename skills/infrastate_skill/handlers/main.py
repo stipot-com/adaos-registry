@@ -158,6 +158,10 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
         return list(snapshot.get("events") or [])
     if token == _yjs_load_receiver():
         yjs_runtime = snapshot.get("yjs_runtime") if isinstance(snapshot.get("yjs_runtime"), dict) else {}
+        if not yjs_runtime:
+            reliability = snapshot.get("reliability") if isinstance(snapshot.get("reliability"), dict) else {}
+            runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+            yjs_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
         load_mark = yjs_runtime.get("load_mark") if isinstance(yjs_runtime.get("load_mark"), dict) else {}
         selected = load_mark.get("selected_webspace") if isinstance(load_mark.get("selected_webspace"), dict) else {}
         return list(selected.get("items") or [])
