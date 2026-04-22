@@ -4,7 +4,8 @@
     "receivers": {
       "infrastate.operations.active": { "mode": "replace", "initialState": [] },
       "infrastate.logs.recent": { "mode": "replace", "initialState": [] },
-      "infrastate.events.recent": { "mode": "replace", "initialState": [] }
+      "infrastate.events.recent": { "mode": "replace", "initialState": [] },
+      "infrastate.yjs.load_mark": { "mode": "replace", "initialState": [] }
     }
   },
 	"apps": [
@@ -449,6 +450,26 @@
 								"showDetails": true,
 								"itemAccordion": true,
 								"emptyText": "No events yet"
+							}
+						},
+						{
+							"id": "infrastate-yjs-load-mark",
+							"type": "ui.table",
+							"area": "main",
+							"title": "Yjs load mark",
+							"dataSource": {
+								"kind": "stream",
+								"receiver": "infrastate.yjs.load_mark"
+							},
+							"inputs": {
+								"emptyText": "No recent Yjs root-node flow",
+								"columns": [
+									{ "key": "root", "label": "Root", "mono": true, "width": "110px" },
+									{ "key": "status", "label": "State", "width": "90px" },
+									{ "key": "avg_bps", "label": "Avg B/s", "mono": true, "width": "120px" },
+									{ "key": "peak_bps", "label": "Peak B/s", "mono": true, "width": "120px" },
+									{ "key": "current_size_bytes", "label": "Size", "mono": true, "width": "110px" }
+								]
 							}
 						}
 					]
