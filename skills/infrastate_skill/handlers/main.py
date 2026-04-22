@@ -4308,7 +4308,8 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
     if receiver not in {_operations_receiver(), _logs_receiver(), _events_receiver()}:
         return
     webspace_id = _webspace_id_from_payload(payload)
-    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
+    # A new subscriber expects the most recent bounded tail, not a stale cached snapshot.
+    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=False)
     _publish_stream_payload(
         receiver=receiver,
         data=_stream_payload_for_receiver(snapshot, receiver),
@@ -4472,6 +4473,7 @@ def on_runtime_event(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     try:
         event_type = str(getattr(evt, "type", "") or (payload.get("type") if isinstance(payload, dict) else "") or "runtime.event")
+        _invalidate_runtime_caches(webspace_id=_webspace_id_from_payload(payload))
         _append_event(event_type, payload)
         _schedule_snapshot_refresh(
             webspace_id=_webspace_id_from_payload(payload),
