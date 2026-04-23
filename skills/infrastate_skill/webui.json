@@ -462,12 +462,16 @@
 								"receiver": "infrastate.yjs.load_mark"
 							},
 							"inputs": {
-								"emptyText": "No recent Yjs root-node flow",
+								"emptyText": "No recent Yjs flow",
 								"columns": [
-									{ "key": "root", "label": "Root", "mono": true, "width": "110px" },
+									{ "key": "kind", "label": "Kind", "width": "70px" },
+									{ "key": "display", "label": "Owner / Root", "mono": true, "width": "180px" },
 									{ "key": "status", "label": "State", "width": "90px" },
 									{ "key": "avg_bps", "label": "Avg B/s", "mono": true, "width": "120px" },
 									{ "key": "peak_bps", "label": "Peak B/s", "mono": true, "width": "120px" },
+									{ "key": "avg_wps", "label": "Avg W/s", "mono": true, "width": "110px" },
+									{ "key": "peak_wps", "label": "Peak W/s", "mono": true, "width": "110px" },
+									{ "key": "recent_writes", "label": "Writes", "mono": true, "width": "90px" },
 									{ "key": "current_size_bytes", "label": "Size", "mono": true, "width": "110px" }
 								]
 							}

@@ -164,7 +164,35 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
             yjs_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
         load_mark = yjs_runtime.get("load_mark") if isinstance(yjs_runtime.get("load_mark"), dict) else {}
         selected = load_mark.get("selected_webspace") if isinstance(load_mark.get("selected_webspace"), dict) else {}
-        return list(selected.get("items") or [])
+        rows: list[dict[str, Any]] = []
+        for item in list(selected.get("owner_items") or []):
+            if not isinstance(item, dict):
+                continue
+            owner = str(item.get("owner") or "").strip()
+            row = dict(item)
+            row["kind"] = "owner"
+            row["id"] = owner or "unknown"
+            row["display"] = owner or "unknown"
+            rows.append(row)
+        for item in list(selected.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            root = str(item.get("root") or "").strip()
+            row = dict(item)
+            row["kind"] = "root"
+            row["id"] = root or "unknown"
+            row["display"] = root or "unknown"
+            rows.append(row)
+        rows.sort(
+            key=lambda entry: (
+                0 if str(entry.get("kind") or "") == "owner" else 1,
+                -float(entry.get("peak_bps") or 0.0),
+                -float(entry.get("peak_wps") or 0.0),
+                -float(entry.get("avg_bps") or 0.0),
+                str(entry.get("display") or ""),
+            )
+        )
+        return rows
     return None
 
 
