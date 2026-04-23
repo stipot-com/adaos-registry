@@ -1,5 +1,5 @@
 name: web_desktop_skill
-version: 0.1.0
+version: 0.2.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -14,5 +14,5 @@ tools: []
 exports:
   tools: []
 prototype: default
-updated_at: '2026-03-28T20:17:20+00:00'
+updated_at: '2026-04-23T13:20:15+00:00'
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-04-22T11:20:03+00:00",
+  "updated_at": "2026-04-23T13:20:15+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -170,6 +170,72 @@
     },
     {
       "kind": "skill",
+      "id": "pair_new_device_skill",
+      "name": "pair_new_device_skill",
+      "version": "0.0.1",
+      "updated_at": "2026-01-02T22:30:00+00:00",
+      "path": "skills/pair_new_device_skill",
+      "manifest": "skills/pair_new_device_skill/skill.yaml",
+      "source": {
+        "path": "skills/pair_new_device_skill",
+        "manifest": "skills/pair_new_device_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "pair_new_device_skill",
+        "id": "pair_new_device_skill"
+      },
+      "description": "Hub-side pairing skill. Generates short-lived pairing IDs and stores payloads needed to provision new browsers (TV/Smart displays).",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 1
+    },
+    {
+      "kind": "skill",
+      "id": "prompt_engineer_skill",
+      "name": "prompt_engineer_skill",
+      "version": "0.6.0",
+      "updated_at": "2026-03-28T19:13:41+00:00",
+      "path": "skills/prompt_engineer_skill",
+      "manifest": "skills/prompt_engineer_skill/skill.yaml",
+      "source": {
+        "path": "skills/prompt_engineer_skill",
+        "manifest": "skills/prompt_engineer_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "prompt_engineer_skill",
+        "id": "prompt_engineer_skill"
+      },
+      "description": "Prompt IDE backend skill that manages dev scenarios/skills, technical specs and git operations.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 23
+    },
+    {
+      "kind": "skill",
+      "id": "root_mgmnt",
+      "name": "root_mgmnt",
+      "version": "0.4.0",
+      "updated_at": "2026-03-29T08:02:49+00:00",
+      "path": "skills/root_mgmnt",
+      "manifest": "skills/root_mgmnt/skill.yaml",
+      "source": {
+        "path": "skills/root_mgmnt",
+        "manifest": "skills/root_mgmnt/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "root_mgmnt",
+        "id": "root_mgmnt"
+      },
+      "description": "Private root operator skill for LLM policy, fleet activity, and subnet lifecycle hygiene.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 18
+    },
+    {
+      "kind": "skill",
       "id": "subnet_env",
       "name": "subnet_env",
       "version": "0.5.0",
@@ -201,6 +267,70 @@
         "background_refresh": false
       },
       "tools_count": 4
+    },
+    {
+      "kind": "skill",
+      "id": "voice_chat_skill",
+      "name": "voice_chat_skill",
+      "version": "0.0.1",
+      "updated_at": "2026-04-22T11:50:07+00:00",
+      "path": "skills/voice_chat_skill",
+      "manifest": "skills/voice_chat_skill/skill.yaml",
+      "source": {
+        "path": "skills/voice_chat_skill",
+        "manifest": "skills/voice_chat_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "voice_chat_skill",
+        "id": "voice_chat_skill"
+      },
+      "description": "Voice chat bridge for web_desktop (text in -> publish chat + TTS via io.out.*; RouterService projects into Yjs by webspace_id).",
+      "runtime_python": "3.11",
+      "tools_count": 1
+    },
+    {
+      "kind": "skill",
+      "id": "weather_skill",
+      "name": "weather_skill",
+      "version": "2.0.0",
+      "updated_at": "2026-04-22T11:50:07+00:00",
+      "path": "skills/weather_skill",
+      "manifest": "skills/weather_skill/skill.yaml",
+      "source": {
+        "path": "skills/weather_skill",
+        "manifest": "skills/weather_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "weather_skill",
+        "id": "weather_skill"
+      },
+      "description": "Simple weather demo skill that shows current conditions on the desktop and reacts to city changes.",
+      "runtime_python": "3.11",
+      "tools_count": 1
+    },
+    {
+      "kind": "skill",
+      "id": "web_desktop_skill",
+      "name": "web_desktop_skill",
+      "version": "0.2.0",
+      "updated_at": "2026-04-23T13:20:15+00:00",
+      "path": "skills/web_desktop_skill",
+      "manifest": "skills/web_desktop_skill/skill.yaml",
+      "source": {
+        "path": "skills/web_desktop_skill",
+        "manifest": "skills/web_desktop_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "web_desktop_skill",
+        "id": "web_desktop_skill"
+      },
+      "description": "Desktop shell skill that handles icon/widget installation via the web desktop SDK.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 0
     }
   ],
   "scenarios": [
@@ -245,7 +375,12 @@
         "name": "prompt_engineer_scenario",
         "id": "prompt_engineer_scenario"
       },
-      "description": "Prompt engineering IDE workspace for dev skills and scenarios."
+      "description": "Prompt engineering IDE workspace for dev skills and scenarios.",
+      "skills": {
+        "required": [
+          "prompt_engineer_skill"
+        ]
+      }
     },
     {
       "kind": "scenario",
@@ -264,7 +399,15 @@
         "name": "web_desktop",
         "id": "web_desktop"
       },
-      "description": "Desktop shell scenario that defines the main UI layout, registry and base catalog."
+      "description": "Desktop shell scenario that defines the main UI layout, registry and base catalog.",
+      "skills": {
+        "required": [
+          "web_desktop_skill",
+          "greet_on_boot_skill",
+          "pair_new_device_skill",
+          "voice_chat_skill"
+        ]
+      }
     }
   ]
 }
