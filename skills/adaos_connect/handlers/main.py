@@ -11,11 +11,11 @@ from typing import Any, Dict
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from adaos.sdk.core.decorators import subscribe
+from adaos.sdk.web import webspace_ydoc
 from adaos.services.agent_context import get_ctx
 from adaos.services.node_config import _expand_path, load_config
 from adaos.services.root.client import RootHttpClient, RootHttpError
 from adaos.services.root.service import RootAuthError, RootAuthService
-from adaos.services.yjs.doc import async_get_ydoc
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.zone_hosts import canonical_zone_id, zone_public_base_url
 
@@ -346,7 +346,7 @@ def _windows_cmd_bootstrap_command(*, asset_base_url: str, code: str, root_base_
 
 
 async def _write_current(webspace_id: str, current: Dict[str, Any]) -> None:
-    async with async_get_ydoc(webspace_id) as ydoc:
+    async with webspace_ydoc(webspace_id, load_mark_roots=["data"]) as ydoc:
         data_map = ydoc.get_map("data")
         current_root = data_map.get("adaos_connect") or {}
         if isinstance(current_root, dict):
