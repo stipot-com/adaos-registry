@@ -76,6 +76,42 @@ def _yjs_load_receiver() -> str:
     return "infrastate.yjs.load_mark"
 
 
+def _build_receiver() -> str:
+    return "infrastate.build"
+
+
+def _steps_receiver() -> str:
+    return "infrastate.steps"
+
+
+def _realtime_receiver() -> str:
+    return "infrastate.realtime"
+
+
+def _slots_receiver() -> str:
+    return "infrastate.slots"
+
+
+def _skills_receiver() -> str:
+    return "infrastate.skills"
+
+
+def _scenarios_receiver() -> str:
+    return "infrastate.scenarios"
+
+
+def _marketplace_skills_receiver() -> str:
+    return "infrastate.marketplace.skills"
+
+
+def _marketplace_scenarios_receiver() -> str:
+    return "infrastate.marketplace.scenarios"
+
+
+def _core_update_diagnostics_receiver() -> str:
+    return "infrastate.core_update_diagnostics"
+
+
 def _stable_json_bytes(value: Any) -> bytes:
     try:
         text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -128,22 +164,27 @@ def _sanitize_snapshot_for_fingerprint(value: Any) -> Any:
 
 
 def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
-    compact = dict(snapshot or {})
-    compact.pop("logs", None)
-    compact.pop("events", None)
-    yjs_runtime = compact.get("yjs_runtime")
-    if isinstance(yjs_runtime, dict):
-        next_yjs_runtime = dict(yjs_runtime)
-        next_yjs_runtime.pop("load_mark", None)
-        if next_yjs_runtime:
-            compact["yjs_runtime"] = next_yjs_runtime
-        else:
-            compact.pop("yjs_runtime", None)
-    operations = compact.get("operations")
-    if isinstance(operations, dict):
-        next_operations = dict(operations)
-        next_operations.pop("items", None)
-        compact["operations"] = next_operations
+    snapshot = snapshot or {}
+    compact: dict[str, Any] = {}
+    # Keep only the durable UI contract in YJS. High-churn diagnostic collections
+    # move over web streams and are no longer mirrored into data/infrastate.
+    for key in (
+        "summary",
+        "actions",
+        "core_actions",
+        "yjs_actions",
+        "update_actions",
+        "nodes",
+        "yjs_webspaces",
+        "node_editor",
+        "core_update_diag_actions",
+        "ui_state",
+        "last_refresh_ts",
+        "fallback",
+        "errors",
+    ):
+        if key in snapshot:
+            compact[key] = _cache_copy(snapshot.get(key))
     return compact
 
 
@@ -193,6 +234,26 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
             )
         )
         return rows
+    if token == _build_receiver():
+        return list(snapshot.get("build") or [])
+    if token == _steps_receiver():
+        return list(snapshot.get("steps") or [])
+    if token == _realtime_receiver():
+        return list(snapshot.get("realtime") or [])
+    if token == _slots_receiver():
+        return list(snapshot.get("slots") or [])
+    if token == _skills_receiver():
+        return list(snapshot.get("skills") or [])
+    if token == _scenarios_receiver():
+        return list(snapshot.get("scenarios") or [])
+    if token == _marketplace_skills_receiver():
+        marketplace = snapshot.get("marketplace") if isinstance(snapshot.get("marketplace"), dict) else {}
+        return list(marketplace.get("skills") or [])
+    if token == _marketplace_scenarios_receiver():
+        marketplace = snapshot.get("marketplace") if isinstance(snapshot.get("marketplace"), dict) else {}
+        return list(marketplace.get("scenarios") or [])
+    if token == _core_update_diagnostics_receiver():
+        return list(snapshot.get("core_update_diagnostics") or [])
     return None
 
 
@@ -209,7 +270,21 @@ def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None
 
 
 def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str | None) -> None:
-    for receiver in (_operations_receiver(), _logs_receiver(), _events_receiver(), _yjs_load_receiver()):
+    for receiver in (
+        _operations_receiver(),
+        _logs_receiver(),
+        _events_receiver(),
+        _yjs_load_receiver(),
+        _build_receiver(),
+        _steps_receiver(),
+        _realtime_receiver(),
+        _slots_receiver(),
+        _skills_receiver(),
+        _scenarios_receiver(),
+        _marketplace_skills_receiver(),
+        _marketplace_scenarios_receiver(),
+        _core_update_diagnostics_receiver(),
+    ):
         _publish_stream_payload(
             receiver=receiver,
             data=_stream_payload_for_receiver(snapshot, receiver),
@@ -4354,7 +4429,21 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
     if not isinstance(payload, dict):
         return
     receiver = str(payload.get("receiver") or "").strip()
-    if receiver not in {_operations_receiver(), _logs_receiver(), _events_receiver(), _yjs_load_receiver()}:
+    if receiver not in {
+        _operations_receiver(),
+        _logs_receiver(),
+        _events_receiver(),
+        _yjs_load_receiver(),
+        _build_receiver(),
+        _steps_receiver(),
+        _realtime_receiver(),
+        _slots_receiver(),
+        _skills_receiver(),
+        _scenarios_receiver(),
+        _marketplace_skills_receiver(),
+        _marketplace_scenarios_receiver(),
+        _core_update_diagnostics_receiver(),
+    }:
         return
     webspace_id = _webspace_id_from_payload(payload)
     # A new subscriber expects the most recent bounded tail, not a stale cached snapshot.

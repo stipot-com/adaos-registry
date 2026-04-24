@@ -5,7 +5,16 @@
       "infrastate.operations.active": { "mode": "replace", "initialState": [] },
       "infrastate.logs.recent": { "mode": "replace", "initialState": [] },
       "infrastate.events.recent": { "mode": "replace", "initialState": [] },
-      "infrastate.yjs.load_mark": { "mode": "replace", "initialState": [] }
+      "infrastate.yjs.load_mark": { "mode": "replace", "initialState": [] },
+      "infrastate.build": { "mode": "replace", "initialState": [] },
+      "infrastate.steps": { "mode": "replace", "initialState": [] },
+      "infrastate.realtime": { "mode": "replace", "initialState": [] },
+      "infrastate.slots": { "mode": "replace", "initialState": [] },
+      "infrastate.skills": { "mode": "replace", "initialState": [] },
+      "infrastate.scenarios": { "mode": "replace", "initialState": [] },
+      "infrastate.marketplace.skills": { "mode": "replace", "initialState": [] },
+      "infrastate.marketplace.scenarios": { "mode": "replace", "initialState": [] },
+      "infrastate.core_update_diagnostics": { "mode": "replace", "initialState": [] }
     }
   },
 	"apps": [
@@ -169,8 +178,8 @@
 							"area": "main",
 							"title": "Build",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/build"
+								"kind": "stream",
+								"receiver": "infrastate.build"
 							},
 							"inputs": {
 								"titleKey": "title",
@@ -187,8 +196,8 @@
 							"area": "main",
 							"title": "Pipeline",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/steps"
+								"kind": "stream",
+								"receiver": "infrastate.steps"
 							},
 							"inputs": {
 								"titleKey": "title",
@@ -204,8 +213,8 @@
 							"area": "main",
 							"title": "Realtime channels",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/realtime"
+								"kind": "stream",
+								"receiver": "infrastate.realtime"
 							},
 							"inputs": {
 								"titleKey": "title",
@@ -222,8 +231,8 @@
       "area": "main",
       "title": "Core slots",
       "dataSource": {
-        "kind": "y",
-        "path": "data/infrastate/slots"
+        "kind": "stream",
+        "receiver": "infrastate.slots"
       },
       "inputs": {
         "titleKey": "title",
@@ -294,8 +303,8 @@
       "area": "main",
       "title": "Core update diagnostics",
       "dataSource": {
-        "kind": "y",
-        "path": "data/infrastate/core_update_diagnostics"
+        "kind": "stream",
+        "receiver": "infrastate.core_update_diagnostics"
       },
       "inputs": {
         "titleKey": "title",
@@ -339,13 +348,13 @@
       }
     },
     {
-      "id": "infrastate-skills",
-      "type": "ui.table",
-      "area": "main",
-      "title": "Installed skills",
+							"id": "infrastate-skills",
+							"type": "ui.table",
+							"area": "main",
+							"title": "Installed skills",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/skills"
+								"kind": "stream",
+								"receiver": "infrastate.skills"
 							},
 							"inputs": {
 								"emptyText": "No installed skills",
@@ -394,8 +403,8 @@
 							"area": "main",
 							"title": "Installed scenarios",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/scenarios"
+								"kind": "stream",
+								"receiver": "infrastate.scenarios"
 							},
 							"inputs": {
 								"emptyText": "No installed scenarios",
@@ -494,8 +503,8 @@
 							"area": "main",
 							"title": "Installable skills",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/marketplace/skills"
+								"kind": "stream",
+								"receiver": "infrastate.marketplace.skills"
 							},
 							"inputs": {
 								"emptyText": "No installable skills",
@@ -527,8 +536,8 @@
 							"area": "main",
 							"title": "Installable scenarios",
 							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/marketplace/scenarios"
+								"kind": "stream",
+								"receiver": "infrastate.marketplace.scenarios"
 							},
 							"inputs": {
 								"emptyText": "No installable scenarios",
