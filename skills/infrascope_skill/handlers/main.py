@@ -537,8 +537,6 @@ def _json_fingerprint(value: Any) -> str:
 def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
     compact = {
         "summary": coerce_mapping(snapshot.get("summary")),
-        "overview": coerce_mapping(snapshot.get("overview")),
-        "inspectors": coerce_mapping(snapshot.get("inspectors")),
         "meta": coerce_mapping(snapshot.get("meta")),
     }
     errors = list(snapshot.get("errors") or [])
@@ -552,6 +550,11 @@ def _inventory_receiver(kind: str) -> str:
     return f"infrascope.inventory.{token}"
 
 
+def _overview_receiver(section: str) -> str:
+    token = str(section or "").strip() or "health_strip"
+    return f"infrascope.overview.{token}"
+
+
 def _operations_receiver() -> str:
     return "infrascope.operations.active"
 
@@ -559,6 +562,12 @@ def _operations_receiver() -> str:
 def _inspector_receiver(object_id: str) -> str:
     token = str(object_id or "local").strip() or "local"
     return f"infrascope.inspector.{token}"
+
+
+def _inspector_field_receiver(object_id: str, field: str) -> str:
+    token = str(object_id or "local").strip() or "local"
+    field_token = str(field or "").strip() or "object"
+    return f"infrascope.inspector_field.{field_token}.{token}"
 
 
 def _publish_stream_payload(receiver: str, data: Any, *, webspace_id: str) -> None:
@@ -576,6 +585,11 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
     if token == _operations_receiver():
         operations = coerce_mapping(snapshot.get("operations"))
         return list(operations.get("items") or [])
+    overview_prefix = "infrascope.overview."
+    if token.startswith(overview_prefix):
+        section = str(token[len(overview_prefix):] or "").strip()
+        overview = coerce_mapping(snapshot.get("overview"))
+        return list(overview.get(section) or [])
     inventory_prefix = "infrascope.inventory."
     if token.startswith(inventory_prefix):
         kind = _inventory_kind_token(token[len(inventory_prefix):])
@@ -589,10 +603,29 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
         if payload is None and object_id != "local":
             payload = inspectors.get("local")
         return coerce_mapping(payload)
+    inspector_field_prefix = "infrascope.inspector_field."
+    if token.startswith(inspector_field_prefix):
+        remainder = str(token[len(inspector_field_prefix):] or "").strip()
+        field, _, object_id = remainder.partition(".")
+        field = str(field or "").strip()
+        object_id = str(object_id or "local").strip() or "local"
+        inspectors = coerce_mapping(snapshot.get("inspectors"))
+        payload = coerce_mapping(inspectors.get(object_id))
+        if not payload and object_id != "local":
+            payload = coerce_mapping(inspectors.get("local"))
+        if field in {"incidents", "actions"}:
+            return list(payload.get(field) or [])
+        return coerce_mapping(payload.get(field))
     return None
 
 
 def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str) -> None:
+    for section in _OVERVIEW_SECTIONS:
+        _publish_stream_payload(
+            _overview_receiver(section),
+            _stream_payload_for_receiver(snapshot, _overview_receiver(section)),
+            webspace_id=webspace_id,
+        )
     for kind in _INVENTORY_KINDS:
         _publish_stream_payload(
             _inventory_receiver(kind),
@@ -614,6 +647,12 @@ def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str) -> 
             _stream_payload_for_receiver(snapshot, _inspector_receiver(token)),
             webspace_id=webspace_id,
         )
+        for field in ("incidents", "topology", "task_packet", "subnet_planning", "actions"):
+            _publish_stream_payload(
+                _inspector_field_receiver(token, field),
+                _stream_payload_for_receiver(snapshot, _inspector_field_receiver(token, field)),
+                webspace_id=webspace_id,
+            )
 
 
 def _project_snapshot(snapshot: dict[str, Any], *, webspace_id: str) -> bool:
