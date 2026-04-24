@@ -2193,6 +2193,8 @@ def _skill_runtime_migration_note(report: dict[str, Any]) -> str:
         return ""
     total = int(report.get("total") or 0)
     failed_total = int(report.get("failed_total") or 0)
+    lifecycle_failed_total = int(report.get("lifecycle_failed_total") or 0)
+    tests_failed_total = int(report.get("tests_failed_total") or 0)
     rollback_total = int(report.get("rollback_total") or 0)
     deactivated_total = int(report.get("deactivated_total") or 0)
     if total <= 0:
@@ -2203,13 +2205,21 @@ def _skill_runtime_migration_note(report: dict[str, Any]) -> str:
         for item in report.get("skills") or []:
             if not isinstance(item, dict) or bool(item.get("ok")):
                 continue
+            failure_kind = str(item.get("failure_kind") or "").strip()
+            failed_stage = str(item.get("failed_stage") or "failed")
+            if failure_kind:
+                failed_stage = f"{failure_kind}/{failed_stage}"
             failed.append(
-                f"{str(item.get('skill') or 'skill')}:{str(item.get('failed_stage') or 'failed')}"
+                f"{str(item.get('skill') or 'skill')}:{failed_stage}"
             )
         if failed:
             parts.append("failed=" + ",".join(failed[:3]))
             if len(failed) > 3:
                 parts[-1] += f"(+{len(failed) - 3})"
+    if lifecycle_failed_total:
+        parts.append(f"lifecycle_failed={lifecycle_failed_total}")
+    if tests_failed_total:
+        parts.append(f"tests_failed={tests_failed_total}")
     if rollback_total:
         parts.append(f"rollback={rollback_total}")
     if deactivated_total:
@@ -2247,24 +2257,46 @@ def _skill_post_commit_checks_note(report: dict[str, Any]) -> str:
         return ""
     total = int(report.get("total") or 0)
     failed_total = int(report.get("failed_total") or 0)
+    lifecycle_failed_total = int(report.get("lifecycle_failed_total") or 0)
+    tests_failed_total = int(report.get("tests_failed_total") or 0)
     deactivated_total = int(report.get("deactivated_total") or 0)
     if total <= 0 and not report.get("error"):
         return ""
     parts = []
     if total > 0:
         parts.append(f"skill_post_commit={total - failed_total}/{total}")
+    failed = []
+    quarantined = []
+    for item in report.get("skills") or []:
+        if not isinstance(item, dict):
+            continue
+        if bool(item.get("ok")) and not bool(item.get("deactivated")):
+            continue
+        deactivation = item.get("deactivation") if isinstance(item.get("deactivation"), dict) else {}
+        if bool(item.get("ok")) and not bool(deactivation.get("committed_core_switch")):
+            continue
+        failure_kind = str(item.get("failure_kind") or deactivation.get("failure_kind") or "").strip()
+        failed_stage = str(item.get("failed_stage") or deactivation.get("failed_stage") or "failed")
+        if failure_kind:
+            failed_stage = f"{failure_kind}/{failed_stage}"
+        skill_label = str(item.get("skill") or "skill")
+        if not bool(item.get("ok")):
+            failed.append(f"{skill_label}:{failed_stage}")
+        if bool(item.get("deactivated")) and bool(deactivation.get("committed_core_switch")):
+            quarantined.append(f"{skill_label}:{failed_stage}")
     if failed_total:
-        failed = []
-        for item in report.get("skills") or []:
-            if not isinstance(item, dict) or bool(item.get("ok")):
-                continue
-            failed.append(
-                f"{str(item.get('skill') or 'skill')}:{str(item.get('failed_stage') or 'failed')}"
-            )
         if failed:
             parts.append("failed=" + ",".join(failed[:3]))
             if len(failed) > 3:
                 parts[-1] += f"(+{len(failed) - 3})"
+    if quarantined:
+        parts.append("quarantine=" + ",".join(quarantined[:3]))
+        if len(quarantined) > 3:
+            parts[-1] += f"(+{len(quarantined) - 3})"
+    if lifecycle_failed_total:
+        parts.append(f"lifecycle_failed={lifecycle_failed_total}")
+    if tests_failed_total:
+        parts.append(f"tests_failed={tests_failed_total}")
     if deactivated_total:
         parts.append(f"deactivated={deactivated_total}")
     error_text = str(report.get("error") or "").strip()
