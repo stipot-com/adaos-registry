@@ -85,8 +85,10 @@ _background_refresh_pending_all = False
 _background_refresh_webspace_ids: set[str] = set()
 _background_refresh_reason = ""
 _last_projected_fingerprints: dict[str, str] = {}
+_last_projected_at_mono: dict[str, float] = {}
 _last_good_snapshots: dict[str, dict[str, Any]] = {}
 _last_refresh_at_mono = 0.0
+_MIN_YJS_PROJECTION_INTERVAL_S = 1.0
 
 
 def _refresh_debounce_s() -> float:
@@ -660,8 +662,13 @@ def _project_snapshot(snapshot: dict[str, Any], *, webspace_id: str) -> bool:
     fingerprint = _json_fingerprint(compact)
     if _last_projected_fingerprints.get(webspace_id) == fingerprint:
         return False
+    now = time.monotonic()
+    last_applied_at = float(_last_projected_at_mono.get(webspace_id) or 0.0)
+    if last_applied_at > 0 and now - last_applied_at < _MIN_YJS_PROJECTION_INTERVAL_S:
+        return False
     ctx_subnet.set("infrascope.snapshot", compact, webspace_id=webspace_id)
     _last_projected_fingerprints[webspace_id] = fingerprint
+    _last_projected_at_mono[webspace_id] = now
     return True
 
 
