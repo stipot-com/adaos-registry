@@ -53,11 +53,14 @@ _background_refresh_reason = ""
 _marketplace_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 _snapshot_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _projection_fingerprints: dict[str, str] = {}
+_projection_last_applied_at: dict[str, float] = {}
 _projection_diag = {
     "apply_total": 0,
     "skip_total": 0,
     "cache_hit_total": 0,
+    "rate_limited_total": 0,
 }
+_MIN_YJS_PROJECTION_INTERVAL_S = 1.0
 
 
 def _operations_receiver() -> str:
@@ -178,8 +181,6 @@ def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
         "yjs_webspaces",
         "node_editor",
         "core_update_diag_actions",
-        "ui_state",
-        "last_refresh_ts",
         "fallback",
         "errors",
     ):
@@ -316,9 +317,11 @@ def _projection_diag_snapshot() -> dict[str, Any]:
     return {
         "marketplace_cache_ttl_s": _MARKETPLACE_CACHE_TTL_S,
         "snapshot_cache_ttl_s": _SNAPSHOT_CACHE_TTL_S,
+        "min_yjs_projection_interval_s": _MIN_YJS_PROJECTION_INTERVAL_S,
         "apply_total": int(_projection_diag.get("apply_total") or 0),
         "skip_total": int(_projection_diag.get("skip_total") or 0),
         "cache_hit_total": int(_projection_diag.get("cache_hit_total") or 0),
+        "rate_limited_total": int(_projection_diag.get("rate_limited_total") or 0),
         "fingerprinted_webspaces": sorted(_projection_fingerprints),
     }
 
@@ -4361,30 +4364,25 @@ def _snapshot_or_fallback_cached(*, webspace_id: str | None = None, allow_cache:
 
 
 def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
-    ids: set[str] = set()
-    token = str(webspace_id or "").strip()
-    if token:
-        ids.add(token)
-    ids.add(default_webspace_id())
-    try:
-        for info in WebspaceService().list(mode="mixed"):
-            slot = str(getattr(info, "id", "") or "").strip()
-            if slot:
-                ids.add(slot)
-    except Exception:
-        _log.debug("failed to enumerate webspaces for infrastate projection", exc_info=True)
-    return sorted(ids)
+    token = str(webspace_id or "").strip() or default_webspace_id()
+    return [token]
 
 
 async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
     compact = _compact_snapshot_for_yjs(snapshot)
     fingerprint = _snapshot_projection_fingerprint(compact)
+    now = time.monotonic()
     for target_ws in _projection_webspace_ids(webspace_id):
         if _projection_fingerprints.get(target_ws) == fingerprint:
             _projection_diag["skip_total"] = int(_projection_diag.get("skip_total") or 0) + 1
             continue
+        last_applied_at = float(_projection_last_applied_at.get(target_ws) or 0.0)
+        if last_applied_at > 0 and now - last_applied_at < _MIN_YJS_PROJECTION_INTERVAL_S:
+            _projection_diag["rate_limited_total"] = int(_projection_diag.get("rate_limited_total") or 0) + 1
+            continue
         await ctx_subnet.set_async("infrastate.snapshot", compact, webspace_id=target_ws)
         _projection_fingerprints[target_ws] = fingerprint
+        _projection_last_applied_at[target_ws] = now
         _projection_diag["apply_total"] = int(_projection_diag.get("apply_total") or 0) + 1
     _publish_snapshot_streams(snapshot, webspace_id=webspace_id)
 
