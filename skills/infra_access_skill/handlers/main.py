@@ -171,13 +171,18 @@ def _codex_help(*, root_url: str, target_id: str, capability_profile: str = "Pro
         {
             "id": "codex-bootstrap",
             "title": "Connect Root MCP to VS Code Codex",
-            "description": "Use a fresh MCP Session Lease and let prepare-codex write the local Codex profile for you.",
+            "description": "Issue a fresh MCP Session Lease, set ADAOS_ROOT_MCP_AUTH to the returned bearer, and restart VS Code/Codex if it still uses the previous token.",
             "content": {
                 "step_1": f"Issue a new MCP session for target {target_id}",
-                "step_2": command,
-                "note": "Existing sessions and access tokens are listed below without bearer secrets; a fresh bearer is returned only when you issue a new session.",
+                "step_2": f"Set the OS env var: setx ADAOS_ROOT_MCP_AUTH \"<fresh bearer>\"",
+                "step_3": "If Codex still authenticates with the previous bearer, fully restart VS Code so new MCP helper processes inherit the updated environment.",
+                "step_4": f"Configure the MCP URL in VS Code Codex as {_mcp_http_url(root_url)}",
+                "step_5": command,
+                "note": "Existing sessions and access tokens are listed below without bearer secrets; a fresh bearer is returned only when you issue a new session. `setx` affects new processes only.",
                 "root_url": root_url,
                 "mcp_http_url": _mcp_http_url(root_url),
+                "bearer_env_var": "ADAOS_ROOT_MCP_AUTH",
+                "windows_setx_example": "setx ADAOS_ROOT_MCP_AUTH \"mcp_...\"",
             },
         }
     ]
@@ -241,7 +246,7 @@ def _summary_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
         {
             "id": "codex-comment",
             "title": "VS Code Codex",
-            "description": "Run prepare-codex with a fresh session lease; the UI lists sessions and tokens, but bearer secrets are only returned on issue.",
+            "description": "Issue a fresh session, write the returned bearer to ADAOS_ROOT_MCP_AUTH, and restart VS Code/Codex if the current process still uses the previous token.",
         },
     ]
     return items
@@ -320,7 +325,7 @@ def _with_last_issued(snapshot: Mapping[str, Any]) -> dict[str, Any]:
             {
                 "id": f"issued:{issued.get('session_id') or 'session'}",
                 "title": "MCP session issued",
-                "description": "A fresh bearer token is available below for immediate Codex bootstrap.",
+                "description": "A fresh bearer token is available below. Update ADAOS_ROOT_MCP_AUTH and restart VS Code/Codex if the existing process keeps the old token.",
                 "content": dict(issued),
             },
         )
@@ -391,9 +396,11 @@ def _fallback_snapshot(
             "description": "Fix Root access for this node first, then issue a fresh MCP session.",
             "content": {
                 "error": error_text,
-                "hint": "Issue a fresh MCP session after Root access is restored. The URL below is already the stable zonal MCP endpoint.",
+                "hint": "Issue a fresh MCP session after Root access is restored, store the returned bearer in ADAOS_ROOT_MCP_AUTH, and restart VS Code/Codex if it still uses the previous token. The URL below is already the stable zonal MCP endpoint.",
                 "root_url": root_url,
                 "mcp_http_url": _mcp_http_url(root_url),
+                "bearer_env_var": "ADAOS_ROOT_MCP_AUTH",
+                "windows_setx_example": "setx ADAOS_ROOT_MCP_AUTH \"mcp_...\"",
             },
         }
     ]
@@ -566,6 +573,9 @@ def issue_codex_connection(
         "expires_at": result.get("expires_at"),
         "capability_profile": result.get("capability_profile") or capability_profile,
         "issued_at": _iso_now(),
+        "bearer_env_var": "ADAOS_ROOT_MCP_AUTH",
+        "windows_setx_example": f"setx ADAOS_ROOT_MCP_AUTH \"{str(result.get('access_token') or '')}\"",
+        "restart_note": "setx updates the environment for new processes only; restart VS Code/Codex if it still uses the previous bearer.",
         "codex_prepare_command": _prepare_codex_command(
             root_url=str(context.get("root_url") or ""),
             target_id=str(context.get("target_id") or ""),
