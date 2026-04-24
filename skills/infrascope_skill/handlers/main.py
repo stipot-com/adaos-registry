@@ -362,6 +362,8 @@ def _skill_migration_operation_rows() -> list[dict[str, Any]]:
         return []
     total = int(report.get("total") or 0)
     failed_total = int(report.get("failed_total") or 0)
+    lifecycle_failed_total = int(report.get("lifecycle_failed_total") or 0)
+    tests_failed_total = int(report.get("tests_failed_total") or 0)
     rollback_total = int(report.get("rollback_total") or 0)
     deactivated_total = int(report.get("deactivated_total") or 0)
     if total <= 0:
@@ -370,12 +372,20 @@ def _skill_migration_operation_rows() -> list[dict[str, Any]]:
     for item in report.get("skills") or []:
         if not isinstance(item, dict) or bool(item.get("ok")):
             continue
-        failed.append(f"{str(item.get('skill') or 'skill')}:{str(item.get('failed_stage') or 'failed')}")
+        failure_kind = str(item.get("failure_kind") or "").strip()
+        failed_stage = str(item.get("failed_stage") or "failed")
+        if failure_kind:
+            failed_stage = f"{failure_kind}/{failed_stage}"
+        failed.append(f"{str(item.get('skill') or 'skill')}:{failed_stage}")
     if failed_total <= 0 and rollback_total <= 0 and deactivated_total <= 0:
         return []
     subtitle_bits = [f"{total - failed_total}/{total} migrated"]
     if failed:
         subtitle_bits.append(", ".join(failed[:3]) + (f" (+{len(failed) - 3})" if len(failed) > 3 else ""))
+    if lifecycle_failed_total:
+        subtitle_bits.append(f"lifecycle_failed={lifecycle_failed_total}")
+    if tests_failed_total:
+        subtitle_bits.append(f"tests_failed={tests_failed_total}")
     if rollback_total:
         subtitle_bits.append(f"rollback={rollback_total}")
     if deactivated_total:
@@ -432,22 +442,44 @@ def _skill_post_commit_operation_rows() -> list[dict[str, Any]]:
         return []
     total = int(report.get("total") or 0)
     failed_total = int(report.get("failed_total") or 0)
+    lifecycle_failed_total = int(report.get("lifecycle_failed_total") or 0)
+    tests_failed_total = int(report.get("tests_failed_total") or 0)
     deactivated_total = int(report.get("deactivated_total") or 0)
     error_text = str(report.get("error") or "").strip()
     if total <= 0 and not error_text:
         return []
     failed = []
+    quarantined = []
     for item in report.get("skills") or []:
-        if not isinstance(item, dict) or bool(item.get("ok")):
+        if not isinstance(item, dict):
             continue
-        failed.append(f"{str(item.get('skill') or 'skill')}:{str(item.get('failed_stage') or 'failed')}")
+        if bool(item.get("ok")) and not bool(item.get("deactivated")):
+            continue
+        deactivation = item.get("deactivation") if isinstance(item.get("deactivation"), dict) else {}
+        if bool(item.get("ok")) and not bool(deactivation.get("committed_core_switch")):
+            continue
+        failure_kind = str(item.get("failure_kind") or deactivation.get("failure_kind") or "").strip()
+        failed_stage = str(item.get("failed_stage") or deactivation.get("failed_stage") or "failed")
+        if failure_kind:
+            failed_stage = f"{failure_kind}/{failed_stage}"
+        skill_label = str(item.get("skill") or "skill")
+        if not bool(item.get("ok")):
+            failed.append(f"{skill_label}:{failed_stage}")
+        if bool(item.get("deactivated")) and bool(deactivation.get("committed_core_switch")):
+            quarantined.append(f"{skill_label}:{failed_stage}")
     subtitle_bits = []
     if total > 0:
         subtitle_bits.append(f"{total - failed_total}/{total} passed")
     if failed:
         subtitle_bits.append(", ".join(failed[:3]) + (f" (+{len(failed) - 3})" if len(failed) > 3 else ""))
+    if lifecycle_failed_total:
+        subtitle_bits.append(f"lifecycle_failed={lifecycle_failed_total}")
+    if tests_failed_total:
+        subtitle_bits.append(f"tests_failed={tests_failed_total}")
     if deactivated_total:
         subtitle_bits.append(f"deactivated={deactivated_total}")
+    if quarantined:
+        subtitle_bits.append("quarantine=" + ",".join(quarantined[:3]) + (f" (+{len(quarantined) - 3})" if len(quarantined) > 3 else ""))
     if error_text:
         subtitle_bits.append(error_text)
     return [
