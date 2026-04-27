@@ -238,8 +238,8 @@
               "title": "Health strip",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/overview/health_strip"
+                "kind": "stream",
+                "receiver": "infrascope.overview.health_strip"
               },
               "inputs": {
                 "emptyText": "No health signals",
@@ -270,8 +270,8 @@
               "title": "Active incidents",
               "visibleIf": "$state.infrascopeMode === 'overview'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/overview/active_incidents"
+                "kind": "stream",
+                "receiver": "infrascope.overview.active_incidents"
               },
               "inputs": {
                 "emptyText": "No active incidents",
@@ -404,8 +404,8 @@
               "title": "Selected object",
               "visibleIf": "$state.inspectorTab === 'summary'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId"
+                "kind": "stream",
+                "receiver": "infrascope.inspector.$state.selectedObjectId"
               }
             },
             {
@@ -415,8 +415,8 @@
               "title": "Object incidents",
               "visibleIf": "$state.inspectorTab === 'incidents'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId/incidents"
+                "kind": "stream",
+                "receiver": "infrascope.inspector_field.incidents.$state.selectedObjectId"
               },
               "inputs": {
                 "emptyText": "No incidents on this object",
@@ -433,8 +433,8 @@
               "title": "Topology",
               "visibleIf": "$state.inspectorTab === 'topology'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId/topology"
+                "kind": "stream",
+                "receiver": "infrascope.inspector_field.topology.$state.selectedObjectId"
               },
               "inputs": {
                 "emptyText": "No topology data"
@@ -447,8 +447,8 @@
               "title": "Task packet",
               "visibleIf": "$state.inspectorTab === 'task'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId/task_packet"
+                "kind": "stream",
+                "receiver": "infrascope.inspector_field.task_packet.$state.selectedObjectId"
               },
               "inputs": {
                 "emptyText": "No task packet"
@@ -461,8 +461,8 @@
               "title": "Subnet planning",
               "visibleIf": "$state.inspectorTab === 'planning'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId/subnet_planning"
+                "kind": "stream",
+                "receiver": "infrascope.inspector_field.subnet_planning.$state.selectedObjectId"
               },
               "inputs": {
                 "emptyText": "No subnet planning context"
@@ -475,8 +475,8 @@
               "title": "Recommended actions",
               "visibleIf": "$state.inspectorTab === 'actions'",
               "dataSource": {
-                "kind": "y",
-                "path": "data/infrascope/inspectors/$state.selectedObjectId/actions"
+                "kind": "stream",
+                "receiver": "infrascope.inspector_field.actions.$state.selectedObjectId"
               },
               "inputs": {
                 "emptyText": "No actions available",
