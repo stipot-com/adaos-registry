@@ -1006,8 +1006,13 @@ async def _background_refresh_worker() -> None:
             _background_refresh_pending_all = False
             _background_refresh_webspace_ids.clear()
             _background_refresh_reason = ""
-            targets = _refresh_projection_targets() if pending_all or not pending_ids else _refresh_projection_targets(webspace_id=pending_ids[0]) if len(pending_ids) == 1 else pending_ids
             try:
+                if pending_all or not pending_ids:
+                    targets = await asyncio.to_thread(_refresh_projection_targets)
+                elif len(pending_ids) == 1:
+                    targets = await asyncio.to_thread(_refresh_projection_targets, webspace_id=pending_ids[0])
+                else:
+                    targets = pending_ids
                 debounce_s = _refresh_debounce_s()
                 if debounce_s > 0:
                     now = time.monotonic()
