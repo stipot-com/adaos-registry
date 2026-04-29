@@ -4629,13 +4629,13 @@ def on_webspace_reload(evt: Any) -> None:
 @subscribe("core.update.status")
 @subscribe("hub.core_update.status")
 @subscribe("node.names.changed")
-def on_runtime_event(evt: Any) -> None:
+async def on_runtime_event(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     try:
         event_type = str(getattr(evt, "type", "") or (payload.get("type") if isinstance(payload, dict) else "") or "runtime.event")
-        _invalidate_runtime_caches(webspace_id=_webspace_id_from_payload(payload))
         if event_type == "sys.ready":
             return
+        _invalidate_runtime_caches(webspace_id=_webspace_id_from_payload(payload))
         _append_event(event_type, payload)
         _schedule_snapshot_refresh(
             webspace_id=_webspace_id_from_payload(payload),
