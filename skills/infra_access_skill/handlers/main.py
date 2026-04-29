@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
@@ -14,6 +15,8 @@ _CACHE: dict[str, Any] = {"ts": 0.0, "snapshot": None}
 _CACHE_TTL_S = 5.0
 _log = logging.getLogger("skills.infra_access_skill")
 _LAST_ISSUED: dict[str, Any] = {}
+_REFRESH_THREAD: threading.Thread | None = None
+_REFRESH_LOCK = threading.Lock()
 
 
 def lang_res() -> Dict[str, str]:
@@ -516,6 +519,31 @@ def _project(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> Non
     loop.create_task(_project_async(snapshot, webspace_id=webspace_id))
 
 
+def _schedule_subscription_refresh(*, webspace_id: str | None = None, target_id: str | None = None) -> None:
+    global _REFRESH_THREAD
+
+    def _runner() -> None:
+        global _REFRESH_THREAD
+        try:
+            snapshot = _snapshot_or_cached(force=True, target_id=target_id)
+            _project(snapshot, webspace_id=webspace_id)
+        except Exception:
+            _log.warning("infra_access background refresh subscription failed", exc_info=True)
+        finally:
+            with _REFRESH_LOCK:
+                _REFRESH_THREAD = None
+
+    with _REFRESH_LOCK:
+        if _REFRESH_THREAD is not None and _REFRESH_THREAD.is_alive():
+            return
+        _REFRESH_THREAD = threading.Thread(
+            target=_runner,
+            name="infra-access-refresh",
+            daemon=True,
+        )
+        _REFRESH_THREAD.start()
+
+
 def _snapshot_or_cached(*, force: bool = False, target_id: str | None = None) -> dict[str, Any]:
     cached = _CACHE.get("snapshot")
     if not force and isinstance(cached, dict) and (time.time() - float(_CACHE.get("ts") or 0.0)) <= _CACHE_TTL_S:
@@ -629,12 +657,12 @@ def _on_action(evt: Any) -> None:
 @subscribe("operations.")
 def _on_refresh(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
+    event_type = str(getattr(evt, "type", "") or "").strip()
+    if event_type == "sys.ready":
+        return
     webspace_id = _webspace_id_from_payload(payload)
-    try:
-        snapshot = _snapshot_or_cached(force=True)
-        _project(snapshot, webspace_id=webspace_id)
-    except Exception:
-        _log.warning("infra_access refresh subscription failed", exc_info=True)
+    target_id = str(payload.get("target_id") or "").strip() or None if isinstance(payload, Mapping) else None
+    _schedule_subscription_refresh(webspace_id=webspace_id, target_id=target_id)
 
 
 def handle(topic: str, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
