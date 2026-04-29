@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ import yaml
 
 from adaos.build_info import BUILD_INFO
 from adaos.sdk.core.decorators import subscribe, tool
+from adaos.sdk.data.context import clear_current_skill, set_current_skill
 from adaos.sdk.data import ctx_subnet, skill_memory_get, skill_memory_set
 from adaos.sdk.io import stream_publish
 from adaos.services.agent_context import get_ctx
@@ -47,6 +49,7 @@ _REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_P
 _MARKETPLACE_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_CACHE_TTL_S") or "30"))
 _SNAPSHOT_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CACHE_TTL_S") or "1.5"))
 _background_refresh_task: asyncio.Task[Any] | None = None
+_background_refresh_thread: threading.Thread | None = None
 _background_refresh_pending = False
 _background_refresh_webspace_id: str | None = None
 _background_refresh_reason = ""
@@ -1627,7 +1630,22 @@ async def _background_refresh_worker() -> None:
             _schedule_snapshot_refresh(reason="background.refresh.retry")
 
 
+def _run_background_refresh_thread() -> None:
+    global _background_refresh_thread
+    pushed = False
+    try:
+        pushed = set_current_skill("infrastate_skill")
+        asyncio.run(_background_refresh_worker())
+    except Exception:
+        _log.warning("background infrastate refresh thread failed", exc_info=True)
+    finally:
+        if pushed:
+            clear_current_skill()
+        _background_refresh_thread = None
+
+
 def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = "runtime.event") -> None:
+    global _background_refresh_thread
     global _background_refresh_pending
     global _background_refresh_reason
     global _background_refresh_task
@@ -1637,32 +1655,6 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        _log.debug("no running loop for infrastate background refresh; running inline reason=%s", reason)
-        try:
-            refresh_snapshot(webspace_id=webspace_id)
-        except Exception as exc:
-            _write_ui_state(
-                background_refresh_pending=False,
-                background_refresh_running=False,
-                background_refresh_finished_at=time.time(),
-                background_refresh_reason=str(reason or "runtime.event"),
-                background_refresh_webspace_id=str(webspace_id or ""),
-                background_refresh_error=f"{type(exc).__name__}: {exc}",
-            )
-            raise
-        finally:
-            _background_refresh_pending = False
-            _background_refresh_reason = ""
-            _background_refresh_webspace_id = None
-            _background_refresh_task = None
-        _write_ui_state(
-            background_refresh_pending=False,
-            background_refresh_running=False,
-            background_refresh_finished_at=time.time(),
-            background_refresh_reason=str(reason or "runtime.event"),
-            background_refresh_webspace_id=str(webspace_id or ""),
-            background_refresh_error="",
-        )
         return
     if _background_refresh_task is not None and not _background_refresh_task.done():
         return
@@ -4642,6 +4634,8 @@ def on_runtime_event(evt: Any) -> None:
     try:
         event_type = str(getattr(evt, "type", "") or (payload.get("type") if isinstance(payload, dict) else "") or "runtime.event")
         _invalidate_runtime_caches(webspace_id=_webspace_id_from_payload(payload))
+        if event_type == "sys.ready":
+            return
         _append_event(event_type, payload)
         _schedule_snapshot_refresh(
             webspace_id=_webspace_id_from_payload(payload),
