@@ -22,6 +22,7 @@ from adaos.services.zone_hosts import canonical_zone_id, zone_public_base_url
 _log = logging.getLogger("skills.adaos_connect")
 
 _APP_BASE_DEFAULT = "https://myinimatic.web.app"
+_BOOTSTRAP_RAW_BASE = "https://raw.githubusercontent.com/stipot-com/adaos/rev2026/tools/init"
 _DEFAULT_ROOT_BASES = {"https://api.inimatic.com", "http://api.inimatic.com"}
 _BROWSER_PAIR_TTL_S = 600
 _TELEGRAM_PAIR_TTL_S = 600
@@ -289,10 +290,10 @@ def _browser_registration_link(
     return urlunsplit((parsed.scheme, parsed.netloc, path, urlencode(query), ""))
 
 
-def _linux_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
+def _linux_bootstrap_command(*, code: str, root_base_url: str, zone_id: str | None) -> str:
     parts = [
         "curl -fsSL",
-        shlex.quote(f"{asset_base_url}/assets/linux/init.sh"),
+        shlex.quote(f"{_BOOTSTRAP_RAW_BASE}/linux/init.sh"),
         "| bash -s --",
         "--join-code",
         shlex.quote(code),
@@ -312,10 +313,11 @@ def _cmd_quote(value: str) -> str:
     return '"' + str(value).replace('"', '""') + '"'
 
 
-def _windows_ps_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
+def _windows_ps_bootstrap_command(*, code: str, root_base_url: str, zone_id: str | None) -> str:
     parts = [
-        f"iwr -UseBasicParsing {_powershell_quote(f'{asset_base_url}/assets/windows/init.ps1')} -OutFile init.ps1;",
-        f".\\init.ps1 -JoinCode {_powershell_quote(code)}",
+        "& ([scriptblock]::Create((iwr -UseBasicParsing "
+        f"{_powershell_quote(f'{_BOOTSTRAP_RAW_BASE}/windows/init.ps1')}).Content))",
+        f"-JoinCode {_powershell_quote(code)}",
     ]
     if root_base_url:
         parts.append(f"-RootUrl {_powershell_quote(root_base_url)}")
@@ -324,10 +326,10 @@ def _windows_ps_bootstrap_command(*, asset_base_url: str, code: str, root_base_u
     return " ".join(parts)
 
 
-def _windows_cmd_bootstrap_command(*, asset_base_url: str, code: str, root_base_url: str, zone_id: str | None) -> str:
+def _windows_cmd_bootstrap_command(*, code: str, root_base_url: str, zone_id: str | None) -> str:
     ps_download = (
         "$ProgressPreference='SilentlyContinue'; "
-        f"Invoke-WebRequest -UseBasicParsing {_powershell_quote(f'{asset_base_url}/assets/windows/init.ps1')} "
+        f"Invoke-WebRequest -UseBasicParsing {_powershell_quote(f'{_BOOTSTRAP_RAW_BASE}/windows/init.ps1')} "
         "-OutFile '.\\init.ps1'"
     )
     parts = [
@@ -572,19 +574,16 @@ def _node_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]
     current["summary"] = f"Use the generated join code on Linux or Windows to add a node to subnet {hub_id}{zone_text}."
     current["code"] = code
     current["linux_command"] = _linux_bootstrap_command(
-        asset_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
         code=code,
         root_base_url=str(context.get("root_base_url") or ""),
         zone_id=zone_id,
     )
     current["windows_ps_command"] = _windows_ps_bootstrap_command(
-        asset_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
         code=code,
         root_base_url=str(context.get("root_base_url") or ""),
         zone_id=zone_id,
     )
     current["windows_cmd_command"] = _windows_cmd_bootstrap_command(
-        asset_base_url=str(context.get("app_base_url") or _APP_BASE_DEFAULT),
         code=code,
         root_base_url=str(context.get("root_base_url") or ""),
         zone_id=zone_id,
