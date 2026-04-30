@@ -48,6 +48,7 @@ _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
 _REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}
 _MARKETPLACE_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_CACHE_TTL_S") or "30"))
 _SNAPSHOT_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CACHE_TTL_S") or "1.5"))
+_SNAPSHOT_CONTENT_MAX_BYTES = max(0, int(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CONTENT_MAX_BYTES") or "4096"))
 _background_refresh_task: asyncio.Task[Any] | None = None
 _background_refresh_thread: threading.Thread | None = None
 _background_refresh_pending = False
@@ -170,10 +171,63 @@ def _sanitize_snapshot_for_fingerprint(value: Any) -> Any:
 
 
 def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return _compact_snapshot_for_client(snapshot)
+
+
+def _truncate_text(text: str, limit: int | None = None) -> str:
+    limit = _SNAPSHOT_CONTENT_MAX_BYTES if limit is None else max(0, int(limit))
+    if limit <= 0 or len(text.encode("utf-8", errors="ignore")) <= limit:
+        return text
+    head = text.encode("utf-8", errors="ignore")[:limit].decode("utf-8", errors="ignore")
+    return f"{head}\n... truncated; full diagnostics available through dedicated runtime endpoints ..."
+
+
+def _compact_card_item(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return _cache_copy(item)
+    out: dict[str, Any] = {}
+    for key in (
+        "id",
+        "title",
+        "status",
+        "description",
+        "subtitle",
+        "preview",
+        "kind",
+        "display",
+        "updated_at",
+        "buttons",
+        "actions",
+    ):
+        if key in item:
+            out[key] = _cache_copy(item.get(key))
+    if "content" in item:
+        content = item.get("content")
+        text = content if isinstance(content, str) else _safe_json_text(content)
+        compact_content = _truncate_text(text)
+        out["content"] = compact_content
+        out["content_truncated"] = compact_content != text
+    return out
+
+
+def _compact_card_list(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        return []
+    return [_compact_card_item(item) for item in value]
+
+
+def _compact_mapping(value: Any, *, max_keys: int | None = None) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    items = list(value.items())
+    if max_keys is not None and max_keys >= 0:
+        items = items[:max_keys]
+    return {str(key): _cache_copy(item) for key, item in items}
+
+
+def _compact_snapshot_for_client(snapshot: dict[str, Any]) -> dict[str, Any]:
     snapshot = snapshot or {}
     compact: dict[str, Any] = {}
-    # Keep only the durable UI contract in YJS. High-churn diagnostic collections
-    # move over web streams and are no longer mirrored into data/infrastate.
     for key in (
         "summary",
         "actions",
@@ -183,12 +237,42 @@ def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
         "nodes",
         "yjs_webspaces",
         "node_editor",
-        "core_update_diag_actions",
+        "operations",
+        "marketplace",
+        "ui_state",
+        "projection_diag",
         "fallback",
         "errors",
+        "last_refresh_ts",
     ):
         if key in snapshot:
             compact[key] = _cache_copy(snapshot.get(key))
+    for key in (
+        "build",
+        "steps",
+        "realtime",
+        "slots",
+        "skills",
+        "scenarios",
+        "logs",
+        "events",
+        "core_update_diagnostics",
+        "core_update_diag_actions",
+    ):
+        if key in snapshot:
+            compact[key] = _compact_card_list(snapshot.get(key))
+    reliability = snapshot.get("reliability") if isinstance(snapshot.get("reliability"), dict) else {}
+    if reliability:
+        runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
+        compact["reliability"] = {
+            "ok": reliability.get("ok"),
+            "node": _cache_copy(reliability.get("node")),
+            "runtime": {
+                "assessment": _cache_copy(runtime.get("assessment")),
+                "channel_overview": _cache_copy(runtime.get("channel_overview")),
+                "readiness_tree": _cache_copy(runtime.get("readiness_tree")),
+            },
+        }
     return compact
 
 
@@ -4478,10 +4562,11 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
 
 
 @tool("get_snapshot")
-def get_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
+def get_snapshot(webspace_id: str | None = None, project: bool = False) -> dict[str, Any]:
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
-    _project(snapshot, webspace_id=webspace_id)
-    return snapshot
+    if project:
+        _project(snapshot, webspace_id=webspace_id)
+    return _compact_snapshot_for_client(snapshot)
 
 
 @tool("refresh_snapshot")
