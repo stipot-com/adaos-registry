@@ -87,6 +87,8 @@ _background_refresh_reason = ""
 _last_projected_fingerprints: dict[str, str] = {}
 _last_projected_at_mono: dict[str, float] = {}
 _last_good_snapshots: dict[str, dict[str, Any]] = {}
+_active_stream_receivers_by_webspace: dict[str, set[str]] = {}
+_last_stream_fingerprints: dict[str, str] = {}
 _last_refresh_at_mono = 0.0
 _MIN_YJS_PROJECTION_INTERVAL_S = 1.0
 
@@ -107,6 +109,11 @@ def _event_webspace_fallback() -> str:
     # for each such event can become very expensive and cause CPU spikes.
     raw = str(os.getenv("INFRASCOPE_EVENT_WEBSPACE", "") or "").strip()
     return raw or default_webspace_id()
+
+
+def _eager_stream_publish_enabled() -> bool:
+    raw = str(os.getenv("INFRASCOPE_EAGER_STREAM_PUBLISH", "") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def lang_res() -> dict[str, str]:
@@ -604,7 +611,44 @@ def _inspector_field_receiver(object_id: str, field: str) -> str:
     return f"infrascope.inspector_field.{field_token}.{token}"
 
 
-def _publish_stream_payload(receiver: str, data: Any, *, webspace_id: str) -> None:
+def _stream_cache_key(webspace_id: str, receiver: str) -> str:
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    token = str(receiver or "").strip()
+    return f"{ws}\0{token}"
+
+
+def _remember_stream_receiver(webspace_id: str, receiver: str) -> None:
+    token = str(receiver or "").strip()
+    if not token.startswith("infrascope."):
+        return
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    _active_stream_receivers_by_webspace.setdefault(ws, set()).add(token)
+
+
+def _forget_stream_receiver(webspace_id: str, receiver: str) -> None:
+    token = str(receiver or "").strip()
+    if not token:
+        return
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    receivers = _active_stream_receivers_by_webspace.get(ws)
+    if receivers is not None:
+        receivers.discard(token)
+        if not receivers:
+            _active_stream_receivers_by_webspace.pop(ws, None)
+    _last_stream_fingerprints.pop(_stream_cache_key(ws, token), None)
+
+
+def _active_stream_receivers(webspace_id: str) -> list[str]:
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    return sorted(_active_stream_receivers_by_webspace.get(ws) or set())
+
+
+def _publish_stream_payload(receiver: str, data: Any, *, webspace_id: str, force: bool = False) -> None:
+    key = _stream_cache_key(webspace_id, receiver)
+    fingerprint = _json_fingerprint(data)
+    if not force and _last_stream_fingerprints.get(key) == fingerprint:
+        return
+    _last_stream_fingerprints[key] = fingerprint
     stream_publish(
         receiver,
         data,
@@ -654,6 +698,12 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
 
 
 def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str) -> None:
+    if not _eager_stream_publish_enabled():
+        for receiver in _active_stream_receivers(webspace_id):
+            payload = _stream_payload_for_receiver(snapshot, receiver)
+            if payload is not None:
+                _publish_stream_payload(receiver, payload, webspace_id=webspace_id)
+        return
     for section in _OVERVIEW_SECTIONS:
         _publish_stream_payload(
             _overview_receiver(section),
@@ -1197,13 +1247,30 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
     if not receiver.startswith("infrascope."):
         return
     webspace_id = _webspace_id_from_payload(payload) or default_webspace_id()
+    _remember_stream_receiver(webspace_id, receiver)
     snapshot = _last_good_snapshots.get(_snapshot_cache_key(webspace_id=webspace_id))
     if not isinstance(snapshot, dict):
         snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
     stream_payload = _stream_payload_for_receiver(snapshot, receiver)
     if stream_payload is None:
         return
-    _publish_stream_payload(receiver, stream_payload, webspace_id=webspace_id)
+    _publish_stream_payload(receiver, stream_payload, webspace_id=webspace_id, force=True)
+
+
+@subscribe("webio.stream.subscription.changed")
+def on_webio_stream_subscription_changed(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    if not isinstance(payload, dict):
+        return
+    receiver = str(payload.get("receiver") or "").strip()
+    if not receiver.startswith("infrascope."):
+        return
+    webspace_id = _webspace_id_from_payload(payload) or default_webspace_id()
+    action = str(payload.get("action") or "").strip().lower() or "subscribed"
+    if action == "unsubscribed":
+        _forget_stream_receiver(webspace_id, receiver)
+    else:
+        _remember_stream_receiver(webspace_id, receiver)
 
 
 @subscribe("infrascope.refresh")
