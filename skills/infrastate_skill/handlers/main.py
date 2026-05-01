@@ -58,6 +58,9 @@ _marketplace_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, An
 _snapshot_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _projection_fingerprints: dict[str, str] = {}
 _projection_last_applied_at: dict[str, float] = {}
+_active_stream_receivers_by_webspace: dict[str, set[str]] = {}
+_stream_fingerprints: dict[str, str] = {}
+_stream_last_published_at: dict[str, float] = {}
 _projection_diag = {
     "apply_total": 0,
     "skip_total": 0,
@@ -65,6 +68,19 @@ _projection_diag = {
     "rate_limited_total": 0,
 }
 _MIN_YJS_PROJECTION_INTERVAL_S = 1.0
+
+
+def _stream_min_interval_s() -> float:
+    try:
+        raw = str(os.getenv("ADAOS_INFRASTATE_STREAM_MIN_INTERVAL_S") or "2.0").strip()
+        return max(0.0, min(float(raw), 30.0))
+    except Exception:
+        return 2.0
+
+
+def _eager_stream_publish_enabled() -> bool:
+    raw = str(os.getenv("ADAOS_INFRASTATE_EAGER_STREAM_PUBLISH") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _operations_receiver() -> str:
@@ -345,9 +361,59 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
     return None
 
 
-def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None) -> None:
+def _stream_cache_key(webspace_id: str | None, receiver: str) -> str:
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    token = str(receiver or "").strip()
+    return f"{ws}\0{token}"
+
+
+def _remember_stream_receiver(webspace_id: str | None, receiver: str) -> None:
+    token = str(receiver or "").strip()
+    if not token.startswith("infrastate."):
+        return
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    _active_stream_receivers_by_webspace.setdefault(ws, set()).add(token)
+
+
+def _forget_stream_receiver(webspace_id: str | None, receiver: str) -> None:
+    token = str(receiver or "").strip()
+    if not token:
+        return
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    receivers = _active_stream_receivers_by_webspace.get(ws)
+    if receivers is not None:
+        receivers.discard(token)
+        if not receivers:
+            _active_stream_receivers_by_webspace.pop(ws, None)
+    key = _stream_cache_key(ws, token)
+    _stream_fingerprints.pop(key, None)
+    _stream_last_published_at.pop(key, None)
+
+
+def _active_stream_receivers(webspace_id: str | None) -> list[str]:
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    return sorted(_active_stream_receivers_by_webspace.get(ws) or set())
+
+
+def _stream_payload_fingerprint(data: Any) -> str:
+    return hashlib.sha1(_stable_json_bytes(_sanitize_snapshot_for_fingerprint(data))).hexdigest()
+
+
+def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None, force: bool = False) -> None:
     if data is None:
         return
+    key = _stream_cache_key(webspace_id, receiver)
+    fingerprint = _stream_payload_fingerprint(data)
+    now = time.monotonic()
+    if not force:
+        if _stream_fingerprints.get(key) == fingerprint:
+            return
+        last_at = float(_stream_last_published_at.get(key) or 0.0)
+        min_interval_s = _stream_min_interval_s()
+        if min_interval_s > 0 and last_at > 0 and now - last_at < min_interval_s:
+            return
+    _stream_fingerprints[key] = fingerprint
+    _stream_last_published_at[key] = now
     stream_publish(
         receiver,
         data,
@@ -358,7 +424,7 @@ def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None
 
 
 def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str | None) -> None:
-    for receiver in (
+    receivers = (
         _operations_receiver(),
         _logs_receiver(),
         _events_receiver(),
@@ -372,7 +438,10 @@ def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str | No
         _marketplace_skills_receiver(),
         _marketplace_scenarios_receiver(),
         _core_update_diagnostics_receiver(),
-    ):
+    )
+    if not _eager_stream_publish_enabled():
+        receivers = tuple(_active_stream_receivers(webspace_id))
+    for receiver in receivers:
         _publish_stream_payload(
             receiver=receiver,
             data=_stream_payload_for_receiver(snapshot, receiver),
@@ -1714,6 +1783,30 @@ async def _background_refresh_worker() -> None:
             _schedule_snapshot_refresh(reason="background.refresh.retry")
 
 
+def _background_refresh_done(task: asyncio.Task) -> None:
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        _log.warning("background infrastate refresh task status failed", exc_info=True)
+        return
+    if exc is None:
+        return
+    try:
+        _write_ui_state(
+            background_refresh_running=False,
+            background_refresh_finished_at=time.time(),
+            background_refresh_error=f"{type(exc).__name__}: {exc}",
+        )
+    except Exception:
+        pass
+    _log.warning(
+        "background infrastate refresh task failed",
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+
+
 def _run_background_refresh_thread() -> None:
     global _background_refresh_thread
     pushed = False
@@ -1746,6 +1839,7 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
         _background_refresh_worker(),
         name="infrastate-background-refresh",
     )
+    _background_refresh_task.add_done_callback(_background_refresh_done)
 
 
 def _hub_member_connection_state(reliability: dict[str, Any]) -> dict[str, Any]:
@@ -4552,13 +4646,31 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
     }:
         return
     webspace_id = _webspace_id_from_payload(payload)
+    _remember_stream_receiver(webspace_id, receiver)
     # A new subscriber expects the most recent bounded tail, not a stale cached snapshot.
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=False)
     _publish_stream_payload(
         receiver=receiver,
         data=_stream_payload_for_receiver(snapshot, receiver),
         webspace_id=webspace_id,
+        force=True,
     )
+
+
+@subscribe("webio.stream.subscription.changed")
+def on_webio_stream_subscription_changed(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    if not isinstance(payload, dict):
+        return
+    receiver = str(payload.get("receiver") or "").strip()
+    if not receiver.startswith("infrastate."):
+        return
+    webspace_id = _webspace_id_from_payload(payload)
+    action = str(payload.get("action") or "").strip().lower() or "subscribed"
+    if action == "unsubscribed":
+        _forget_stream_receiver(webspace_id, receiver)
+    else:
+        _remember_stream_receiver(webspace_id, receiver)
 
 
 @tool("get_snapshot")
