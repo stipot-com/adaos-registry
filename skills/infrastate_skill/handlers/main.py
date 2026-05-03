@@ -949,7 +949,12 @@ def _operations_snapshot(*, webspace_id: str | None = None) -> dict[str, Any]:
         return {"by_id": {}, "order": [], "active": [], "active_items": [], "notifications": []}
 
 
-def _marketplace_items(*, webspace_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+def _marketplace_items(
+    *,
+    webspace_id: str | None = None,
+    selected_node_id: str | None = None,
+    local_node_id: str | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     try:
         ctx = get_ctx()
     except Exception:
@@ -965,6 +970,10 @@ def _marketplace_items(*, webspace_id: str | None = None) -> dict[str, list[dict
 
     installed_skills = {str(item.get("name") or "").strip() for item in _skills_items() if str(item.get("name") or "").strip()}
     installed_scenarios = {str(item.get("name") or "").strip() for item in _scenario_items() if str(item.get("name") or "").strip()}
+
+    selected_node_token = str(selected_node_id or "").strip()
+    local_node_token = str(local_node_id or "").strip()
+    target_node_token = selected_node_token or local_node_token
 
     def _rows(kind_plural: str, installed: set[str]) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -987,6 +996,8 @@ def _marketplace_items(*, webspace_id: str | None = None) -> dict[str, list[dict
                     "install_disabled": bool(op),
                     "operation_status": str(op.get("status") or "") if isinstance(op, dict) else "",
                     "operation_step": str(op.get("current_step") or op.get("message") or "") if isinstance(op, dict) else "",
+                    "node_id": target_node_token,
+                    "target_node_id": target_node_token,
                 }
             )
         rows.sort(key=lambda item: str(item.get("id") or ""))
@@ -3869,6 +3880,7 @@ def _yjs_action_items(status: dict[str, Any], ui_state: dict[str, Any], reliabil
 def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[str, Any]:
     status = read_core_update_status()
     selected_node_id = str(_ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "")
+    local_node_id = str(getattr(conf, "node_id", "") or "").strip()
     if (
         action_id in {
             "start_update",
@@ -3890,7 +3902,7 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             "scenario_uninstall",
         }
         and selected_node_id
-        and selected_node_id != str(getattr(conf, "node_id", "") or "")
+        and selected_node_id != local_node_id
     ):
         raise ValueError("remote member tabs are read-only for update and transport actions")
     if action_id in {"skill_activate", "skill_test", "skill_update", "skill_uninstall"}:
@@ -4125,11 +4137,30 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             last_error="",
         )
         return {"ok": True, "selected_yjs_webspace_id": selected or default_webspace_id()}
+    if action_id == "marketplace":
+        _write_ui_state(
+            selected_node_id=selected_node_id or local_node_id,
+            last_action="marketplace",
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_error="",
+        )
+        return {"ok": True, "action": "marketplace", "selected_node_id": selected_node_id or local_node_id}
     if action_id == "set_node_names":
-        node_id = str(_extract_param(payload, "node_id") or _ui_state().get("selected_node_id") or getattr(conf, "node_id", "") or "").strip()
+        payload_target_node_id = str(_extract_param(payload, "target_node_id") or "").strip()
+        payload_node_id = str(_extract_param(payload, "node_id") or "").strip()
+        ui_selected_node_id = str(_ui_state().get("selected_node_id") or "").strip()
+        if payload_target_node_id:
+            node_id = payload_target_node_id
+        elif ui_selected_node_id and ui_selected_node_id != local_node_id and payload_node_id == local_node_id:
+            # Preserve the explicitly selected member even when the browser injects the
+            # local widget owner as node_id for form submissions.
+            node_id = ui_selected_node_id
+        else:
+            node_id = payload_node_id or ui_selected_node_id or local_node_id
         value = _extract_param(payload, "value")
         node_names = _normalize_node_names(value)
-        if not node_id or node_id == str(getattr(conf, "node_id", "") or ""):
+        if not node_id or node_id == local_node_id:
             updated = persist_node_names(node_names)
             result = {
                 "ok": True,
@@ -4177,7 +4208,6 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
         )
         return result
     if action_id == "adaos_update":
-        local_node_id = str(getattr(conf, "node_id", "") or "")
         role = str(getattr(conf, "role", "") or "").strip().lower()
         if selected_node_id and selected_node_id != local_node_id:
             if role != "hub":
@@ -4234,6 +4264,15 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
         value_map = value if isinstance(value, dict) else {}
         target_kind = str(value_map.get("kind") or value_map.get("target_kind") or "").strip().lower()
         target_id = str(value_map.get("id") or value_map.get("target_id") or "").strip()
+        target_node_id = str(
+            value_map.get("target_node_id")
+            or value_map.get("node_id")
+            or _extract_param(payload, "target_node_id")
+            or _extract_param(payload, "node_id")
+            or selected_node_id
+            or local_node_id
+            or ""
+        ).strip()
         webspace_id = str(value_map.get("webspace_id") or payload.get("webspace_id") or default_webspace_id()).strip() or default_webspace_id()
         if target_kind not in {"skill", "scenario"} or not target_id:
             raise ValueError("marketplace install requires target kind and id")
@@ -4241,9 +4280,15 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             target_kind=target_kind,
             target_id=target_id,
             webspace_id=webspace_id,
-            initiator={"kind": "ui", "id": "infrastate"},
+            initiator={
+                "kind": "ui",
+                "id": "infrastate",
+                "node_id": target_node_id or None,
+                "target_node_id": target_node_id or None,
+            },
         )
         _write_ui_state(
+            selected_node_id=target_node_id or selected_node_id or local_node_id,
             last_action=action_id,
             last_action_ts=time.time(),
             last_refresh_ts=time.time(),
@@ -4515,7 +4560,11 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     except Exception:
         scenario_items = []
     try:
-        marketplace = _marketplace_items(webspace_id=webspace_id)
+        marketplace = _marketplace_items(
+            webspace_id=webspace_id,
+            selected_node_id=str(selected_node.get("node_id") or ""),
+            local_node_id=str(getattr(conf, "node_id", "") or ""),
+        )
     except Exception:
         marketplace = {"skills": [], "scenarios": []}
     selected_is_local = not selected_member or str(selected_member.get("kind") or "local").strip().lower() == "local"

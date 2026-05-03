@@ -121,7 +121,9 @@
 									"target": "infrastate.action",
 									"params": {
 										"id": "set_node_names",
-										"value": "$event.value"
+										"value": "$event.value",
+										"node_id": "$event.node_id",
+										"target_node_id": "$event.target_node_id"
 									}
 								}
 							]
@@ -525,7 +527,9 @@
 									"target": "infrastate.action",
 									"params": {
 										"id": "marketplace_install",
-										"value": "$event"
+										"value": "$event",
+										"node_id": "$event.node_id",
+										"target_node_id": "$event.target_node_id"
 									}
 								}
 							]
@@ -558,7 +562,9 @@
 									"target": "infrastate.action",
 									"params": {
 										"id": "marketplace_install",
-										"value": "$event"
+										"value": "$event",
+										"node_id": "$event.node_id",
+										"target_node_id": "$event.target_node_id"
 									}
 								}
 							]
