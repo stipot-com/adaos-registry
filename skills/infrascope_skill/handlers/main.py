@@ -5,6 +5,7 @@ from copy import deepcopy
 import json
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,8 @@ _last_projected_at_mono: dict[str, float] = {}
 _last_good_snapshots: dict[str, dict[str, Any]] = {}
 _active_stream_receivers_by_webspace: dict[str, set[str]] = {}
 _last_stream_fingerprints: dict[str, str] = {}
+_stream_snapshot_guard = threading.Lock()
+_stream_snapshot_locks: dict[str, threading.Lock] = {}
 _last_refresh_at_mono = 0.0
 _MIN_YJS_PROJECTION_INTERVAL_S = 1.0
 
@@ -758,6 +761,30 @@ def _snapshot_cache_key(*, webspace_id: str | None = None) -> str:
     return str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
 
 
+def _stream_snapshot_lock_for(cache_key: str) -> threading.Lock:
+    with _stream_snapshot_guard:
+        lock = _stream_snapshot_locks.get(cache_key)
+        if lock is None:
+            lock = threading.Lock()
+            _stream_snapshot_locks[cache_key] = lock
+        return lock
+
+
+def _stream_snapshot_for_subscribe(webspace_id: str) -> dict[str, Any]:
+    cache_key = _snapshot_cache_key(webspace_id=webspace_id)
+    snapshot = _last_good_snapshots.get(cache_key)
+    if isinstance(snapshot, dict):
+        return snapshot
+    # Coalesce a browser subscribe burst so multiple stream cards do not build
+    # the same control-plane snapshot in parallel.
+    lock = _stream_snapshot_lock_for(cache_key)
+    with lock:
+        snapshot = _last_good_snapshots.get(cache_key)
+        if isinstance(snapshot, dict):
+            return snapshot
+        return _snapshot_or_fallback(webspace_id=webspace_id)
+
+
 def _remember_good_snapshot(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> None:
     _last_good_snapshots[_snapshot_cache_key(webspace_id=webspace_id)] = deepcopy(snapshot)
 
@@ -1248,9 +1275,7 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
         return
     webspace_id = _webspace_id_from_payload(payload) or default_webspace_id()
     _remember_stream_receiver(webspace_id, receiver)
-    snapshot = _last_good_snapshots.get(_snapshot_cache_key(webspace_id=webspace_id))
-    if not isinstance(snapshot, dict):
-        snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
+    snapshot = _stream_snapshot_for_subscribe(webspace_id)
     stream_payload = _stream_payload_for_receiver(snapshot, receiver)
     if stream_payload is None:
         return
