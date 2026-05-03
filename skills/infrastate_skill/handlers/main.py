@@ -27,6 +27,7 @@ from adaos.services import node_config as _node_config
 from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime_sidecar_enabled
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
+from adaos.services.runtime_refresh import rebuild_webspace_projection_sync, refresh_skill_runtime
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.operations import get_operation_manager, submit_install_operation
 from adaos.services.skill.update import SkillUpdateService
@@ -37,6 +38,7 @@ from adaos.services.workspace_sync import effective_registry_names, installed_na
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.skill.manager import SkillManager
 from adaos.adapters.db import SqliteScenarioRegistry, SqliteSkillRegistry
+from adaos.services.node_display import node_display_from_config
 
 from packaging.version import Version, InvalidVersion
 
@@ -56,6 +58,8 @@ _background_refresh_webspace_id: str | None = None
 _background_refresh_reason = ""
 _marketplace_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 _snapshot_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_snapshot_cache_guard = threading.Lock()
+_snapshot_cache_locks: dict[str, threading.Lock] = {}
 _projection_fingerprints: dict[str, str] = {}
 _projection_last_applied_at: dict[str, float] = {}
 _active_stream_receivers_by_webspace: dict[str, set[str]] = {}
@@ -453,9 +457,19 @@ def _snapshot_cache_key(webspace_id: str | None = None) -> str:
     return str(webspace_id or "").strip() or default_webspace_id()
 
 
+def _snapshot_cache_lock_for(cache_key: str) -> threading.Lock:
+    with _snapshot_cache_guard:
+        lock = _snapshot_cache_locks.get(cache_key)
+        if lock is None:
+            lock = threading.Lock()
+            _snapshot_cache_locks[cache_key] = lock
+        return lock
+
+
 def _invalidate_runtime_caches(*, webspace_id: str | None = None, marketplace: bool = False) -> None:
     cache_key = _snapshot_cache_key(webspace_id)
-    _snapshot_cache.pop(cache_key, None)
+    with _snapshot_cache_lock_for(cache_key):
+        _snapshot_cache.pop(cache_key, None)
     if marketplace:
         _marketplace_catalog_cache.clear()
 
@@ -1017,7 +1031,9 @@ def _update_actions(conf, ui_state: dict[str, Any], reliability: dict[str, Any])
     target_kind = "local" if not selected_node_id or selected_node_id == local_node_id else "member"
     title = "Update skills & scenarios"
     if target_kind == "member":
-        title = f"Update skills & scenarios ({selected_node_id[:8]})"
+        member = _selected_member_entry(reliability, selected_node_id)
+        member_label = str(member.get("node_label") or member.get("label") or "").strip() or "Member"
+        title = f"Update skills & scenarios ({member_label})"
     description = "Sync workspace sources for skills and scenarios and refresh runtime projections."
     if target_kind == "member" and role != "hub":
         return [
@@ -1091,14 +1107,27 @@ def _adaos_update_local(*, dry_run: bool = False) -> dict[str, Any]:
         payload["scenarios_synced"] = False
         errors["workspace_sync"] = f"{type(exc).__name__}: {exc}"
 
+    target_webspace = default_webspace_id()
     runtime_updated: list[str] = []
     runtime_errors: dict[str, str] = {}
     for name in [str(item) for item in (sync_result.get("skills") or []) if str(item).strip()]:
         if not name:
             continue
         try:
-            res = skill_mgr.runtime_update(name, space="workspace")
-            if isinstance(res, dict) and res.get("ok"):
+            try:
+                source_meta = ctx.skills_repo.get(name)
+            except Exception:
+                source_meta = None
+            source_version = str(getattr(source_meta, "version", None) or "").strip()
+            result = refresh_skill_runtime(
+                skill_mgr,
+                name,
+                webspace_id=target_webspace,
+                source_version=source_version,
+                migrate_runtime=True,
+                ensure_installed=True,
+            )
+            if bool(result.get("runtime_updated")) or bool(result.get("runtime_migrated")):
                 runtime_updated.append(name)
         except Exception as exc:
             runtime_errors[name] = f"{type(exc).__name__}: {exc}"
@@ -1107,11 +1136,74 @@ def _adaos_update_local(*, dry_run: bool = False) -> dict[str, Any]:
     if runtime_errors:
         errors["runtime_update"] = f"{len(runtime_errors)} skills failed"
         payload["runtime_update_errors"] = runtime_errors
+    try:
+        payload["webspace_refresh"] = rebuild_webspace_projection_sync(
+            webspace_id=target_webspace,
+            action="infrastate_adaos_update_sync",
+            source_of_truth="scenario_projection",
+        )
+    except Exception as exc:
+        errors["webspace_refresh"] = f"{type(exc).__name__}: {exc}"
 
     if errors:
         payload["ok"] = False
         payload["errors"] = errors
     return payload
+
+
+def _forget_subnet_local() -> dict[str, Any]:
+    conf = load_config()
+    role = str(getattr(conf, "role", "") or "").strip().lower()
+    try:
+        from adaos.services.registry.subnet_directory import get_directory
+
+        directory = get_directory()
+        remembered = directory.list_known_nodes()
+        remembered_ids = [
+            str(item.get("node_id") or "").strip()
+            for item in remembered
+            if isinstance(item, dict) and str(item.get("node_id") or "").strip()
+        ]
+        directory.clear_all()
+    except Exception as exc:
+        raise RuntimeError(f"failed to clear subnet directory: {exc}") from exc
+
+    result: dict[str, Any] = {
+        "ok": True,
+        "accepted": True,
+        "scope": "subnet_directory",
+        "forgotten_total": len(remembered_ids),
+        "forgotten_node_ids": remembered_ids,
+        "subnet_id": str(getattr(conf, "subnet_id", "") or ""),
+    }
+    if role != "hub":
+        return result
+
+    refresh_requested = 0
+    try:
+        from adaos.services.subnet.link_manager import get_hub_link_manager
+
+        manager = get_hub_link_manager()
+        snapshot = manager.snapshot()
+        members = snapshot.get("members") if isinstance(snapshot.get("members"), list) else []
+        for item in members:
+            if not isinstance(item, dict):
+                continue
+            node_id = str(item.get("node_id") or "").strip()
+            if not node_id:
+                continue
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(manager.request_member_snapshot(node_id, reason="infrastate.forget_subnet"))
+                refresh_requested += 1
+            else:
+                loop.create_task(manager.request_member_snapshot(node_id, reason="infrastate.forget_subnet"))
+                refresh_requested += 1
+    except Exception:
+        _log.debug("failed to request member snapshots after subnet forget", exc_info=True)
+    result["refresh_requested"] = refresh_requested
+    return result
 
 
 def _route_info(conf) -> tuple[str | None, bool | None]:
@@ -1869,15 +1961,23 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
     local_node_id = str(getattr(conf, "node_id", "") or "")
     role = str(getattr(conf, "role", "") or "").strip().lower()
     local_names = list(getattr(conf, "node_names", []) or [])
+    local_display = node_display_from_config(conf)
+    local_display_label = str(local_display.get("node_label") or "").strip() or _node_label(
+        local_names,
+        fallback="Node 0" if role == "hub" else "Node 1",
+    )
     items: list[dict[str, Any]] = [
         {
             "id": local_node_id,
-            "label": _node_label(local_names, fallback="hub" if role == "hub" else "member"),
+            "label": local_display_label,
             "title": "Local node",
             "role": role,
             "node_id": local_node_id,
             "node_names": local_names,
             "kind": "local",
+            "node_compact_label": local_display.get("node_compact_label"),
+            "node_color": local_display.get("node_color"),
+            "node_index": local_display.get("node_index"),
         }
     ]
     conn_state = _hub_member_connection_state(reliability)
@@ -1894,10 +1994,14 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
             member_names = member.get("node_names") if isinstance(member.get("node_names"), list) else []
             connected = bool(member.get("connected"))
             observed_via = str(member.get("observed_via") or "").strip()
+            member_label = str(member.get("node_label") or member.get("label") or "").strip() or _node_label(
+                member_names,
+                fallback=f"Node {index}",
+            )
             items.append(
                 {
                     "id": node_id,
-                    "label": _node_label(member_names, fallback="member" if index == 1 else f"member {index}"),
+                    "label": member_label,
                     "title": "Connected member" if connected else ("Observed member" if observed_via == "subnet_directory" else "Member"),
                     "role": "member",
                     "node_id": node_id,
@@ -1906,6 +2010,9 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
                     "state": str(member.get("state") or "connected"),
                     "connected": connected,
                     "observed_via": observed_via,
+                    "node_compact_label": member.get("node_compact_label"),
+                    "node_color": member.get("node_color"),
+                    "node_index": member.get("node_index"),
                 }
             )
     valid_ids = {str(item.get("id") or "") for item in items}
@@ -3367,7 +3474,8 @@ def _summary(
         summary_label = "Node state"
         summary_value = str(status.get("state") or lifecycle.get("node_state") or selected_member.get("state") or "connected")
         build_ref = str(build.get("runtime_git_short_commit") or build.get("runtime_version") or build.get("version") or "").strip()
-        summary_subtitle = f"{selected_label} | {selected_node_id[:8]}"
+        selected_compact = str(selected_node.get("node_compact_label") or "").strip()
+        summary_subtitle = f"{selected_label} | {selected_compact or 'N?'}"
         if build_ref:
             summary_subtitle += f" | {build_ref}"
         message = (
@@ -3698,6 +3806,13 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
                         )
                     ),
                     "subtitle": last_action if last_action == "yjs_set_home_current" else "",
+                },
+                {
+                    "id": "forget_subnet",
+                    "title": "Forget subnet",
+                    "status": "warn",
+                    "description": "Clear remembered member directory entries and cached remote projections. Connected members will republish themselves on the next snapshot.",
+                    "subtitle": last_action if last_action == "forget_subnet" else "",
                 },
             ]
         )
@@ -4042,6 +4157,19 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
         _write_ui_state(
             selected_node_id=node_id,
             last_action="set_node_names",
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_result=result,
+            last_error="",
+        )
+        return result
+    if action_id == "forget_subnet":
+        if str(getattr(conf, "role", "") or "").strip().lower() != "hub":
+            raise ValueError("forget subnet is available only on hub")
+        result = _forget_subnet_local()
+        _write_ui_state(
+            selected_node_id=str(getattr(conf, "node_id", "") or ""),
+            last_action="forget_subnet",
             last_action_ts=time.time(),
             last_refresh_ts=time.time(),
             last_result=result,
@@ -4552,16 +4680,23 @@ def _snapshot_or_fallback(*, webspace_id: str | None = None) -> dict[str, Any]:
 
 def _snapshot_or_fallback_cached(*, webspace_id: str | None = None, allow_cache: bool = True) -> dict[str, Any]:
     cache_key = _snapshot_cache_key(webspace_id)
-    now = time.monotonic()
     if allow_cache and _SNAPSHOT_CACHE_TTL_S > 0:
-        cached = _snapshot_cache.get(cache_key)
-        if cached is not None:
-            cached_at, cached_snapshot = cached
-            if now - cached_at <= _SNAPSHOT_CACHE_TTL_S:
-                _projection_diag["cache_hit_total"] = int(_projection_diag.get("cache_hit_total") or 0) + 1
-                return _cache_copy(cached_snapshot)
+        # Coalesce concurrent initial stream subscriptions for the same
+        # webspace; otherwise every receiver can rebuild the same snapshot.
+        with _snapshot_cache_lock_for(cache_key):
+            now = time.monotonic()
+            cached = _snapshot_cache.get(cache_key)
+            if cached is not None:
+                cached_at, cached_snapshot = cached
+                if now - cached_at <= _SNAPSHOT_CACHE_TTL_S:
+                    _projection_diag["cache_hit_total"] = int(_projection_diag.get("cache_hit_total") or 0) + 1
+                    return _cache_copy(cached_snapshot)
+            snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
+            _snapshot_cache[cache_key] = (time.monotonic(), _cache_copy(snapshot))
+            return snapshot
     snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
-    _snapshot_cache[cache_key] = (now, _cache_copy(snapshot))
+    with _snapshot_cache_lock_for(cache_key):
+        _snapshot_cache[cache_key] = (time.monotonic(), _cache_copy(snapshot))
     return snapshot
 
 
@@ -4647,8 +4782,9 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
         return
     webspace_id = _webspace_id_from_payload(payload)
     _remember_stream_receiver(webspace_id, receiver)
-    # A new subscriber expects the most recent bounded tail, not a stale cached snapshot.
-    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=False)
+    # Initial stream subscriptions arrive as a burst; share one fresh-enough
+    # snapshot so each receiver does not rebuild the same heavy state.
+    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
     _publish_stream_payload(
         receiver=receiver,
         data=_stream_payload_for_receiver(snapshot, receiver),
