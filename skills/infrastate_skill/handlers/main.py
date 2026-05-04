@@ -474,6 +474,22 @@ def _invalidate_runtime_caches(*, webspace_id: str | None = None, marketplace: b
         _marketplace_catalog_cache.clear()
 
 
+def _invalidate_projection_state(*, webspace_id: str | None = None) -> None:
+    ws = str(webspace_id or "").strip()
+    if ws:
+        _projection_fingerprints.pop(ws, None)
+        _projection_last_applied_at.pop(ws, None)
+        prefix = f"{ws}\0"
+        for key in [token for token in list(_stream_fingerprints) if token.startswith(prefix)]:
+            _stream_fingerprints.pop(key, None)
+            _stream_last_published_at.pop(key, None)
+        return
+    _projection_fingerprints.clear()
+    _projection_last_applied_at.clear()
+    _stream_fingerprints.clear()
+    _stream_last_published_at.clear()
+
+
 def _snapshot_projection_fingerprint(snapshot: dict[str, Any]) -> str:
     payload = _sanitize_snapshot_for_fingerprint(snapshot)
     return hashlib.sha1(_stable_json_bytes(payload)).hexdigest()
@@ -4988,9 +5004,12 @@ def on_browser_runtime_changed(evt: Any) -> None:
 @subscribe("node.yjs.control.failed")
 def on_webspace_reload(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
+    webspace_id = _webspace_id_from_payload(payload)
     event_type = str(getattr(evt, "type", "") or "desktop.webspace.reload")
+    _invalidate_runtime_caches(webspace_id=webspace_id)
+    _invalidate_projection_state(webspace_id=webspace_id)
     _schedule_snapshot_refresh(
-        webspace_id=_webspace_id_from_payload(payload),
+        webspace_id=webspace_id,
         reason=event_type,
     )
 
