@@ -24,6 +24,7 @@ from adaos.services.core_slots import active_slot_manifest, slot_status
 from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services import node_config as _node_config
+from adaos.sdk.manage import node as _sdk_node
 from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime_sidecar_enabled
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
@@ -541,28 +542,20 @@ load_config = _node_config.load_config
 
 
 def persist_node_names(node_names: Any):
-    names = _normalize_node_names(node_names)
-    setter = getattr(_node_config, "set_node_names", None)
-    if callable(setter):
-        return setter(names)
-
-    conf = load_config()
-    node_settings = getattr(conf, "node_settings", None)
-    if node_settings is not None and hasattr(node_settings, "node_names"):
-        try:
-            setattr(node_settings, "node_names", names)
-        except Exception:
+    setter = getattr(_sdk_node, "set_node_names", None)
+    if not callable(setter):
+        raise RuntimeError("SDK node names setter is unavailable")
+    saved = setter(_normalize_node_names(node_names))
+    if isinstance(saved, dict):
+        normalized = list(saved.get("node_names") or [])
+        node_id = str(saved.get("node_id") or "")
+        class _Conf:
             pass
-    elif hasattr(conf, "node_names"):
-        try:
-            setattr(conf, "node_names", names)
-        except Exception:
-            pass
-
-    save = getattr(_node_config, "save_config", None) or getattr(_node_config, "save_node", None)
-    if callable(save):
-        save(conf)
-    return conf
+        conf = _Conf()
+        conf.node_id = node_id
+        conf.node_names = normalized
+        return conf
+    return saved
 
 
 def lang_res() -> dict[str, str]:
