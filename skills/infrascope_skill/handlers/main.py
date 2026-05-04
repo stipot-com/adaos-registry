@@ -114,6 +114,20 @@ def _event_webspace_fallback() -> str:
     return raw or default_webspace_id()
 
 
+def _invalidate_projection_state(*, webspace_id: str | None = None) -> None:
+    ws = str(webspace_id or "").strip()
+    if ws:
+        _last_projected_fingerprints.pop(ws, None)
+        _last_projected_at_mono.pop(ws, None)
+        prefix = f"{ws}\0"
+        for key in [token for token in list(_last_stream_fingerprints) if token.startswith(prefix)]:
+            _last_stream_fingerprints.pop(key, None)
+        return
+    _last_projected_fingerprints.clear()
+    _last_projected_at_mono.clear()
+    _last_stream_fingerprints.clear()
+
+
 def _eager_stream_publish_enabled() -> bool:
     raw = str(os.getenv("INFRASCOPE_EAGER_STREAM_PUBLISH", "") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
@@ -1363,9 +1377,11 @@ def on_registry_changed(evt: Any) -> None:
 @subscribe("node.yjs.control.failed")
 def on_webspace_event(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
+    webspace_id = _webspace_id_from_payload(payload)
     event_type = str(getattr(evt, "type", "") or "desktop.webspace.refresh")
+    _invalidate_projection_state(webspace_id=webspace_id)
     _schedule_snapshot_refresh(
-        webspace_id=_webspace_id_from_payload(payload),
+        webspace_id=webspace_id,
         reason=event_type,
     )
 
