@@ -192,7 +192,29 @@ def _sanitize_snapshot_for_fingerprint(value: Any) -> Any:
 
 
 def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
-    return _compact_snapshot_for_client(snapshot)
+    compact = _compact_snapshot_for_client(snapshot)
+    # Keep YJS projection lean and node-agnostic: large, frequently changing
+    # diagnostics flow through streams, while YJS carries only the structural
+    # snapshot needed for resilient UI restore.
+    for key in (
+        "build",
+        "steps",
+        "realtime",
+        "slots",
+        "skills",
+        "scenarios",
+        "logs",
+        "events",
+        "core_update_diagnostics",
+        "core_update_diag_actions",
+    ):
+        compact.pop(key, None)
+    operations = compact.get("operations")
+    if isinstance(operations, dict):
+        compact["operations"] = {
+            "active": _cache_copy(operations.get("active") or []),
+        }
+    return compact
 
 
 def _truncate_text(text: str, limit: int | None = None) -> str:
@@ -429,11 +451,13 @@ def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None
 
 
 def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str | None) -> None:
-    receivers = (
+    eager_receivers = (
         _operations_receiver(),
         _logs_receiver(),
         _events_receiver(),
         _yjs_load_receiver(),
+    )
+    all_receivers = eager_receivers + (
         _build_receiver(),
         _steps_receiver(),
         _realtime_receiver(),
@@ -444,8 +468,10 @@ def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str | No
         _marketplace_scenarios_receiver(),
         _core_update_diagnostics_receiver(),
     )
-    if not _eager_stream_publish_enabled():
-        receivers = tuple(_active_stream_receivers(webspace_id))
+    if _eager_stream_publish_enabled():
+        receivers = all_receivers
+    else:
+        receivers = tuple(dict.fromkeys(eager_receivers + tuple(_active_stream_receivers(webspace_id))))
     for receiver in receivers:
         _publish_stream_payload(
             receiver=receiver,
@@ -4870,7 +4896,7 @@ def on_webio_stream_subscription_changed(evt: Any) -> None:
 @tool("get_snapshot")
 def get_snapshot(webspace_id: str | None = None, project: bool = False) -> dict[str, Any]:
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
-    if project:
+    if project or bool(snapshot.get("fallback")):
         _project(snapshot, webspace_id=webspace_id)
     return _compact_snapshot_for_client(snapshot)
 
