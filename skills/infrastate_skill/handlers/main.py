@@ -4973,7 +4973,13 @@ def on_webio_stream_subscription_changed(evt: Any) -> None:
 
 
 @tool("get_snapshot")
-def get_snapshot(webspace_id: str | None = None, project: bool = False) -> dict[str, Any]:
+def get_snapshot(
+    webspace_id: str | None = None,
+    project: bool = False,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
     if project or bool(snapshot.get("fallback")):
         _project(snapshot, webspace_id=webspace_id)
