@@ -51,6 +51,13 @@ _SUMMARY_RENDER_STATE_KEY = "infrastate.summary_render_state"
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
 _REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}
 _MARKETPLACE_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_CACHE_TTL_S") or "30"))
+_MARKETPLACE_REGISTRY_JSON_URL = (
+    str(
+        os.getenv("ADAOS_INFRASTATE_MARKETPLACE_REGISTRY_JSON_URL")
+        or "https://raw.githubusercontent.com/stipot-com/adaos-registry/refs/heads/main/registry.json"
+    ).strip()
+    or "https://raw.githubusercontent.com/stipot-com/adaos-registry/refs/heads/main/registry.json"
+)
 _SNAPSHOT_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CACHE_TTL_S") or "1.5"))
 _SNAPSHOT_CONTENT_MAX_BYTES = max(0, int(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CONTENT_MAX_BYTES") or "4096"))
 _background_refresh_task: asyncio.Task[Any] | None = None
@@ -758,6 +765,19 @@ def _registry_payload_from_git_ref(workspace_root: Path) -> dict[str, Any] | Non
     return payload if isinstance(payload, dict) else None
 
 
+def _registry_payload_from_url() -> dict[str, Any] | None:
+    url = str(_MARKETPLACE_REGISTRY_JSON_URL or "").strip()
+    if not url:
+        return None
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
     try:
         ctx = get_ctx()
@@ -786,7 +806,9 @@ def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
                 continue
             merged[key] = dict(raw)
 
-    remote_payload = _registry_payload_from_git_ref(workspace_root)
+    remote_payload = _registry_payload_from_url()
+    if not isinstance(remote_payload, dict):
+        remote_payload = _registry_payload_from_git_ref(workspace_root)
     if isinstance(remote_payload, dict):
         _merge(remote_payload.get(kind_plural))
 
