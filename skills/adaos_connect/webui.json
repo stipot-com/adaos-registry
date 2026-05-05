@@ -211,6 +211,22 @@
               }
             },
             {
+              "id": "adaos-connect-node-cli",
+              "type": "item.codeViewer",
+              "area": "main",
+              "title": "CLI",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/adaos_connect/current"
+              },
+              "inputs": {
+                "bindField": "node_connect_command",
+                "languageField": "node_connect_language",
+                "copyButton": true
+              },
+              "visibleIf": "$state.adaosConnectMode === 'node'"
+            },
+            {
               "id": "adaos-connect-linux",
               "type": "item.codeViewer",
               "area": "main",
@@ -280,6 +296,8 @@
         "link_language": "text",
         "code": "",
         "code_language": "text",
+        "node_connect_command": "",
+        "node_connect_language": "bash",
         "linux_command": "",
         "linux_language": "bash",
         "windows_ps_command": "",

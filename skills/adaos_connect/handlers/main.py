@@ -347,6 +347,14 @@ def _windows_cmd_bootstrap_command(*, code: str, root_base_url: str, zone_id: st
     return " ".join(parts)
 
 
+def _node_connect_command(*, code: str, root_base_url: str, hub_id: str | None) -> str:
+    root_base = str(root_base_url or "").rstrip("/")
+    if hub_id:
+        if "/hubs/" not in root_base:
+            root_base = f"{root_base}/hubs/{hub_id}"
+    return " ".join(["adaos", "node", "join", "--root", shlex.quote(root_base), "--code", shlex.quote(code)])
+
+
 async def _write_current(webspace_id: str, current: Dict[str, Any]) -> None:
     async with webspace_ydoc(webspace_id, load_mark_roots=["data"]) as ydoc:
         data_map = ydoc.get_map("data")
@@ -383,6 +391,8 @@ def _base_current(mode: str) -> Dict[str, Any]:
         "link_language": "text",
         "code": "",
         "code_language": "text",
+        "node_connect_command": "",
+        "node_connect_language": "bash",
         "linux_command": "",
         "linux_language": "bash",
         "windows_ps_command": "",
@@ -573,6 +583,11 @@ def _node_current(context: Dict[str, Any], *, request_id: str) -> Dict[str, Any]
     zone_text = f" in zone {_zone_label(zone_id)}" if zone_id else ""
     current["summary"] = f"Use the generated join code on Linux or Windows to add a node to subnet {hub_id}{zone_text}."
     current["code"] = code
+    current["node_connect_command"] = _node_connect_command(
+        code=code,
+        root_base_url=str(context.get("root_base_url") or ""),
+        hub_id=hub_id or None,
+    )
     current["linux_command"] = _linux_bootstrap_command(
         code=code,
         root_base_url=str(context.get("root_base_url") or ""),
