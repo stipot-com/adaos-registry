@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -566,6 +567,7 @@ def _build_snapshot() -> dict[str, Any]:
     file_env = _read_dotenv(dotenv_path)
     node = _node_payload()
     reliability = get_reliability_projection()
+    refresh_ts = time.time()
     env_type = _effective_env_value(file_env, "ENV_TYPE") or "default"
     zone_id = node.get("zone_id") or _effective_env_value(file_env, "ADAOS_ZONE_ID") or "unset"
     yjs_enabled = _env_flag_enabled(file_env, "ADAOS_SUBNET_YJS_REPLICATION")
@@ -598,6 +600,7 @@ def _build_snapshot() -> dict[str, Any]:
             "drift_count": len(drift_rows),
             "restart_recommended": any(_effective_env_value(file_env, key) for key in _RESTART_RECOMMENDED_KEYS),
         },
+        "last_refresh_ts": refresh_ts,
         "safety": {
             "editable_keys": sorted(_ALLOWED_ENV_KEYS),
             "read_only_notes": [
@@ -621,7 +624,12 @@ def _refresh(*, webspace_id: str | None = None) -> dict[str, Any]:
 
 
 @tool("get_snapshot")
-def get_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
+def get_snapshot(
+    webspace_id: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
     return _refresh(webspace_id=webspace_id)
 
 
