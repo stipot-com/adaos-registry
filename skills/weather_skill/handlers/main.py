@@ -439,6 +439,18 @@ async def on_weather_city_changed(evt) -> None:
     payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
     if not isinstance(payload, dict):
         return
+    target_node_id = str(
+        payload.get("target_node_id")
+        or (payload.get("_meta") or {}).get("target_node_id")
+        or payload.get("node_id")
+        or ""
+    ).strip()
+    try:
+        local_node_id = str(getattr(get_ctx().config, "node_id", "") or "").strip()
+    except Exception:
+        local_node_id = ""
+    if target_node_id and local_node_id and target_node_id != local_node_id:
+        return
     meta = payload.get("_meta") if isinstance(payload, dict) else None
     raw_ws = (payload.get("webspace_id") or payload.get("workspace_id")) or (meta or {}).get("webspace_id") or (meta or {}).get("workspace_id") or None
     webspace_id: Optional[str] = None
