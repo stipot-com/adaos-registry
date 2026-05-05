@@ -29,13 +29,14 @@ from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 from adaos.services.runtime_refresh import rebuild_webspace_projection_sync, refresh_skill_runtime
+from adaos.services.capacity import install_scenario_in_capacity
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.operations import get_operation_manager, submit_install_operation
 from adaos.services.skill.update import SkillUpdateService
 from adaos.services.scenarios.loader import read_manifest
 from adaos.services.scenario.manager import ScenarioManager
 from adaos.services.workspace_registry import build_registry_entry, list_workspace_registry_entries, rebuild_workspace_registry
-from adaos.services.workspace_sync import effective_registry_names, installed_names, sync_workspace_sparse_to_registry
+from adaos.services.workspace_sync import effective_registry_names, installed_names, reconcile_workspace_db_to_materialized, sync_workspace_sparse_to_registry
 from adaos.services.yjs.webspace import default_webspace_id
 from adaos.services.skill.manager import SkillManager
 from adaos.adapters.db import SqliteScenarioRegistry, SqliteSkillRegistry
@@ -1153,6 +1154,15 @@ def _adaos_update_local(*, dry_run: bool = False) -> dict[str, Any]:
         payload["scenarios_synced"] = False
         errors["workspace_sync"] = f"{type(exc).__name__}: {exc}"
 
+    reconcile_result: dict[str, Any] = {}
+    if payload.get("workspace_synced"):
+        try:
+            reconcile_result = reconcile_workspace_db_to_materialized(ctx)
+            payload["registry_reconciled"] = bool(reconcile_result.get("ok", True))
+        except Exception as exc:
+            payload["registry_reconciled"] = False
+            errors["workspace_registry"] = f"{type(exc).__name__}: {exc}"
+
     target_webspace = default_webspace_id()
     runtime_updated: list[str] = []
     runtime_errors: dict[str, str] = {}
@@ -1182,6 +1192,29 @@ def _adaos_update_local(*, dry_run: bool = False) -> dict[str, Any]:
     if runtime_errors:
         errors["runtime_update"] = f"{len(runtime_errors)} skills failed"
         payload["runtime_update_errors"] = runtime_errors
+
+    scenario_capacity_updated: list[str] = []
+    scenario_capacity_errors: dict[str, str] = {}
+    scenario_names = [
+        str(item)
+        for item in ((reconcile_result.get("scenarios") or sync_result.get("scenarios") or []))
+        if str(item).strip()
+    ]
+    for name in scenario_names:
+        try:
+            try:
+                source_meta = ctx.scenarios_repo.get(name)
+            except Exception:
+                source_meta = None
+            source_version = str(getattr(source_meta, "version", None) or "").strip() or "unknown"
+            install_scenario_in_capacity(name, source_version, active=True)
+            scenario_capacity_updated.append(name)
+        except Exception as exc:
+            scenario_capacity_errors[name] = f"{type(exc).__name__}: {exc}"
+    payload["scenario_capacity_updated"] = sorted(set(scenario_capacity_updated))
+    if scenario_capacity_errors:
+        errors["scenario_capacity"] = f"{len(scenario_capacity_errors)} scenarios failed"
+        payload["scenario_capacity_errors"] = scenario_capacity_errors
     try:
         payload["webspace_refresh"] = rebuild_webspace_projection_sync(
             webspace_id=target_webspace,
@@ -4261,14 +4294,28 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
                 from adaos.services.subnet.link_manager import get_hub_link_manager
 
                 async def _request_remote_update() -> dict[str, Any]:
-                    result = await get_hub_link_manager().rpc_tools_call(
+                    manager = get_hub_link_manager()
+                    result = await manager.rpc_tools_call(
                         selected_node_id,
                         tool="infrastate_skill:adaos_update",
                         arguments={"dry_run": False},
                         timeout=180.0,
                         dev=False,
                     )
-                    return result if isinstance(result, dict) else {"ok": True, "result": result}
+                    final = result if isinstance(result, dict) else {"ok": True, "result": result}
+                    if bool(final.get("ok", False)):
+                        try:
+                            snapshot_result = await manager.request_member_snapshot(
+                                selected_node_id,
+                                reason="infrastate.adaos_update",
+                            )
+                            final = dict(final)
+                            final["snapshot_requested"] = bool(snapshot_result.get("ok", False))
+                        except Exception as exc:
+                            final = dict(final)
+                            final["snapshot_requested"] = False
+                            final["snapshot_request_error"] = f"{type(exc).__name__}: {exc}"
+                    return final
 
                 try:
                     loop = asyncio.get_running_loop()
