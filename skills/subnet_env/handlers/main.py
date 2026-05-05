@@ -634,13 +634,25 @@ def get_snapshot(
 
 
 @tool("refresh_snapshot")
-def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
+def refresh_snapshot(
+    webspace_id: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
     snapshot = _refresh(webspace_id=webspace_id)
     return {"ok": True, **snapshot}
 
 
 @tool("set_env_value")
-def set_env_value(key: str, value: Any = None, webspace_id: str | None = None) -> dict[str, Any]:
+def set_env_value(
+    key: str,
+    value: Any = None,
+    webspace_id: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
     token = str(key or "").strip()
     if token not in _ALLOWED_ENV_KEYS:
         return {"ok": False, "error": "key_not_allowed", "key": token}
@@ -659,7 +671,13 @@ def set_env_value(key: str, value: Any = None, webspace_id: str | None = None) -
 
 
 @tool("apply_action")
-def apply_action(action_id: str, webspace_id: str | None = None) -> dict[str, Any]:
+def apply_action(
+    action_id: str,
+    webspace_id: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
     token = str(action_id or "").strip()
     if token == "refresh_snapshot":
         snapshot = _refresh(webspace_id=webspace_id)
