@@ -349,9 +349,6 @@ def _windows_cmd_bootstrap_command(*, code: str, root_base_url: str, zone_id: st
 
 def _node_connect_command(*, code: str, root_base_url: str, hub_id: str | None) -> str:
     root_base = str(root_base_url or "").rstrip("/")
-    if hub_id:
-        if "/hubs/" not in root_base:
-            root_base = f"{root_base}/hubs/{hub_id}"
     return " ".join(["adaos", "node", "join", "--root", shlex.quote(root_base), "--code", shlex.quote(code)])
 
 
