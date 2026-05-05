@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-05T15:03:21+00:00",
+  "updated_at": "2026-05-05T15:03:46+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -150,8 +150,8 @@
       "kind": "skill",
       "id": "mediaserver",
       "name": "mediaserver",
-      "version": "0.3.0",
-      "updated_at": "2026-04-07T19:49:47+00:00",
+      "version": "0.4.0",
+      "updated_at": "2026-05-05T15:03:46+00:00",
       "path": "skills/mediaserver",
       "manifest": "skills/mediaserver/skill.yaml",
       "source": {

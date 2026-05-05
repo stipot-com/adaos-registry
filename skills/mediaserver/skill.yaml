@@ -1,5 +1,5 @@
 name: mediaserver
-version: 0.3.0
+version: 0.4.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -22,5 +22,5 @@ tools:
     - ok
     - items
     - capabilities
-updated_at: '2026-04-07T19:49:47+00:00'
+updated_at: '2026-05-05T15:03:46+00:00'
 

@@ -11,7 +11,13 @@ from adaos.services.media_library import media_snapshot
     summary="return mediaserver library snapshot and channel capability diagnostics",
     stability="experimental",
 )
-def get_snapshot(_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def get_snapshot(
+    _payload: dict[str, Any] | None = None,
+    webspace_id: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
     return media_snapshot()
 
 
