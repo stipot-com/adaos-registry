@@ -2171,6 +2171,16 @@ def _remote_status_payload(snapshot: dict[str, Any], member: dict[str, Any]) -> 
     state = str(update.get("state") or member.get("snapshot_update_state") or member.get("last_hub_core_update_state") or member.get("state") or "connected")
     phase = str(update.get("phase") or member.get("snapshot_update_phase") or "")
     message = str(update.get("message") or "")
+    snapshot_state = str(member.get("snapshot_state") or "").strip().lower()
+    connected = bool(member.get("connected"))
+    if (
+        (not connected or snapshot_state in {"stale", "aging", "pending"})
+        and str(state or "").strip().lower() in {"planned", "countdown", "draining", "stopping", "restarting", "applying", "validate", "validated"}
+    ):
+        state = "offline" if not connected else "stale"
+        phase = ""
+        message = "member snapshot is stale" if snapshot_state in {"stale", "aging", "pending"} else "member is offline"
+        update = {}
     if not message and snapshot:
         message = "remote member snapshot"
     if not message:
