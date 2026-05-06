@@ -238,6 +238,33 @@ def detach_selected_browser(webspace_id: str | None = None) -> dict[str, Any]:
 
 
 @tool
+def get_selected_browser_settings(webspace_id: str | None = None) -> dict[str, Any]:
+    target_ws = str(webspace_id or "default").strip() or "default"
+    device_id = str(_SELECTED_BROWSER_BY_WS.get(target_ws) or "").strip()
+    if not device_id:
+        return {"ok": False, "error": "browser_not_selected"}
+    settings = sdk_device_access.get_device_settings(f"browser:{device_id}")
+    if settings is None:
+        return {"ok": False, "error": "device_not_found", "device_ref": f"browser:{device_id}"}
+    return settings
+
+
+@tool
+def adopt_selected_browser(name: str | None = None, preset: str = "permanent", webspace_id: str | None = None) -> dict[str, Any]:
+    target_ws = str(webspace_id or "default").strip() or "default"
+    device_id = str(_SELECTED_BROWSER_BY_WS.get(target_ws) or "").strip()
+    if not device_id:
+        return {"ok": False, "error": "browser_not_selected"}
+    result = sdk_device_access.adopt_device(
+        f"browser:{device_id}",
+        str(name or "").strip() or None,
+        str(preset or "permanent"),
+    )
+    _refresh_snapshot_sync(target_ws)
+    return result
+
+
+@tool
 def rename_link(name: str, node_id: str | None = None, target_node_id: str | None = None, webspace_id: str | None = None) -> dict[str, Any]:
     effective_node_id = str(target_node_id or node_id or "").strip()
     if not effective_node_id:
@@ -263,6 +290,31 @@ def detach_link(node_id: str | None = None, target_node_id: str | None = None, w
     if not effective_node_id:
         return {"ok": False, "error": "node_id_required"}
     result = sdk_device_access.detach_device(f"member:{effective_node_id}")
+    _refresh_snapshot_sync(webspace_id)
+    return result
+
+
+@tool
+def get_link_settings(node_id: str | None = None, target_node_id: str | None = None, webspace_id: str | None = None) -> dict[str, Any]:
+    effective_node_id = str(target_node_id or node_id or "").strip()
+    if not effective_node_id:
+        return {"ok": False, "error": "node_id_required"}
+    settings = sdk_device_access.get_device_settings(f"member:{effective_node_id}")
+    if settings is None:
+        return {"ok": False, "error": "device_not_found", "device_ref": f"member:{effective_node_id}"}
+    return settings
+
+
+@tool
+def adopt_link(name: str | None = None, preset: str = "permanent", node_id: str | None = None, target_node_id: str | None = None, webspace_id: str | None = None) -> dict[str, Any]:
+    effective_node_id = str(target_node_id or node_id or "").strip()
+    if not effective_node_id:
+        return {"ok": False, "error": "node_id_required"}
+    result = sdk_device_access.adopt_device(
+        f"member:{effective_node_id}",
+        str(name or "").strip() or None,
+        str(preset or "permanent"),
+    )
     _refresh_snapshot_sync(webspace_id)
     return result
 
