@@ -90,10 +90,16 @@ _last_projected_at_mono: dict[str, float] = {}
 _last_good_snapshots: dict[str, dict[str, Any]] = {}
 _active_stream_receivers_by_webspace: dict[str, set[str]] = {}
 _last_stream_fingerprints: dict[str, str] = {}
+_stream_request_seen_at: dict[str, float] = {}
 _stream_snapshot_guard = threading.Lock()
 _stream_snapshot_locks: dict[str, threading.Lock] = {}
 _last_refresh_at_mono = 0.0
 _MIN_YJS_PROJECTION_INTERVAL_S = 1.0
+_stream_request_diag = {
+    "requested_total": 0,
+    "forced_total": 0,
+    "coalesced_total": 0,
+}
 
 
 def _refresh_debounce_s() -> float:
@@ -105,6 +111,17 @@ def _refresh_debounce_s() -> float:
     except Exception:
         pass
     return 0.25
+
+
+def _stream_request_debounce_s() -> float:
+    try:
+        raw = str(os.getenv("INFRASCOPE_STREAM_REQUEST_DEBOUNCE_S", "") or "").strip()
+        if raw:
+            value = float(raw)
+            return max(0.0, min(value, 10.0))
+    except Exception:
+        pass
+    return 0.75
 
 
 def _event_webspace_fallback() -> str:
@@ -122,10 +139,12 @@ def _invalidate_projection_state(*, webspace_id: str | None = None) -> None:
         prefix = f"{ws}\0"
         for key in [token for token in list(_last_stream_fingerprints) if token.startswith(prefix)]:
             _last_stream_fingerprints.pop(key, None)
+            _stream_request_seen_at.pop(key, None)
         return
     _last_projected_fingerprints.clear()
     _last_projected_at_mono.clear()
     _last_stream_fingerprints.clear()
+    _stream_request_seen_at.clear()
 
 
 def _eager_stream_publish_enabled() -> bool:
@@ -653,6 +672,7 @@ def _forget_stream_receiver(webspace_id: str, receiver: str) -> None:
         if not receivers:
             _active_stream_receivers_by_webspace.pop(ws, None)
     _last_stream_fingerprints.pop(_stream_cache_key(ws, token), None)
+    _stream_request_seen_at.pop(_stream_cache_key(ws, token), None)
 
 
 def _active_stream_receivers(webspace_id: str) -> list[str]:
@@ -671,6 +691,31 @@ def _publish_stream_payload(receiver: str, data: Any, *, webspace_id: str, force
         data,
         _meta={"webspace_id": str(webspace_id or "").strip() or default_webspace_id()},
     )
+
+
+def _consume_stream_snapshot_request(*, webspace_id: str, receiver: str) -> bool:
+    key = _stream_cache_key(webspace_id, receiver)
+    now = time.monotonic()
+    _stream_request_diag["requested_total"] = int(_stream_request_diag.get("requested_total") or 0) + 1
+    debounce_s = _stream_request_debounce_s()
+    last_at = float(_stream_request_seen_at.get(key) or 0.0)
+    _stream_request_seen_at[key] = now
+    if debounce_s > 0 and last_at > 0 and now - last_at < debounce_s:
+        _stream_request_diag["coalesced_total"] = int(_stream_request_diag.get("coalesced_total") or 0) + 1
+        total = int(_stream_request_diag.get("coalesced_total") or 0)
+        if total % 25 == 0:
+            _log.info(
+                "infrascope snapshot request coalesced webspace=%s receiver=%s requested_total=%s forced_total=%s coalesced_total=%s debounce_s=%.3f",
+                webspace_id,
+                receiver,
+                int(_stream_request_diag.get("requested_total") or 0),
+                int(_stream_request_diag.get("forced_total") or 0),
+                total,
+                debounce_s,
+            )
+        return False
+    _stream_request_diag["forced_total"] = int(_stream_request_diag.get("forced_total") or 0) + 1
+    return True
 
 
 def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any:
@@ -1289,6 +1334,8 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
         return
     webspace_id = _webspace_id_from_payload(payload) or default_webspace_id()
     _remember_stream_receiver(webspace_id, receiver)
+    if not _consume_stream_snapshot_request(webspace_id=webspace_id, receiver=receiver):
+        return
     snapshot = _stream_snapshot_for_subscribe(webspace_id)
     stream_payload = _stream_payload_for_receiver(snapshot, receiver)
     if stream_payload is None:
