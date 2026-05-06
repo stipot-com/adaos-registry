@@ -146,6 +146,61 @@ def _yjs_load_receiver() -> str:
     return "infrastate.yjs.load_mark"
 
 
+def _active_noncritical_stream_guardrail(webspace_id: str, receiver: str) -> dict[str, Any]:
+    if str(receiver or "").strip() != _events_receiver():
+        return {}
+    try:
+        from adaos.services.yjs.gateway_ws import yjs_pressure_snapshot
+
+        snapshot = yjs_pressure_snapshot(webspace_id=webspace_id)
+    except Exception:
+        return {}
+    if not isinstance(snapshot, dict) or not bool(snapshot.get("active")):
+        return {}
+    return snapshot
+
+
+def _record_noncritical_stream_guardrail_suppression(
+    *,
+    webspace_id: str,
+    receiver: str,
+    payload: Any,
+    guardrail: dict[str, Any],
+) -> None:
+    total = int(_projection_diag.get("noncritical_guardrail_suppressed_total") or 0) + 1
+    _projection_diag["noncritical_guardrail_suppressed_total"] = total
+    key = f"{str(webspace_id or '').strip() or default_webspace_id()}::{str(receiver or '').strip() or '-'}"
+    per_key = dict(_projection_diag.get("noncritical_guardrail_suppressed_by_key") or {})
+    per_key[key] = int(per_key.get(key) or 0) + 1
+    _projection_diag["noncritical_guardrail_suppressed_by_key"] = per_key
+    reason = str(guardrail.get("reason") or "yjs_pressure").strip() or "yjs_pressure"
+    try:
+        payload_rows = len(payload) if isinstance(payload, list) else None
+    except Exception:
+        payload_rows = None
+    try:
+        payload_bytes = len(repr(payload).encode("utf-8", errors="replace"))
+    except Exception:
+        payload_bytes = 0
+    if total == 1 or total % 25 == 0:
+        _log.warning(
+            "infrastate noncritical stream suppressed webspace=%s receiver=%s reason=%s "
+            "suppressed_total=%s key_total=%s payload_rows=%s payload_bytes=%s "
+            "pressure_age_s=%s pending_send=%s pending_store=%s buffer_used=%s",
+            webspace_id,
+            receiver,
+            reason,
+            total,
+            int(per_key.get(key) or 0),
+            payload_rows,
+            payload_bytes,
+            float(guardrail.get("age_s") or 0.0),
+            int(guardrail.get("pending_send_tasks") or 0),
+            int(guardrail.get("pending_store_tasks") or 0),
+            int(guardrail.get("buffer_used") or 0),
+        )
+
+
 def _build_receiver() -> str:
     return "infrastate.build"
 
@@ -485,6 +540,18 @@ def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None
         min_interval_s = _stream_min_interval_s()
         if min_interval_s > 0 and last_at > 0 and now - last_at < min_interval_s:
             return
+    guardrail = _active_noncritical_stream_guardrail(
+        str(webspace_id or "").strip() or default_webspace_id(),
+        receiver,
+    )
+    if guardrail:
+        _record_noncritical_stream_guardrail_suppression(
+            webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
+            receiver=receiver,
+            payload=data,
+            guardrail=guardrail,
+        )
+        return
     _stream_fingerprints[key] = fingerprint
     _stream_last_published_at[key] = now
     stream_publish(
