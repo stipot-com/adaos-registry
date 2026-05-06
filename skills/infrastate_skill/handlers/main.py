@@ -331,6 +331,9 @@ def _compact_snapshot_for_client(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "assessment": _cache_copy(runtime.get("assessment")),
                 "channel_overview": _cache_copy(runtime.get("channel_overview")),
                 "readiness_tree": _cache_copy(runtime.get("readiness_tree")),
+                "connectivity": _cache_copy(runtime.get("connectivity")),
+                "state_sync": _cache_copy(runtime.get("state_sync")),
+                "yjs_pressure": _cache_copy(runtime.get("yjs_pressure")),
             },
         }
     return compact
@@ -2949,23 +2952,50 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
     overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
     diagnostics = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
+    connectivity = runtime.get("connectivity") if isinstance(runtime.get("connectivity"), dict) else {}
+    state_sync = runtime.get("state_sync") if isinstance(runtime.get("state_sync"), dict) else {}
+    yjs_pressure = runtime.get("yjs_pressure") if isinstance(runtime.get("yjs_pressure"), dict) else {}
     hub_member_channels = runtime.get("hub_member_channels") if isinstance(runtime.get("hub_member_channels"), dict) else {}
     hub_member_connection_state = runtime.get("hub_member_connection_state") if isinstance(runtime.get("hub_member_connection_state"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     root = overview.get("hub_root") if isinstance(overview.get("hub_root"), dict) else {}
     route = overview.get("hub_root_browser") if isinstance(overview.get("hub_root_browser"), dict) else {}
+    required_link = connectivity.get("required_upstream_link") if isinstance(connectivity.get("required_upstream_link"), dict) else {}
+    browser_route = connectivity.get("browser_control_route") if isinstance(connectivity.get("browser_control_route"), dict) else {}
     member_link = overview.get("hub_member") if isinstance(overview.get("hub_member"), dict) else {}
     member_sync = overview.get("member_hub_sync") if isinstance(overview.get("member_hub_sync"), dict) else {}
     root_diag = diagnostics.get("root_control") if isinstance(diagnostics.get("root_control"), dict) else {}
     route_diag = diagnostics.get("route") if isinstance(diagnostics.get("route"), dict) else {}
-    root_status = str(root.get("effective_status") or "unknown")
-    root_state = str(root.get("effective_state") or "unknown")
-    route_status = str(route.get("effective_status") or "unknown")
-    route_state = str(route.get("effective_state") or "unknown")
+    root_status = str(
+        root.get("effective_status")
+        or required_link.get("transport_state")
+        or "unknown"
+    )
+    root_state = str(
+        root.get("effective_state")
+        or required_link.get("transition_state")
+        or "unknown"
+    )
+    route_status = str(
+        route.get("effective_status")
+        or browser_route.get("transport_state")
+        or "unknown"
+    )
+    route_state = str(
+        route.get("effective_state")
+        or browser_route.get("transition_state")
+        or "unknown"
+    )
     note = (
         f"realtime hub-root={root_status}/{root_state}"
         f" hub-root-browser={route_status}/{route_state}"
     )
+    link_kind = str(required_link.get("kind") or "").strip()
+    if link_kind:
+        note += f" upstream={link_kind}:{root_status}/{root_state}"
+    browser_route_kind = str(browser_route.get("kind") or "").strip()
+    if browser_route_kind:
+        note += f" browser_route={route_status}/{route_state}"
     member_link_status = str(member_link.get("effective_status") or "").strip()
     member_link_state = str(member_link.get("effective_state") or "").strip()
     if member_link_status:
@@ -3047,6 +3077,27 @@ def _reliability_summary_note(reliability: dict[str, Any], transport_diag: dict[
             f"{core_update_stream.get('last_acked_cursor') or 0}/"
             f"{core_update_stream.get('last_issued_cursor') or 0}"
         )
+    if state_sync:
+        note += (
+            f" state_sync={state_sync.get('semantic_state') or 'unknown'}/"
+            f"{state_sync.get('freshness_state') or 'unknown'}"
+        )
+        if state_sync.get("first_sync_state"):
+            note += f" first_sync={state_sync.get('first_sync_state')}"
+        replay = state_sync.get("replay") if isinstance(state_sync.get("replay"), dict) else {}
+        if replay:
+            note += (
+                f" replay={replay.get('cursor') or '-'}"
+                f" mode={replay.get('mode') or '-'}"
+            )
+    if yjs_pressure:
+        pressure_owner = str(yjs_pressure.get("owner") or "").strip()
+        note += (
+            f" yjs_pressure={yjs_pressure.get('policy_state') or 'ok'}:"
+            f"{yjs_pressure.get('observed_state') or 'idle'}"
+        )
+        if pressure_owner:
+            note += f" yjs_owner={pressure_owner}"
     if sidecar_runtime:
         note += (
             f" sidecar={sidecar_runtime.get('status') or 'unknown'}/"
