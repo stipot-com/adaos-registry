@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-06T07:54:11+00:00",
+  "updated_at": "2026-05-06T07:55:12+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -193,8 +193,8 @@
       "kind": "skill",
       "id": "pair_new_device_skill",
       "name": "pair_new_device_skill",
-      "version": "0.0.1",
-      "updated_at": "2026-01-02T22:30:00+00:00",
+      "version": "0.1.0",
+      "updated_at": "2026-05-06T07:55:12+00:00",
       "path": "skills/pair_new_device_skill",
       "manifest": "skills/pair_new_device_skill/skill.yaml",
       "source": {
