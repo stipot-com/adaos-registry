@@ -155,9 +155,27 @@ def _active_noncritical_stream_guardrail(webspace_id: str, receiver: str) -> dic
         snapshot = yjs_pressure_snapshot(webspace_id=webspace_id)
     except Exception:
         return {}
-    if not isinstance(snapshot, dict) or not bool(snapshot.get("active")):
+    if isinstance(snapshot, dict) and bool(snapshot.get("active")):
+        snapshot.setdefault("guardrail_kind", "yjs_pressure")
+        return snapshot
+    try:
+        from adaos.services.bootstrap import channel_diagnostics_snapshot
+
+        route_diag = channel_diagnostics_snapshot()
+    except Exception:
         return {}
-    return snapshot
+    if not isinstance(route_diag, dict) or not bool(route_diag.get("guardrail_active")):
+        return {}
+    return {
+        "guardrail_kind": "route_pressure",
+        "active": True,
+        "reason": str(route_diag.get("guardrail_reason") or "route_guardrail_active").strip() or "route_guardrail_active",
+        "age_s": float(route_diag.get("guardrail_age_s") or 0.0),
+        "pending_send_tasks": int(route_diag.get("pending_data_size") or 0),
+        "pending_store_tasks": 0,
+        "buffer_used": int(route_diag.get("pending_data_size") or 0),
+        "waiting_send": int(route_diag.get("pending_oldest_age_s") or 0.0),
+    }
 
 
 def _record_noncritical_stream_guardrail_suppression(
