@@ -189,6 +189,35 @@ def _refresh_snapshot_sync(target_ws: str | None = None) -> dict[str, Any]:
     return payload
 
 
+def _selected_browser_ref(webspace_id: str | None = None) -> str | None:
+    target_ws = str(webspace_id or "default").strip() or "default"
+    device_id = str(_SELECTED_BROWSER_BY_WS.get(target_ws) or "").strip()
+    if not device_id:
+        return None
+    return f"browser:{device_id}"
+
+
+def _coerce_device_ref(
+    *,
+    device_ref: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    browser_device_id: str | None = None,
+    device_id: str | None = None,
+    webspace_id: str | None = None,
+) -> str | None:
+    token = str(device_ref or "").strip()
+    if token:
+        return token
+    member_id = str(target_node_id or node_id or "").strip()
+    if member_id:
+        return f"member:{member_id}"
+    browser_id = str(browser_device_id or device_id or "").strip()
+    if browser_id:
+        return f"browser:{browser_id}"
+    return _selected_browser_ref(webspace_id)
+
+
 @tool
 def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     return _refresh_snapshot_sync(webspace_id)
@@ -243,10 +272,7 @@ def get_selected_browser_settings(webspace_id: str | None = None) -> dict[str, A
     device_id = str(_SELECTED_BROWSER_BY_WS.get(target_ws) or "").strip()
     if not device_id:
         return {"ok": False, "error": "browser_not_selected"}
-    settings = sdk_device_access.get_device_settings(f"browser:{device_id}")
-    if settings is None:
-        return {"ok": False, "error": "device_not_found", "device_ref": f"browser:{device_id}"}
-    return settings
+    return get_device_settings(device_ref=f"browser:{device_id}", webspace_id=target_ws)
 
 
 @tool
@@ -255,68 +281,190 @@ def adopt_selected_browser(name: str | None = None, preset: str = "permanent", w
     device_id = str(_SELECTED_BROWSER_BY_WS.get(target_ws) or "").strip()
     if not device_id:
         return {"ok": False, "error": "browser_not_selected"}
+    return adopt_device(
+        device_ref=f"browser:{device_id}",
+        name=name,
+        preset=preset,
+        webspace_id=target_ws,
+    )
+
+
+@tool
+def rename_device(
+    name: str,
+    device_ref: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    browser_device_id: str | None = None,
+    device_id: str | None = None,
+    webspace_id: str | None = None,
+) -> dict[str, Any]:
+    resolved = _coerce_device_ref(
+        device_ref=device_ref,
+        node_id=node_id,
+        target_node_id=target_node_id,
+        browser_device_id=browser_device_id,
+        device_id=device_id,
+        webspace_id=webspace_id,
+    )
+    if not resolved:
+        return {"ok": False, "error": "device_ref_required"}
+    result = sdk_device_access.rename_device(resolved, str(name or "").strip())
+    _refresh_snapshot_sync(webspace_id)
+    return result
+
+
+@tool
+def set_device_lifetime(
+    preset: str,
+    device_ref: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    browser_device_id: str | None = None,
+    device_id: str | None = None,
+    webspace_id: str | None = None,
+) -> dict[str, Any]:
+    resolved = _coerce_device_ref(
+        device_ref=device_ref,
+        node_id=node_id,
+        target_node_id=target_node_id,
+        browser_device_id=browser_device_id,
+        device_id=device_id,
+        webspace_id=webspace_id,
+    )
+    if not resolved:
+        return {"ok": False, "error": "device_ref_required"}
+    result = sdk_device_access.set_device_lifetime(resolved, str(preset or "permanent"))
+    _refresh_snapshot_sync(webspace_id)
+    return result
+
+
+@tool
+def detach_device(
+    device_ref: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    browser_device_id: str | None = None,
+    device_id: str | None = None,
+    webspace_id: str | None = None,
+) -> dict[str, Any]:
+    resolved = _coerce_device_ref(
+        device_ref=device_ref,
+        node_id=node_id,
+        target_node_id=target_node_id,
+        browser_device_id=browser_device_id,
+        device_id=device_id,
+        webspace_id=webspace_id,
+    )
+    if not resolved:
+        return {"ok": False, "error": "device_ref_required"}
+    result = sdk_device_access.detach_device(resolved)
+    _refresh_snapshot_sync(webspace_id)
+    return result
+
+
+@tool
+def get_device_settings(
+    device_ref: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    browser_device_id: str | None = None,
+    device_id: str | None = None,
+    webspace_id: str | None = None,
+) -> dict[str, Any]:
+    resolved = _coerce_device_ref(
+        device_ref=device_ref,
+        node_id=node_id,
+        target_node_id=target_node_id,
+        browser_device_id=browser_device_id,
+        device_id=device_id,
+        webspace_id=webspace_id,
+    )
+    if not resolved:
+        return {"ok": False, "error": "device_ref_required"}
+    settings = sdk_device_access.get_device_settings(resolved)
+    if settings is None:
+        return {"ok": False, "error": "device_not_found", "device_ref": resolved}
+    return settings
+
+
+@tool
+def adopt_device(
+    name: str | None = None,
+    preset: str = "permanent",
+    device_ref: str | None = None,
+    node_id: str | None = None,
+    target_node_id: str | None = None,
+    browser_device_id: str | None = None,
+    device_id: str | None = None,
+    webspace_id: str | None = None,
+) -> dict[str, Any]:
+    resolved = _coerce_device_ref(
+        device_ref=device_ref,
+        node_id=node_id,
+        target_node_id=target_node_id,
+        browser_device_id=browser_device_id,
+        device_id=device_id,
+        webspace_id=webspace_id,
+    )
+    if not resolved:
+        return {"ok": False, "error": "device_ref_required"}
     result = sdk_device_access.adopt_device(
-        f"browser:{device_id}",
+        resolved,
         str(name or "").strip() or None,
         str(preset or "permanent"),
     )
-    _refresh_snapshot_sync(target_ws)
+    _refresh_snapshot_sync(webspace_id)
     return result
 
 
 @tool
 def rename_link(name: str, node_id: str | None = None, target_node_id: str | None = None, webspace_id: str | None = None) -> dict[str, Any]:
-    effective_node_id = str(target_node_id or node_id or "").strip()
-    if not effective_node_id:
-        return {"ok": False, "error": "node_id_required"}
-    result = sdk_device_access.rename_device(f"member:{effective_node_id}", str(name or "").strip())
-    _refresh_snapshot_sync(webspace_id)
-    return result
+    return rename_device(
+        name=name,
+        node_id=node_id,
+        target_node_id=target_node_id,
+        webspace_id=webspace_id,
+    )
 
 
 @tool
 def set_link_lifetime(preset: str, node_id: str | None = None, target_node_id: str | None = None, webspace_id: str | None = None) -> dict[str, Any]:
-    effective_node_id = str(target_node_id or node_id or "").strip()
-    if not effective_node_id:
-        return {"ok": False, "error": "node_id_required"}
-    result = sdk_device_access.set_device_lifetime(f"member:{effective_node_id}", str(preset or "permanent"))
-    _refresh_snapshot_sync(webspace_id)
-    return result
+    return set_device_lifetime(
+        preset=preset,
+        node_id=node_id,
+        target_node_id=target_node_id,
+        webspace_id=webspace_id,
+    )
 
 
 @tool
 def detach_link(node_id: str | None = None, target_node_id: str | None = None, webspace_id: str | None = None) -> dict[str, Any]:
-    effective_node_id = str(target_node_id or node_id or "").strip()
-    if not effective_node_id:
-        return {"ok": False, "error": "node_id_required"}
-    result = sdk_device_access.detach_device(f"member:{effective_node_id}")
-    _refresh_snapshot_sync(webspace_id)
-    return result
+    return detach_device(
+        node_id=node_id,
+        target_node_id=target_node_id,
+        webspace_id=webspace_id,
+    )
 
 
 @tool
 def get_link_settings(node_id: str | None = None, target_node_id: str | None = None, webspace_id: str | None = None) -> dict[str, Any]:
-    effective_node_id = str(target_node_id or node_id or "").strip()
-    if not effective_node_id:
-        return {"ok": False, "error": "node_id_required"}
-    settings = sdk_device_access.get_device_settings(f"member:{effective_node_id}")
-    if settings is None:
-        return {"ok": False, "error": "device_not_found", "device_ref": f"member:{effective_node_id}"}
-    return settings
+    return get_device_settings(
+        node_id=node_id,
+        target_node_id=target_node_id,
+        webspace_id=webspace_id,
+    )
 
 
 @tool
 def adopt_link(name: str | None = None, preset: str = "permanent", node_id: str | None = None, target_node_id: str | None = None, webspace_id: str | None = None) -> dict[str, Any]:
-    effective_node_id = str(target_node_id or node_id or "").strip()
-    if not effective_node_id:
-        return {"ok": False, "error": "node_id_required"}
-    result = sdk_device_access.adopt_device(
-        f"member:{effective_node_id}",
-        str(name or "").strip() or None,
-        str(preset or "permanent"),
+    return adopt_device(
+        name=name,
+        preset=preset,
+        node_id=node_id,
+        target_node_id=target_node_id,
+        webspace_id=webspace_id,
     )
-    _refresh_snapshot_sync(webspace_id)
-    return result
 
 
 @subscribe("sys.ready")
