@@ -9,6 +9,8 @@ import logging
 from adaos.sdk.core.decorators import tool
 from adaos.sdk.io.out import chat_append, say
 from adaos.services.agent_context import get_ctx
+from adaos.services.scenario.node_data_scope import node_scope_data_path
+from adaos.services.yjs.doc import get_ydoc
 from adaos.skills.runtime_runner import execute_tool
 
 
@@ -37,6 +39,38 @@ _CITY_ALIASES: dict[str, tuple[str, str]] = {
 }
 
 _log = logging.getLogger("adaos.voice_chat_skill")
+
+
+def _voice_chat_data_path(target_node_id: str | None) -> str:
+    return node_scope_data_path("data/voice_chat", str(target_node_id or "").strip())
+
+
+def _read_voice_chat_state(webspace_id: str, target_node_id: str | None = None) -> dict[str, Any]:
+    path = _voice_chat_data_path(target_node_id)
+    segments = [segment for segment in str(path or "").split("/") if segment]
+    with get_ydoc(str(webspace_id or "default")) as ydoc:
+        data_map = ydoc.get_map("data")
+        current = data_map.to_json() if hasattr(data_map, "to_json") else {}
+    if isinstance(current, str):
+        try:
+            import json
+
+            current = json.loads(current)
+        except Exception:
+            current = {}
+    if not isinstance(current, dict):
+        return {"messages": [], "last_refresh_ts": time.time()}
+    cursor: Any = current
+    for segment in segments[1:]:
+        if not isinstance(cursor, dict):
+            return {"messages": [], "last_refresh_ts": time.time()}
+        cursor = cursor.get(segment)
+    state = dict(cursor) if isinstance(cursor, dict) else {}
+    messages = state.get("messages")
+    if not isinstance(messages, list):
+        state["messages"] = []
+    state.setdefault("last_refresh_ts", time.time())
+    return state
 
 
 def _normalize_city_key(text: str) -> str:
@@ -152,4 +186,21 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     chat_append(reply, from_="hub")
     say(reply, lang=meta.get("lang") or "ru-RU")
     return {"ok": True, "reply": reply, "ts": time.time()}
+
+
+@tool("get_snapshot")
+def get_snapshot(
+    _payload: dict[str, Any] | None = None,
+    webspace_id: str | None = None,
+    target_node_id: str | None = None,
+    node_id: str | None = None,
+    **_: Any,
+) -> Mapping[str, Any]:
+    selected_node_id = str(target_node_id or node_id or "").strip() or None
+    selected_webspace = str(webspace_id or "default").strip() or "default"
+    snapshot = _read_voice_chat_state(selected_webspace, selected_node_id)
+    return {
+        "voice_chat": snapshot,
+        **snapshot,
+    }
 

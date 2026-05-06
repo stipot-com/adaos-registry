@@ -1,21 +1,35 @@
-# yaml-language-server: $schema=../../../../src/adaos/abi/skill.schema.json
 name: voice_chat_skill
-version: "0.0.1"
-description: Voice chat bridge for web_desktop (text in -> publish chat + TTS via io.out.*; RouterService projects into Yjs by webspace_id).
+version: 0.1.0
+description: Voice chat bridge for web_desktop (text in -> publish chat + TTS via
+  io.out.*; RouterService projects into Yjs by webspace_id).
 runtime:
-  python: "3.11"
+  python: '3.11'
 events:
   subscribe: []
   publish:
-    - "io.out.chat.append"
-    - "io.out.say"
-default_tool: "handle_text"
+  - io.out.chat.append
+  - io.out.say
+default_tool: handle_text
 tools:
-  - name: "handle_text"
-    description: Convert text into a weather request and publish chat + tts outputs (no direct Yjs writes).
-    entry: "handlers.main:handle_text"
-    input_schema:
-      type: object
-      properties:
-        text: { type: string, minLength: 1 }
-        _meta: { type: object }
+- name: handle_text
+  description: Convert text into a weather request and publish chat + tts outputs
+    (no direct Yjs writes).
+  entry: handlers.main:handle_text
+  input_schema:
+    type: object
+    properties:
+      text:
+        type: string
+        minLength: 1
+      _meta:
+        type: object
+- name: get_snapshot
+  description: Return the current voice chat history snapshot for the selected node/webspace.
+  entry: handlers.main:get_snapshot
+  input_schema:
+    type: object
+    additionalProperties: true
+  output_schema:
+    type: object
+updated_at: '2026-05-06T07:54:11+00:00'
+
