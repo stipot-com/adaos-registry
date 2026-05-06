@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-06T04:07:43+00:00",
+  "updated_at": "2026-05-06T07:43:21+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -20,6 +20,27 @@
         "id": "adaos_connect"
       },
       "description": "Network expansion assistant for browser, Telegram, and node join flows via YJS-driven modal UI.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 0
+    },
+    {
+      "kind": "skill",
+      "id": "browsers_skill",
+      "name": "browsers_skill",
+      "version": "0.2.0",
+      "updated_at": "2026-05-06T07:43:21+00:00",
+      "path": "skills/browsers_skill",
+      "manifest": "skills/browsers_skill/skill.yaml",
+      "source": {
+        "path": "skills/browsers_skill",
+        "manifest": "skills/browsers_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "browsers_skill",
+        "id": "browsers_skill"
+      },
       "entry": "handlers/main.py",
       "runtime_python": "3.11",
       "tools_count": 0

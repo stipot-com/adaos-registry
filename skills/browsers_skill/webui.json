@@ -1,0 +1,249 @@
+{
+  "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "apps": [],
+  "widgets": [],
+  "registry": {
+    "modals": {
+      "browsers_modal": {
+        "title": "Browsers",
+        "schema": {
+          "id": "browsers_modal",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "browsers-refresh",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "Actions",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "refresh",
+                    "label": "Refresh"
+                  }
+                ],
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click:refresh",
+                  "type": "callSkill",
+                  "target": "browsers_skill.refresh_snapshot"
+                }
+              ]
+            },
+            {
+              "id": "browsers-summary",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Browsers",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/browsers/summary"
+              }
+            },
+            {
+              "id": "browsers-devices",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Devices",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/browsers/devices"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "detailsPath": "content",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No permanent browser devices"
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "callSkill",
+                  "target": "browsers_skill.select_browser",
+                  "params": {
+                    "device_id": "$event.device_id"
+                  }
+                },
+                {
+                  "on": "select",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "browser_link_settings_modal"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "browsers-clients",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Clients",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/browsers/clients"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "subtitle",
+                "detailsPath": "content",
+                "showDetails": true,
+                "itemAccordion": true,
+                "emptyText": "No temporary browser clients"
+              },
+              "actions": [
+                {
+                  "on": "select",
+                  "type": "callSkill",
+                  "target": "browsers_skill.select_browser",
+                  "params": {
+                    "device_id": "$event.device_id"
+                  }
+                },
+                {
+                  "on": "select",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "browser_link_settings_modal"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "browser_link_settings_modal": {
+        "title": "Browser settings",
+        "schema": {
+          "id": "browser_link_settings_modal",
+          "layout": {
+            "type": "single",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "browser-current-summary",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Browser",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/browsers/current_summary"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "showDetails": false,
+                "emptyText": "No browser selected"
+              }
+            },
+            {
+              "id": "browser-current-name",
+              "type": "input.text",
+              "area": "main",
+              "title": "Device name",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/browsers/current_name"
+              },
+              "inputs": {
+                "bindField": "value",
+                "placeholder": "Living room TV"
+              },
+              "actions": [
+                {
+                  "on": "change",
+                  "type": "callSkill",
+                  "target": "browsers_skill.rename_selected_browser",
+                  "params": {
+                    "name": "$event.value"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "browser-lifetime-actions",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "Lifetime",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "permanent",
+                    "label": "Permanent"
+                  },
+                  {
+                    "id": "1h",
+                    "label": "1h"
+                  },
+                  {
+                    "id": "1d",
+                    "label": "1d"
+                  },
+                  {
+                    "id": "7d",
+                    "label": "7d"
+                  },
+                  {
+                    "id": "30d",
+                    "label": "30d"
+                  }
+                ],
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click",
+                  "type": "callSkill",
+                  "target": "browsers_skill.set_selected_browser_lifetime",
+                  "params": {
+                    "preset": "$event.id"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "browser-danger-actions",
+              "type": "input.commandBar",
+              "area": "main",
+              "title": "Detach",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "detach",
+                    "label": "Detach"
+                  }
+                ],
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click:detach",
+                  "type": "callSkill",
+                  "target": "browsers_skill.detach_selected_browser"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "contributions": []
+}
