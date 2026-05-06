@@ -84,6 +84,7 @@ _projection_last_applied_at: dict[str, float] = {}
 _active_stream_receivers_by_webspace: dict[str, set[str]] = {}
 _stream_fingerprints: dict[str, str] = {}
 _stream_last_published_at: dict[str, float] = {}
+_stream_request_seen_at: dict[str, float] = {}
 _projection_diag = {
     "apply_total": 0,
     "skip_total": 0,
@@ -97,6 +98,9 @@ _projection_diag = {
     "last_policy_throttled_roots": [],
     "last_policy_blocked_roots": [],
     "last_policy_reason": "",
+    "snapshot_request_total": 0,
+    "snapshot_request_forced_total": 0,
+    "snapshot_request_coalesced_total": 0,
 }
 _MIN_YJS_PROJECTION_INTERVAL_S = 1.0
 _THROTTLED_YJS_PROJECTION_INTERVAL_S = max(
@@ -111,6 +115,14 @@ def _stream_min_interval_s() -> float:
         return max(0.0, min(float(raw), 30.0))
     except Exception:
         return 2.0
+
+
+def _stream_request_debounce_s() -> float:
+    try:
+        raw = str(os.getenv("ADAOS_INFRASTATE_STREAM_REQUEST_DEBOUNCE_S") or "0.75").strip()
+        return max(0.0, min(float(raw), 10.0))
+    except Exception:
+        return 0.75
 
 
 def _eager_stream_publish_enabled() -> bool:
@@ -448,6 +460,7 @@ def _forget_stream_receiver(webspace_id: str | None, receiver: str) -> None:
     key = _stream_cache_key(ws, token)
     _stream_fingerprints.pop(key, None)
     _stream_last_published_at.pop(key, None)
+    _stream_request_seen_at.pop(key, None)
 
 
 def _active_stream_receivers(webspace_id: str | None) -> list[str]:
@@ -543,11 +556,38 @@ def _invalidate_projection_state(*, webspace_id: str | None = None) -> None:
         for key in [token for token in list(_stream_fingerprints) if token.startswith(prefix)]:
             _stream_fingerprints.pop(key, None)
             _stream_last_published_at.pop(key, None)
+            _stream_request_seen_at.pop(key, None)
         return
     _projection_fingerprints.clear()
     _projection_last_applied_at.clear()
     _stream_fingerprints.clear()
     _stream_last_published_at.clear()
+    _stream_request_seen_at.clear()
+
+
+def _consume_stream_snapshot_request(*, webspace_id: str | None, receiver: str) -> bool:
+    key = _stream_cache_key(webspace_id, receiver)
+    now = time.monotonic()
+    _projection_diag["snapshot_request_total"] = int(_projection_diag.get("snapshot_request_total") or 0) + 1
+    debounce_s = _stream_request_debounce_s()
+    last_at = float(_stream_request_seen_at.get(key) or 0.0)
+    _stream_request_seen_at[key] = now
+    if debounce_s > 0 and last_at > 0 and now - last_at < debounce_s:
+        _projection_diag["snapshot_request_coalesced_total"] = int(_projection_diag.get("snapshot_request_coalesced_total") or 0) + 1
+        total = int(_projection_diag.get("snapshot_request_coalesced_total") or 0)
+        if total % 25 == 0:
+            _log.info(
+                "infrastate snapshot request coalesced webspace=%s receiver=%s requested_total=%s forced_total=%s coalesced_total=%s debounce_s=%.3f",
+                str(webspace_id or "").strip() or default_webspace_id(),
+                receiver,
+                int(_projection_diag.get("snapshot_request_total") or 0),
+                int(_projection_diag.get("snapshot_request_forced_total") or 0),
+                total,
+                debounce_s,
+            )
+        return False
+    _projection_diag["snapshot_request_forced_total"] = int(_projection_diag.get("snapshot_request_forced_total") or 0) + 1
+    return True
 
 
 def _snapshot_projection_fingerprint(snapshot: dict[str, Any]) -> str:
@@ -565,11 +605,15 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "snapshot_cache_ttl_s": _SNAPSHOT_CACHE_TTL_S,
         "min_yjs_projection_interval_s": _MIN_YJS_PROJECTION_INTERVAL_S,
         "throttled_yjs_projection_interval_s": _THROTTLED_YJS_PROJECTION_INTERVAL_S,
+        "stream_request_debounce_s": _stream_request_debounce_s(),
         "apply_total": int(_projection_diag.get("apply_total") or 0),
         "skip_total": int(_projection_diag.get("skip_total") or 0),
         "cache_hit_total": int(_projection_diag.get("cache_hit_total") or 0),
         "rate_limited_total": int(_projection_diag.get("rate_limited_total") or 0),
         "blocked_total": int(_projection_diag.get("blocked_total") or 0),
+        "snapshot_request_total": int(_projection_diag.get("snapshot_request_total") or 0),
+        "snapshot_request_forced_total": int(_projection_diag.get("snapshot_request_forced_total") or 0),
+        "snapshot_request_coalesced_total": int(_projection_diag.get("snapshot_request_coalesced_total") or 0),
         "last_policy_state": str(_projection_diag.get("last_policy_state") or ""),
         "last_policy_owner": str(_projection_diag.get("last_policy_owner") or ""),
         "last_policy_observed_state": str(_projection_diag.get("last_policy_observed_state") or ""),
@@ -5176,6 +5220,8 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
         return
     webspace_id = _webspace_id_from_payload(payload)
     _remember_stream_receiver(webspace_id, receiver)
+    if not _consume_stream_snapshot_request(webspace_id=webspace_id, receiver=receiver):
+        return
     # Initial stream subscriptions arrive as a burst; share one fresh-enough
     # snapshot so each receiver does not rebuild the same heavy state.
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
