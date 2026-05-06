@@ -51,6 +51,15 @@ _SUMMARY_RENDER_STATE_KEY = "infrastate.summary_render_state"
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
 _REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}
 _MARKETPLACE_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_CACHE_TTL_S") or "30"))
+_MARKETPLACE_REMOTE_FETCH_ENABLED = str(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_REMOTE_FETCH") or "").strip().lower() in {"1", "true", "yes", "on"}
+_MARKETPLACE_REMOTE_FETCH_TIMEOUT_S = max(
+    0.1,
+    float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_REMOTE_FETCH_TIMEOUT_S") or "1.5"),
+)
+_MARKETPLACE_GIT_REF_TIMEOUT_S = max(
+    0.1,
+    float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_GIT_REF_TIMEOUT_S") or "1.5"),
+)
 _MARKETPLACE_REGISTRY_JSON_URL = (
     str(
         os.getenv("ADAOS_INFRASTATE_MARKETPLACE_REGISTRY_JSON_URL")
@@ -698,6 +707,8 @@ def _safe_version(v: Any) -> Version | None:
 
 
 def _read_registry_catalog_version(*, skill_id: str) -> str | None:
+    if not _REMOTE_VERSION_PROBE_ENABLED:
+        return None
     for entry in _marketplace_catalog_entries("skills"):
         if not isinstance(entry, dict):
             continue
@@ -752,7 +763,7 @@ def _registry_payload_from_git_ref(workspace_root: Path) -> dict[str, Any] | Non
             ["git", "-C", str(workspace_root), "show", ref],
             text=True,
             capture_output=True,
-            timeout=10,
+            timeout=_MARKETPLACE_GIT_REF_TIMEOUT_S,
         )
     except Exception:
         return None
@@ -770,12 +781,32 @@ def _registry_payload_from_url() -> dict[str, Any] | None:
     if not url:
         return None
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=_MARKETPLACE_REMOTE_FETCH_TIMEOUT_S)
         response.raise_for_status()
         payload = response.json()
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _allow_marketplace_remote_fetch() -> bool:
+    if _MARKETPLACE_REMOTE_FETCH_ENABLED:
+        return True
+    try:
+        role = str(getattr(load_config(), "role", "") or "").strip().lower()
+    except Exception:
+        role = ""
+    return role == "hub"
+
+
+def _allow_marketplace_git_ref_lookup() -> bool:
+    if _MARKETPLACE_REMOTE_FETCH_ENABLED:
+        return True
+    try:
+        role = str(getattr(load_config(), "role", "") or "").strip().lower()
+    except Exception:
+        role = ""
+    return role == "hub"
 
 
 def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
@@ -806,8 +837,8 @@ def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
                 continue
             merged[key] = dict(raw)
 
-    remote_payload = _registry_payload_from_url()
-    if not isinstance(remote_payload, dict):
+    remote_payload = _registry_payload_from_url() if _allow_marketplace_remote_fetch() else None
+    if not isinstance(remote_payload, dict) and _allow_marketplace_git_ref_lookup():
         remote_payload = _registry_payload_from_git_ref(workspace_root)
     if isinstance(remote_payload, dict):
         _merge(remote_payload.get(kind_plural))
