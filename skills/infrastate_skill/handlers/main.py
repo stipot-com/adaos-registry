@@ -3322,13 +3322,16 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
                 f"policy={yjs_pressure.get('policy_state') or 'ok'} | "
                 f"observed={yjs_pressure.get('observed_state') or 'idle'} | "
                 f"bytes={yjs_pressure.get('recent_bytes') or 0} | "
-                f"writes={yjs_pressure.get('recent_writes') or 0}"
+                f"writes={yjs_pressure.get('recent_writes') or 0} | "
+                f"throttled={yjs_pressure.get('throttled_total') or 0} | "
+                f"blocked={yjs_pressure.get('blocked_total') or 0}"
             ),
             "subtitle": (
                 f"peak_bps={yjs_pressure.get('peak_bps') or 0.0} | "
                 f"peak_wps={yjs_pressure.get('peak_wps') or 0.0} | "
                 f"reason={yjs_pressure.get('reason') or '-'} | "
-                f"roots={','.join(str(item) for item in (yjs_pressure.get('blocked_roots') or [])) or '-'}"
+                f"roots={','.join(str(item) for item in (yjs_pressure.get('blocked_roots') or [])) or '-'} | "
+                f"last={yjs_pressure.get('last_policy_state') or '-'}:{yjs_pressure.get('last_reason') or '-'}"
             ),
             "content": _safe_json_text(yjs_pressure),
         },
