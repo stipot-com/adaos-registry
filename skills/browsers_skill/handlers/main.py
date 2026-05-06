@@ -132,6 +132,23 @@ def _current_browser_payload(device_id: str | None) -> tuple[list[dict[str, Any]
     return summary, {"value": _browser_title(entry)}
 
 
+def _resolve_current_browser_id(entries: list[Mapping[str, Any]], webspace_id: str) -> str | None:
+    available_ids = [
+        str(entry.get("id") or "").strip()
+        for entry in entries
+        if str(entry.get("id") or "").strip()
+    ]
+    selected_id = str(_SELECTED_BROWSER_BY_WS.get(webspace_id) or "").strip() or None
+    if selected_id and selected_id in available_ids:
+        return selected_id
+    if selected_id:
+        _SELECTED_BROWSER_BY_WS.pop(webspace_id, None)
+    fallback_id = available_ids[0] if available_ids else None
+    if fallback_id:
+        _SELECTED_BROWSER_BY_WS[webspace_id] = fallback_id
+    return fallback_id
+
+
 def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
     all_entries = sdk_access_links.list_browser_links()
     devices = [entry for entry in all_entries if str(entry.get("access_class") or "device").strip() != "client"]
@@ -143,11 +160,7 @@ def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
         "details": f"{sum(1 for entry in all_entries if bool(entry.get('online')))} online",
     }
     effective_ws = str(target_ws or "default").strip() or "default"
-    current_device_id = _SELECTED_BROWSER_BY_WS.get(effective_ws)
-    if not current_device_id:
-        current_device_id = str((devices or clients or [{}])[0].get("id") or "").strip() or None
-        if current_device_id:
-            _SELECTED_BROWSER_BY_WS[effective_ws] = current_device_id
+    current_device_id = _resolve_current_browser_id(devices + clients, effective_ws)
     current_summary, current_name = _current_browser_payload(current_device_id)
     return ({
         "summary": summary,
@@ -160,11 +173,12 @@ def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
 
 async def _publish_snapshot(target_ws: str | None = None) -> dict[str, Any]:
     payload, effective_ws = _build_snapshot(target_ws)
+    available_entries = list(payload["devices"]) + list(payload["clients"])
     for ws in _known_webspaces(effective_ws):
         await ctx_subnet.set_async("browsers.summary", payload["summary"], webspace_id=ws)
         await ctx_subnet.set_async("browsers.devices", payload["devices"], webspace_id=ws)
         await ctx_subnet.set_async("browsers.clients", payload["clients"], webspace_id=ws)
-        current_id = _SELECTED_BROWSER_BY_WS.get(ws) or current_device_id
+        current_id = _resolve_current_browser_id(available_entries, ws)
         ws_current_summary, ws_current_name = _current_browser_payload(current_id)
         await ctx_subnet.set_async("browsers.current_summary", ws_current_summary, webspace_id=ws)
         await ctx_subnet.set_async("browsers.current_name", ws_current_name, webspace_id=ws)
