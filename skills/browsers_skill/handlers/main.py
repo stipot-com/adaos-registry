@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import access_links as sdk_access_links
+from adaos.sdk.data import device_access as sdk_device_access
 from adaos.sdk.data import ctx_subnet
-from adaos.services.subnet.link_manager import get_hub_link_manager
 from adaos.services.workspaces import index as workspace_index
 
-_log = logging.getLogger("skills.browsers_skill")
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
 
 
@@ -212,9 +210,9 @@ def rename_selected_browser(name: str, webspace_id: str | None = None) -> dict[s
     device_id = str(_SELECTED_BROWSER_BY_WS.get(target_ws) or "").strip()
     if not device_id:
         return {"ok": False, "error": "browser_not_selected"}
-    entry = sdk_access_links.rename_browser_link(device_id, str(name or "").strip())
+    result = sdk_device_access.rename_device(f"browser:{device_id}", str(name or "").strip())
     _refresh_snapshot_sync(target_ws)
-    return {"ok": True, "entry": entry}
+    return result
 
 
 @tool
@@ -223,9 +221,9 @@ def set_selected_browser_lifetime(preset: str, webspace_id: str | None = None) -
     device_id = str(_SELECTED_BROWSER_BY_WS.get(target_ws) or "").strip()
     if not device_id:
         return {"ok": False, "error": "browser_not_selected"}
-    entry = sdk_access_links.set_browser_lifetime(device_id, str(preset or "permanent"))
+    result = sdk_device_access.set_device_lifetime(f"browser:{device_id}", str(preset or "permanent"))
     _refresh_snapshot_sync(target_ws)
-    return {"ok": True, "entry": entry}
+    return result
 
 
 @tool
@@ -234,9 +232,9 @@ def detach_selected_browser(webspace_id: str | None = None) -> dict[str, Any]:
     device_id = str(_SELECTED_BROWSER_BY_WS.get(target_ws) or "").strip()
     if not device_id:
         return {"ok": False, "error": "browser_not_selected"}
-    entry = sdk_access_links.detach_browser_link(device_id)
+    result = sdk_device_access.detach_device(f"browser:{device_id}")
     _refresh_snapshot_sync(target_ws)
-    return {"ok": True, "entry": entry}
+    return result
 
 
 @tool
@@ -244,15 +242,9 @@ def rename_link(name: str, node_id: str | None = None, target_node_id: str | Non
     effective_node_id = str(target_node_id or node_id or "").strip()
     if not effective_node_id:
         return {"ok": False, "error": "node_id_required"}
-    entry = sdk_access_links.rename_member_link(effective_node_id, str(name or "").strip())
-    try:
-        mgr = get_hub_link_manager()
-        if mgr.is_connected(effective_node_id) and str(name or "").strip():
-            _run_coro(mgr.set_member_node_names(effective_node_id, node_names=[str(name).strip()]))
-    except Exception:
-        _log.debug("rename_link runtime update failed node_id=%s", effective_node_id, exc_info=True)
+    result = sdk_device_access.rename_device(f"member:{effective_node_id}", str(name or "").strip())
     _refresh_snapshot_sync(webspace_id)
-    return {"ok": True, "entry": entry}
+    return result
 
 
 @tool
@@ -260,9 +252,9 @@ def set_link_lifetime(preset: str, node_id: str | None = None, target_node_id: s
     effective_node_id = str(target_node_id or node_id or "").strip()
     if not effective_node_id:
         return {"ok": False, "error": "node_id_required"}
-    entry = sdk_access_links.set_member_lifetime(effective_node_id, str(preset or "permanent"))
+    result = sdk_device_access.set_device_lifetime(f"member:{effective_node_id}", str(preset or "permanent"))
     _refresh_snapshot_sync(webspace_id)
-    return {"ok": True, "entry": entry}
+    return result
 
 
 @tool
@@ -270,15 +262,9 @@ def detach_link(node_id: str | None = None, target_node_id: str | None = None, w
     effective_node_id = str(target_node_id or node_id or "").strip()
     if not effective_node_id:
         return {"ok": False, "error": "node_id_required"}
-    entry = sdk_access_links.detach_member_link(effective_node_id)
-    try:
-        mgr = get_hub_link_manager()
-        if mgr.is_connected(effective_node_id):
-            _run_coro(mgr.unregister(effective_node_id))
-    except Exception:
-        _log.debug("detach_link runtime unregister failed node_id=%s", effective_node_id, exc_info=True)
+    result = sdk_device_access.detach_device(f"member:{effective_node_id}")
     _refresh_snapshot_sync(webspace_id)
-    return {"ok": True, "entry": entry}
+    return result
 
 
 @subscribe("sys.ready")

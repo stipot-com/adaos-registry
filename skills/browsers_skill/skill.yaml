@@ -1,5 +1,5 @@
 name: browsers_skill
-version: 0.3.0
+version: 0.4.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -8,5 +8,5 @@ dependencies: []
 events: {}
 tools: []
 exports: {}
-updated_at: '2026-05-06T20:20:57+00:00'
+updated_at: '2026-05-06T20:56:18+00:00'
 
