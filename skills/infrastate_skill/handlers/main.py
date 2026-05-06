@@ -38,6 +38,7 @@ from adaos.services.scenario.manager import ScenarioManager
 from adaos.services.workspace_registry import build_registry_entry, list_workspace_registry_entries, rebuild_workspace_registry
 from adaos.services.workspace_sync import effective_registry_names, installed_names, reconcile_workspace_db_to_materialized, sync_workspace_sparse_to_registry
 from adaos.services.yjs.webspace import default_webspace_id
+from adaos.services.yjs.load_mark import yjs_primary_doc_policy_snapshot
 from adaos.services.skill.manager import SkillManager
 from adaos.adapters.db import SqliteScenarioRegistry, SqliteSkillRegistry
 from adaos.services.node_display import node_display_from_config
@@ -88,8 +89,20 @@ _projection_diag = {
     "skip_total": 0,
     "cache_hit_total": 0,
     "rate_limited_total": 0,
+    "blocked_total": 0,
+    "last_policy_state": "",
+    "last_policy_owner": "",
+    "last_policy_observed_state": "",
+    "last_policy_webspace_id": "",
+    "last_policy_throttled_roots": [],
+    "last_policy_blocked_roots": [],
+    "last_policy_reason": "",
 }
 _MIN_YJS_PROJECTION_INTERVAL_S = 1.0
+_THROTTLED_YJS_PROJECTION_INTERVAL_S = max(
+    _MIN_YJS_PROJECTION_INTERVAL_S,
+    float(os.getenv("ADAOS_INFRASTATE_THROTTLED_YJS_PROJECTION_INTERVAL_S") or "2.5"),
+)
 
 
 def _stream_min_interval_s() -> float:
@@ -551,12 +564,42 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "marketplace_cache_ttl_s": _MARKETPLACE_CACHE_TTL_S,
         "snapshot_cache_ttl_s": _SNAPSHOT_CACHE_TTL_S,
         "min_yjs_projection_interval_s": _MIN_YJS_PROJECTION_INTERVAL_S,
+        "throttled_yjs_projection_interval_s": _THROTTLED_YJS_PROJECTION_INTERVAL_S,
         "apply_total": int(_projection_diag.get("apply_total") or 0),
         "skip_total": int(_projection_diag.get("skip_total") or 0),
         "cache_hit_total": int(_projection_diag.get("cache_hit_total") or 0),
         "rate_limited_total": int(_projection_diag.get("rate_limited_total") or 0),
+        "blocked_total": int(_projection_diag.get("blocked_total") or 0),
+        "last_policy_state": str(_projection_diag.get("last_policy_state") or ""),
+        "last_policy_owner": str(_projection_diag.get("last_policy_owner") or ""),
+        "last_policy_observed_state": str(_projection_diag.get("last_policy_observed_state") or ""),
+        "last_policy_webspace_id": str(_projection_diag.get("last_policy_webspace_id") or ""),
+        "last_policy_throttled_roots": list(_projection_diag.get("last_policy_throttled_roots") or []),
+        "last_policy_blocked_roots": list(_projection_diag.get("last_policy_blocked_roots") or []),
+        "last_policy_reason": str(_projection_diag.get("last_policy_reason") or ""),
         "fingerprinted_webspaces": sorted(_projection_fingerprints),
     }
+
+
+def _projection_pressure_policy(webspace_id: str | None) -> dict[str, Any]:
+    try:
+        payload = yjs_primary_doc_policy_snapshot(
+            webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
+            owner="skill:infrastate_skill",
+            root_names=["data"],
+        )
+        if isinstance(payload, dict):
+            _projection_diag["last_policy_state"] = str(payload.get("policy_state") or "")
+            _projection_diag["last_policy_owner"] = str(payload.get("owner") or "")
+            _projection_diag["last_policy_observed_state"] = str(payload.get("observed_state") or "")
+            _projection_diag["last_policy_webspace_id"] = str(payload.get("webspace_id") or webspace_id or "")
+            _projection_diag["last_policy_throttled_roots"] = list(payload.get("throttled_roots") or [])
+            _projection_diag["last_policy_blocked_roots"] = list(payload.get("blocked_roots") or [])
+            _projection_diag["last_policy_reason"] = str(payload.get("reason") or "")
+            return payload
+    except Exception:
+        _log.debug("failed to evaluate infrastate YJS pressure policy", exc_info=True)
+    return {"policy_state": "ok", "observed_state": "idle", "throttled_roots": []}
 
 def _normalize_node_names(value: Any, *, limit: int = 8) -> list[str]:
     # Local copy for backward/forward compatibility with core.
@@ -3146,6 +3189,9 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
     channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
     channel_overview = runtime.get("channel_overview") if isinstance(runtime.get("channel_overview"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
+    connectivity = runtime.get("connectivity") if isinstance(runtime.get("connectivity"), dict) else {}
+    state_sync = runtime.get("state_sync") if isinstance(runtime.get("state_sync"), dict) else {}
+    yjs_pressure = runtime.get("yjs_pressure") if isinstance(runtime.get("yjs_pressure"), dict) else {}
     hub_member_channels = runtime.get("hub_member_channels") if isinstance(runtime.get("hub_member_channels"), dict) else {}
     hub_member_connection_state = runtime.get("hub_member_connection_state") if isinstance(runtime.get("hub_member_connection_state"), dict) else {}
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
@@ -3200,6 +3246,92 @@ def _realtime_items(reliability: dict[str, Any], transport_diag: dict[str, Any])
         }
 
     items = [
+        {
+            "id": "semantic_connectivity",
+            "title": "Connectivity contract",
+            "status": (
+                "warn"
+                if str(
+                    (
+                        connectivity.get("required_upstream_link")
+                        if isinstance(connectivity.get("required_upstream_link"), dict)
+                        else {}
+                    ).get("transition_state")
+                    or ""
+                )
+                not in {"", "ready"}
+                or str(
+                    (
+                        connectivity.get("browser_control_route")
+                        if isinstance(connectivity.get("browser_control_route"), dict)
+                        else {}
+                    ).get("transport_state")
+                    or ""
+                )
+                in {"degraded", "disconnected"}
+                else "ok"
+            ),
+            "description": (
+                f"upstream="
+                f"{str(((connectivity.get('required_upstream_link') if isinstance(connectivity.get('required_upstream_link'), dict) else {}).get('kind') or 'unknown'))}:"
+                f"{str(((connectivity.get('required_upstream_link') if isinstance(connectivity.get('required_upstream_link'), dict) else {}).get('transport_state') or 'unknown'))}/"
+                f"{str(((connectivity.get('required_upstream_link') if isinstance(connectivity.get('required_upstream_link'), dict) else {}).get('transition_state') or 'unknown'))}"
+                f" | browser-route="
+                f"{str(((connectivity.get('browser_control_route') if isinstance(connectivity.get('browser_control_route'), dict) else {}).get('transport_state') or 'unknown'))}/"
+                f"{str(((connectivity.get('browser_control_route') if isinstance(connectivity.get('browser_control_route'), dict) else {}).get('transition_state') or 'unknown'))}"
+            ),
+            "subtitle": (
+                f"served_by="
+                f"{str(((connectivity.get('required_upstream_link') if isinstance(connectivity.get('required_upstream_link'), dict) else {}).get('served_by') or '-'))}"
+                f" | blockers="
+                f"{','.join(str(item) for item in (((connectivity.get('browser_control_route') if isinstance(connectivity.get('browser_control_route'), dict) else {}).get('blockers') or []))[:3]) or '-'}"
+            ),
+            "content": _safe_json_text(connectivity),
+        },
+        {
+            "id": "semantic_state_sync",
+            "title": "State sync contract",
+            "status": "warn"
+            if str(state_sync.get("semantic_state") or "") in {"stale", "degraded"}
+            or str(state_sync.get("freshness_state") or "") == "stale"
+            or str(state_sync.get("first_sync_state") or "") == "timeout"
+            else "ok" if state_sync else "idle",
+            "description": (
+                f"{state_sync.get('webspace_id') or default_webspace_id()} | "
+                f"transport={state_sync.get('transport_state') or '-'} | "
+                f"first_sync={state_sync.get('first_sync_state') or '-'} | "
+                f"semantic={state_sync.get('semantic_state') or '-'} | "
+                f"freshness={state_sync.get('freshness_state') or '-'}"
+            ),
+            "subtitle": (
+                f"replay="
+                f"{str((state_sync.get('replay') if isinstance(state_sync.get('replay'), dict) else {}).get('cursor') or '-')}"
+                f" | mode={str((state_sync.get('replay') if isinstance(state_sync.get('replay'), dict) else {}).get('mode') or '-')}"
+                f" | fallback={state_sync.get('fallback_mode') or '-'}"
+            ),
+            "content": _safe_json_text(state_sync),
+        },
+        {
+            "id": "semantic_yjs_pressure",
+            "title": "Yjs pressure contract",
+            "status": "warn"
+            if str(yjs_pressure.get("policy_state") or "") in {"warn", "throttle", "block"}
+            else "ok" if yjs_pressure else "idle",
+            "description": (
+                f"owner={yjs_pressure.get('owner') or '-'} | "
+                f"policy={yjs_pressure.get('policy_state') or 'ok'} | "
+                f"observed={yjs_pressure.get('observed_state') or 'idle'} | "
+                f"bytes={yjs_pressure.get('recent_bytes') or 0} | "
+                f"writes={yjs_pressure.get('recent_writes') or 0}"
+            ),
+            "subtitle": (
+                f"peak_bps={yjs_pressure.get('peak_bps') or 0.0} | "
+                f"peak_wps={yjs_pressure.get('peak_wps') or 0.0} | "
+                f"reason={yjs_pressure.get('reason') or '-'} | "
+                f"roots={','.join(str(item) for item in (yjs_pressure.get('blocked_roots') or [])) or '-'}"
+            ),
+            "content": _safe_json_text(yjs_pressure),
+        },
         _channel_item(
             "root_control",
             "Hub -> Root control",
@@ -3581,6 +3713,9 @@ def _summary(
     tree = runtime.get("readiness_tree") if isinstance(runtime.get("readiness_tree"), dict) else {}
     channel_diag = runtime.get("channel_diagnostics") if isinstance(runtime.get("channel_diagnostics"), dict) else {}
     protocol = runtime.get("hub_root_protocol") if isinstance(runtime.get("hub_root_protocol"), dict) else {}
+    connectivity = runtime.get("connectivity") if isinstance(runtime.get("connectivity"), dict) else {}
+    state_sync = runtime.get("state_sync") if isinstance(runtime.get("state_sync"), dict) else {}
+    yjs_pressure = runtime.get("yjs_pressure") if isinstance(runtime.get("yjs_pressure"), dict) else {}
     root_tree = tree.get("root_control") if isinstance(tree.get("root_control"), dict) else {}
     route_tree = tree.get("route") if isinstance(tree.get("route"), dict) else {}
     root_diag = channel_diag.get("root_control") if isinstance(channel_diag.get("root_control"), dict) else {}
@@ -3776,6 +3911,9 @@ def _summary(
         "countdown_remaining_sec": _countdown_remaining_sec(status),
         "drain_timeout_sec": float(status.get("drain_timeout_sec") or 0.0),
         "signal_delay_sec": float(status.get("signal_delay_sec") or 0.0),
+        "semantic_connectivity": _cache_copy(connectivity),
+        "semantic_state_sync": _cache_copy(state_sync),
+        "semantic_yjs_pressure": _cache_copy(yjs_pressure),
         "buttons": (
             _summary_buttons(status)
             if selected_kind == "local"
@@ -4954,12 +5092,20 @@ async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = Non
     compact = _compact_snapshot_for_yjs(snapshot)
     fingerprint = _snapshot_projection_fingerprint(compact)
     now = time.monotonic()
+    pressure_policy = _projection_pressure_policy(webspace_id)
+    if str(pressure_policy.get("policy_state") or "").strip().lower() == "block":
+        _projection_diag["blocked_total"] = int(_projection_diag.get("blocked_total") or 0) + 1
+        _publish_snapshot_streams(snapshot, webspace_id=webspace_id)
+        return
+    effective_min_interval_s = _MIN_YJS_PROJECTION_INTERVAL_S
+    if str(pressure_policy.get("policy_state") or "").strip().lower() == "throttle":
+        effective_min_interval_s = max(effective_min_interval_s, _THROTTLED_YJS_PROJECTION_INTERVAL_S)
     for target_ws in _projection_webspace_ids(webspace_id):
         if _projection_fingerprints.get(target_ws) == fingerprint:
             _projection_diag["skip_total"] = int(_projection_diag.get("skip_total") or 0) + 1
             continue
         last_applied_at = float(_projection_last_applied_at.get(target_ws) or 0.0)
-        if last_applied_at > 0 and now - last_applied_at < _MIN_YJS_PROJECTION_INTERVAL_S:
+        if last_applied_at > 0 and now - last_applied_at < effective_min_interval_s:
             _projection_diag["rate_limited_total"] = int(_projection_diag.get("rate_limited_total") or 0) + 1
             continue
         await ctx_subnet.set_async("infrastate.snapshot", compact, webspace_id=target_ws)
