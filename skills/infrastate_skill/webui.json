@@ -14,7 +14,8 @@
       "infrastate.scenarios": { "mode": "replace", "initialState": [] },
       "infrastate.marketplace.skills": { "mode": "replace", "initialState": [] },
       "infrastate.marketplace.scenarios": { "mode": "replace", "initialState": [] },
-      "infrastate.core_update_diagnostics": { "mode": "replace", "initialState": [] }
+      "infrastate.core_update_diagnostics": { "mode": "replace", "initialState": [] },
+      "infrastate.details.*": { "mode": "replace", "initialState": null }
     }
   },
 	"apps": [
@@ -222,8 +223,14 @@
 								"titleKey": "title",
 								"subtitleKey": "description",
 								"detailsPath": "content",
-								"showDetails": true,
-								"itemAccordion": true,
+								"showDetails": false,
+								"itemAccordion": false,
+								"detailsModal": true,
+								"detailsModalTitleKey": "title",
+								"detailsDataSource": {
+									"kind": "stream",
+									"receiver": "infrastate.details.realtime.$event.id"
+								},
 								"emptyText": "No realtime diagnostics yet"
 							}
 						},
@@ -312,8 +319,14 @@
         "titleKey": "title",
         "subtitleKey": "subtitle",
         "detailsPath": "content",
-        "showDetails": true,
-        "itemAccordion": true,
+        "showDetails": false,
+        "itemAccordion": false,
+        "detailsModal": true,
+        "detailsModalTitleKey": "title",
+        "detailsDataSource": {
+          "kind": "stream",
+          "receiver": "infrastate.details.core_update_diagnostics.$event.id"
+        },
         "emptyText": "No core update diagnostics yet",
         "buttons": [
           { "id": "copy", "label": "Copy" }
@@ -440,8 +453,14 @@
 								"titleKey": "title",
 								"subtitleKey": "preview",
 								"detailsPath": "content",
-								"showDetails": true,
-								"itemAccordion": true,
+								"showDetails": false,
+								"itemAccordion": false,
+								"detailsModal": true,
+								"detailsModalTitleKey": "title",
+								"detailsDataSource": {
+									"kind": "stream",
+									"receiver": "infrastate.details.logs.$event.id"
+								},
 								"emptyText": "No logs yet"
 							}
 						},
@@ -458,8 +477,14 @@
 								"titleKey": "type",
 								"subtitleKey": "preview",
 								"detailsPath": "payload",
-								"showDetails": true,
-								"itemAccordion": true,
+								"showDetails": false,
+								"itemAccordion": false,
+								"detailsModal": true,
+								"detailsModalTitleKey": "type",
+								"detailsDataSource": {
+									"kind": "stream",
+									"receiver": "infrastate.details.events.$event.id"
+								},
 								"emptyText": "No events yet"
 							}
 						},

@@ -255,6 +255,10 @@ def _core_update_diagnostics_receiver() -> str:
     return "infrastate.core_update_diagnostics"
 
 
+def _details_receiver_prefix() -> str:
+    return "infrastate.details."
+
+
 def _stable_json_bytes(value: Any) -> bytes:
     try:
         text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -340,7 +344,7 @@ def _truncate_text(text: str, limit: int | None = None) -> str:
     return f"{head}\n... truncated; full diagnostics available through dedicated runtime endpoints ..."
 
 
-def _compact_card_item(item: Any) -> Any:
+def _compact_card_item(item: Any, *, include_content: bool = True) -> Any:
     if not isinstance(item, dict):
         return _cache_copy(item)
     out: dict[str, Any] = {}
@@ -359,19 +363,22 @@ def _compact_card_item(item: Any) -> Any:
     ):
         if key in item:
             out[key] = _cache_copy(item.get(key))
-    if "content" in item:
+    if include_content and "content" in item:
         content = item.get("content")
         text = content if isinstance(content, str) else _safe_json_text(content)
         compact_content = _truncate_text(text)
         out["content"] = compact_content
         out["content_truncated"] = compact_content != text
+    elif "content" in item:
+        out["content_available"] = True
+        out["content_truncated"] = True
     return out
 
 
-def _compact_card_list(value: Any) -> list[Any]:
+def _compact_card_list(value: Any, *, include_content: bool = True) -> list[Any]:
     if not isinstance(value, list):
         return []
-    return [_compact_card_item(item) for item in value]
+    return [_compact_card_item(item, include_content=include_content) for item in value]
 
 
 def _compact_mapping(value: Any, *, max_keys: int | None = None) -> dict[str, Any]:
@@ -437,15 +444,63 @@ def _compact_snapshot_for_client(snapshot: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _detail_section_for_receiver(receiver: str) -> tuple[str, str] | None:
+    token = str(receiver or "").strip()
+    prefix = _details_receiver_prefix()
+    if not token.startswith(prefix):
+        return None
+    rest = token[len(prefix):]
+    section, sep, item_id = rest.partition(".")
+    section = section.strip()
+    item_id = item_id.strip() if sep else ""
+    if not section or not item_id:
+        return None
+    return section, item_id
+
+
+def _detail_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any:
+    parsed = _detail_section_for_receiver(receiver)
+    if not parsed:
+        return None
+    section, item_id = parsed
+    snapshot_key = {
+        "realtime": "realtime",
+        "logs": "logs",
+        "events": "events",
+        "core_update_diagnostics": "core_update_diagnostics",
+    }.get(section)
+    if not snapshot_key:
+        return {
+            "id": item_id,
+            "title": "Details unavailable",
+            "status": "warn",
+            "content": f"Unsupported infrastate details section: {section}",
+        }
+    for item in list(snapshot.get(snapshot_key) or []):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "").strip() == item_id:
+            return _cache_copy(item)
+    return {
+        "id": item_id,
+        "title": "Details unavailable",
+        "status": "warn",
+        "content": f"Details item not found: {section}/{item_id}",
+    }
+
+
 def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any:
     token = str(receiver or "").strip()
+    detail_payload = _detail_payload_for_receiver(snapshot, token)
+    if detail_payload is not None:
+        return detail_payload
     if token == _operations_receiver():
         operations = snapshot.get("operations") if isinstance(snapshot.get("operations"), dict) else {}
         return list(operations.get("items") or [])
     if token == _logs_receiver():
-        return list(snapshot.get("logs") or [])
+        return _compact_card_list(snapshot.get("logs"), include_content=False)
     if token == _events_receiver():
-        return list(snapshot.get("events") or [])
+        return _compact_card_list(snapshot.get("events"), include_content=False)
     if token == _yjs_load_receiver():
         yjs_runtime = snapshot.get("yjs_runtime") if isinstance(snapshot.get("yjs_runtime"), dict) else {}
         if not yjs_runtime:
@@ -484,13 +539,13 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
         )
         return rows
     if token == _build_receiver():
-        return list(snapshot.get("build") or [])
+        return _compact_card_list(snapshot.get("build"), include_content=False)
     if token == _steps_receiver():
-        return list(snapshot.get("steps") or [])
+        return _compact_card_list(snapshot.get("steps"), include_content=False)
     if token == _realtime_receiver():
-        return list(snapshot.get("realtime") or [])
+        return _compact_card_list(snapshot.get("realtime"), include_content=False)
     if token == _slots_receiver():
-        return list(snapshot.get("slots") or [])
+        return _compact_card_list(snapshot.get("slots"), include_content=False)
     if token == _skills_receiver():
         return list(snapshot.get("skills") or [])
     if token == _scenarios_receiver():
@@ -502,7 +557,7 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
         marketplace = snapshot.get("marketplace") if isinstance(snapshot.get("marketplace"), dict) else {}
         return list(marketplace.get("scenarios") or [])
     if token == _core_update_diagnostics_receiver():
-        return list(snapshot.get("core_update_diagnostics") or [])
+        return _compact_card_list(snapshot.get("core_update_diagnostics"), include_content=False)
     return None
 
 
@@ -5301,7 +5356,7 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
         _marketplace_skills_receiver(),
         _marketplace_scenarios_receiver(),
         _core_update_diagnostics_receiver(),
-    }:
+    } and not receiver.startswith(_details_receiver_prefix()):
         return
     webspace_id = _webspace_id_from_payload(payload)
     _remember_stream_receiver(webspace_id, receiver)
