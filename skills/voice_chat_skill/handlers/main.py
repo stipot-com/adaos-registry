@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 import logging
+import queue
+import threading
 
 from adaos.sdk.core.decorators import tool
 from adaos.sdk.io.out import chat_append, say
@@ -17,6 +19,13 @@ from adaos.skills.runtime_runner import execute_tool
 _WEATHER_RE = re.compile(
     r"(?:какая\s+)?погода\w*\s+(?:в|во)\s+(.+)$",
     re.IGNORECASE | re.UNICODE,
+)
+_WEATHER_PREFIXES = (
+    "какая погода в ",
+    "какая погода во ",
+    "погода в ",
+    "погода во ",
+    "weather in ",
 )
 
 _CITY_ALIASES: dict[str, tuple[str, str]] = {
@@ -73,6 +82,51 @@ def _read_voice_chat_state(webspace_id: str, target_node_id: str | None = None) 
     return state
 
 
+def _read_voice_chat_state_guarded(
+    webspace_id: str,
+    target_node_id: str | None = None,
+    *,
+    timeout_s: float = 1.5,
+) -> dict[str, Any]:
+    result_q: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+    def _worker() -> None:
+        try:
+            result_q.put((True, _read_voice_chat_state(webspace_id, target_node_id)), block=False)
+        except Exception as exc:
+            try:
+                result_q.put((False, exc), block=False)
+            except Exception:
+                pass
+
+    thread = threading.Thread(target=_worker, name="voice-chat-snapshot-read", daemon=True)
+    thread.start()
+    try:
+        ok, value = result_q.get(timeout=timeout_s)
+    except queue.Empty:
+        _log.warning(
+            "voice_chat snapshot read timed out webspace=%s target_node_id=%s timeout_s=%.1f",
+            webspace_id,
+            target_node_id or "",
+            timeout_s,
+        )
+        return {
+            "messages": [],
+            "last_refresh_ts": time.time(),
+            "degraded": True,
+            "error": "voice_snapshot_timeout",
+        }
+    if ok and isinstance(value, dict):
+        return value
+    _log.warning("voice_chat snapshot read failed webspace=%s error=%s", webspace_id, value)
+    return {
+        "messages": [],
+        "last_refresh_ts": time.time(),
+        "degraded": True,
+        "error": f"voice_snapshot_failed:{type(value).__name__}",
+    }
+
+
 def _normalize_city_key(text: str) -> str:
     return (
         str(text or "")
@@ -105,8 +159,17 @@ def _extract_city(text: str) -> str | None:
         return None
     m = _WEATHER_RE.search(raw)
     if not m:
-        return None
-    city = m.group(1).strip().strip("?.!,;:()[]{}\"'")
+        lowered = raw.lower()
+        city_from_prefix = None
+        for prefix in _WEATHER_PREFIXES:
+            if lowered.startswith(prefix):
+                city_from_prefix = raw[len(prefix) :]
+                break
+        if city_from_prefix is None:
+            return None
+        city = city_from_prefix.strip().strip("?.!,;:()[]{}\"'")
+    else:
+        city = m.group(1).strip().strip("?.!,;:()[]{}\"'")
     if not city:
         return None
     city = re.sub(r"^(город|г\.)\s+", "", city, flags=re.IGNORECASE).strip()
@@ -198,7 +261,7 @@ def get_snapshot(
 ) -> Mapping[str, Any]:
     selected_node_id = str(target_node_id or node_id or "").strip() or None
     selected_webspace = str(webspace_id or "default").strip() or "default"
-    snapshot = _read_voice_chat_state(selected_webspace, selected_node_id)
+    snapshot = _read_voice_chat_state_guarded(selected_webspace, selected_node_id)
     return {
         "voice_chat": snapshot,
         **snapshot,
