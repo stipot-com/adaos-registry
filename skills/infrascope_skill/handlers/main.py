@@ -584,8 +584,8 @@ def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
         ids.add(token)
     ids.add(default_webspace_id())
     try:
-        for info in WebspaceService().list(mode="mixed"):
-            slot = str(getattr(info, "id", "") or getattr(info, "webspace_id", "") or "").strip()
+        for slot_id in WebspaceService().list_ids(mode="mixed"):
+            slot = str(slot_id or "").strip()
             if slot:
                 ids.add(slot)
     except Exception:
