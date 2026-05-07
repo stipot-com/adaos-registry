@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-07T12:55:43+00:00",
+  "updated_at": "2026-05-07T12:56:06+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -314,8 +314,8 @@
       "kind": "skill",
       "id": "weather_skill",
       "name": "weather_skill",
-      "version": "2.1.0",
-      "updated_at": "2026-05-05T09:39:08+00:00",
+      "version": "2.2.0",
+      "updated_at": "2026-05-07T12:56:06+00:00",
       "path": "skills/weather_skill",
       "manifest": "skills/weather_skill/skill.yaml",
       "source": {
@@ -329,7 +329,7 @@
       },
       "description": "Simple weather demo skill that shows current conditions on the desktop and reacts to city changes.",
       "runtime_python": "3.11",
-      "tools_count": 1
+      "tools_count": 2
     },
     {
       "kind": "skill",

@@ -166,6 +166,33 @@ def _normalize_city_token(raw: Any | None) -> Optional[str]:
     return text or None
 
 
+def _extract_city_from_payload(payload: Dict[str, Any]) -> Optional[str]:
+    """
+    Accept common host-event shapes produced by web UI actions.
+
+    Older widgets sent {"city": "Moscow"} directly. Newer callHost actions may
+    wrap values under params/value/event/detail/data. Keeping this tolerant is
+    important because weather is a low-stakes widget and should degrade softly.
+    """
+    if not isinstance(payload, dict):
+        return None
+    for key in ("city", "name", "value"):
+        city = _normalize_city_token(payload.get(key))
+        if city and not city.startswith("$event"):
+            return city
+    for key in ("params", "event", "detail", "data", "payload"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            city = _extract_city_from_payload(nested)
+            if city:
+                return city
+        else:
+            city = _normalize_city_token(nested)
+            if city and not city.startswith("$event"):
+                return city
+    return None
+
+
 def _event_meta(evt: Any) -> Dict[str, Any]:
     payload = getattr(evt, "payload", None) if hasattr(evt, "payload") else evt
     if not isinstance(payload, dict):
@@ -355,6 +382,49 @@ def get_weather(city: Optional[str] = None) -> Dict:
     return {"ok": True, **data}
 
 
+@tool("get_snapshot")
+def get_snapshot(
+    _payload: Dict[str, Any] | None = None,
+    webspace_id: str | None = None,
+    target_node_id: str | None = None,
+    node_id: str | None = None,
+    city: Optional[str] = None,
+    **_: Any,
+) -> Dict:
+    payload = dict(_payload or {}) if isinstance(_payload, dict) else {}
+    if city:
+        payload["city"] = city
+    target_city = _extract_city_from_payload(payload)
+    result = get_weather({"city": target_city, "silent": True} if target_city else {"silent": True})
+    ok = bool(isinstance(result, dict) and result.get("ok"))
+    if ok:
+        current = {
+            "city": result.get("city") or target_city,
+            "temp_c": result.get("temp_c") if result.get("temp_c") is not None else result.get("temp"),
+            "condition": result.get("condition") or result.get("description") or "",
+            "wind_ms": result.get("wind_ms", 0.0),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    else:
+        _, default_city = _load_config()
+        fallback_city = target_city or default_city or "Moscow"
+        snapshot = CITY_SNAPSHOTS.get(str(fallback_city), CITY_SNAPSHOTS["Berlin"])
+        current = {
+            "city": fallback_city,
+            "temp_c": snapshot["temp_c"],
+            "condition": snapshot["condition"],
+            "wind_ms": snapshot["wind_ms"],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    return {
+        "ok": ok,
+        "weather": {"current": current},
+        "current": current,
+        "webspace_id": webspace_id,
+        "target_node_id": target_node_id or node_id or "",
+    }
+
+
 @subscribe("nlp.intent.weather.get")
 async def on_weather_intent(payload) -> None:
     api_entry_point, default_city = _load_config()
@@ -456,8 +526,9 @@ async def on_weather_city_changed(evt) -> None:
     webspace_id: Optional[str] = None
     if isinstance(raw_ws, str) and raw_ws.strip():
         webspace_id = raw_ws.strip()
-    city = payload.get("city")
+    city = _extract_city_from_payload(payload)
     if not city:
+        _log.info("weather_city_changed ignored: missing city payload_keys=%s", sorted(payload.keys()))
         return
     api_entry_point, _ = _load_config()
     ok, live = await _fetch_weather_async(api_entry_point, city)
