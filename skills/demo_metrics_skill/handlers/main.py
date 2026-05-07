@@ -40,6 +40,38 @@ def _snapshot() -> dict[str, Any]:
         "title": "CPU Load",
         "x_key": "ts",
         "y_key": "value",
+        "series_by_metric": {
+            "cpu": {
+                "metric_id": "cpu",
+                "title": "CPU Load",
+                "points": [
+                    {"ts": "10:00", "value": 31},
+                    {"ts": "10:05", "value": 34},
+                    {"ts": "10:10", "value": 39},
+                    {"ts": "10:15", "value": 42},
+                ],
+            },
+            "memory": {
+                "metric_id": "memory",
+                "title": "Memory Pressure",
+                "points": [
+                    {"ts": "10:00", "value": 62},
+                    {"ts": "10:05", "value": 68},
+                    {"ts": "10:10", "value": 74},
+                    {"ts": "10:15", "value": 76},
+                ],
+            },
+            "queue": {
+                "metric_id": "queue",
+                "title": "Queue Depth",
+                "points": [
+                    {"ts": "10:00", "value": 4},
+                    {"ts": "10:05", "value": 6},
+                    {"ts": "10:10", "value": 5},
+                    {"ts": "10:15", "value": 7},
+                ],
+            },
+        },
         "points": [
             {"ts": "10:00", "value": 31},
             {"ts": "10:05", "value": 34},
@@ -98,18 +130,12 @@ def list_demo_series(payload: Mapping[str, Any] | None = None) -> dict[str, Any]
     if isinstance(payload, Mapping):
         metric_id = str(payload.get("metric_id") or "").strip()
     snap = _snapshot()
-    if metric_id and metric_id != str(snap["chart"].get("metric_id") or ""):
-        title = metric_id.upper()
-        snap["chart"] = {
-            "metric_id": metric_id,
-            "title": title,
-            "x_key": "ts",
-            "y_key": "value",
-            "points": [
-                {"ts": "10:00", "value": 10},
-                {"ts": "10:05", "value": 20},
-                {"ts": "10:10", "value": 15},
-                {"ts": "10:15", "value": 25},
-            ],
-        }
+    if metric_id:
+        series = snap["chart"].get("series_by_metric", {}).get(metric_id)
+        if isinstance(series, Mapping):
+            snap["chart"] = {
+                **snap["chart"],
+                **series,
+                "metric_id": metric_id,
+            }
     return {"ok": True, "series": snap["chart"]}

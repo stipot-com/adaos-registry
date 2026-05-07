@@ -61,6 +61,38 @@
       "title": "CPU Load",
       "x_key": "ts",
       "y_key": "value",
+      "series_by_metric": {
+        "cpu": {
+          "metric_id": "cpu",
+          "title": "CPU Load",
+          "points": [
+            { "ts": "10:00", "value": 31 },
+            { "ts": "10:05", "value": 34 },
+            { "ts": "10:10", "value": 39 },
+            { "ts": "10:15", "value": 42 }
+          ]
+        },
+        "memory": {
+          "metric_id": "memory",
+          "title": "Memory Pressure",
+          "points": [
+            { "ts": "10:00", "value": 62 },
+            { "ts": "10:05", "value": 68 },
+            { "ts": "10:10", "value": 74 },
+            { "ts": "10:15", "value": 76 }
+          ]
+        },
+        "queue": {
+          "metric_id": "queue",
+          "title": "Queue Depth",
+          "points": [
+            { "ts": "10:00", "value": 4 },
+            { "ts": "10:05", "value": 6 },
+            { "ts": "10:10", "value": 5 },
+            { "ts": "10:15", "value": 7 }
+          ]
+        }
+      },
       "points": [
         { "ts": "10:00", "value": 31 },
         { "ts": "10:05", "value": 34 },
@@ -130,14 +162,17 @@
             },
             {
               "id": "demo-metrics-chart-payload",
-              "type": "ui.jsonViewer",
+              "type": "visual.metricChart",
               "area": "right",
-              "title": "Chart payload (compatibility)",
+              "title": "Metric trend",
               "dataSource": {
                 "kind": "y",
                 "path": "data/demo_metrics/chart"
               },
               "inputs": {
+                "stateKey": "demo_metrics.selection",
+                "xKey": "ts",
+                "yKey": "value",
                 "emptyText": "No chart payload yet"
               }
             },
@@ -204,7 +239,8 @@
                     { "key": "status", "label": "Status" },
                     { "key": "value", "label": "Value" },
                     { "key": "unit", "label": "Unit" },
-                    { "key": "updated_at", "label": "Updated" }
+                    { "key": "updated_at", "label": "Updated" },
+                    { "key": "group", "label": "Group" }
                   ]
                 },
                 "actions": [
