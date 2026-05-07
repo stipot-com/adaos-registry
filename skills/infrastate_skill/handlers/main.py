@@ -311,29 +311,138 @@ def _sanitize_snapshot_for_fingerprint(value: Any) -> Any:
 
 
 def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
-    compact = _compact_snapshot_for_client(snapshot)
-    # Keep YJS projection lean and node-agnostic: large, frequently changing
-    # diagnostics flow through streams, while YJS carries only the structural
-    # snapshot needed for resilient UI restore.
-    for key in (
-        "build",
-        "steps",
-        "realtime",
-        "slots",
-        "skills",
-        "scenarios",
-        "logs",
-        "events",
-        "core_update_diagnostics",
-        "core_update_diag_actions",
-    ):
-        compact.pop(key, None)
-    operations = compact.get("operations")
+    snapshot = snapshot or {}
+    # Primary YJS is a bootstrap/control channel, not the diagnostics transport.
+    # Keep it intentionally small and stable; stream/details endpoints carry
+    # realtime diagnostics, card content, build/log sections, and full runtime
+    # readiness trees. This avoids turning every refresh into a large Yjs update
+    # that ypy-websocket must clone and broadcast to connected clients.
+    compact: dict[str, Any] = {}
+    if isinstance(snapshot.get("summary"), dict):
+        compact["summary"] = _compact_summary_for_yjs(snapshot.get("summary"))
+    for key in ("actions", "core_actions", "yjs_actions", "update_actions"):
+        if key in snapshot:
+            compact[key] = _compact_action_list_for_yjs(snapshot.get(key))
+    if key := snapshot.get("nodes"):
+        compact["nodes"] = _compact_node_list_for_yjs(key)
+    if key := snapshot.get("yjs_webspaces"):
+        compact["yjs_webspaces"] = _compact_yjs_webspace_list_for_yjs(key)
+    if isinstance(snapshot.get("node_editor"), dict):
+        compact["node_editor"] = _compact_mapping(snapshot.get("node_editor"), max_keys=8)
+    if isinstance(snapshot.get("ui_state"), dict):
+        compact["ui_state"] = _compact_ui_state_for_yjs(snapshot.get("ui_state"))
+    operations = snapshot.get("operations")
     if isinstance(operations, dict):
         compact["operations"] = {
             "active": _cache_copy(operations.get("active") or []),
         }
+    if snapshot.get("fallback"):
+        compact["fallback"] = bool(snapshot.get("fallback"))
+    if snapshot.get("errors"):
+        compact["errors"] = [str(item or "")[:500] for item in list(snapshot.get("errors") or [])[:3]]
     return compact
+
+
+def _compact_summary_for_yjs(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key in (
+        "label",
+        "value",
+        "status",
+        "subtitle",
+        "version",
+        "role",
+        "selected_node_id",
+        "selected_node_label",
+        "selected_node_kind",
+        "selected_yjs_webspace_id",
+        "route_status",
+        "root_control_status",
+        "route_stability",
+        "root_control_stability",
+        "draining",
+        "node_tab_total",
+    ):
+        if key in value:
+            out[key] = _cache_copy(value.get(key))
+    description = str(value.get("description") or "").strip()
+    if description:
+        out["description"] = _truncate_text(description, 1200)
+    buttons = value.get("buttons")
+    if isinstance(buttons, list):
+        out["buttons"] = [_compact_mapping(item, max_keys=8) for item in buttons if isinstance(item, dict)]
+    return out
+
+
+def _compact_action_list_for_yjs(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        out.append(
+            {
+                key: _cache_copy(item.get(key))
+                for key in ("id", "title", "status", "subtitle", "description")
+                if key in item
+            }
+        )
+    return out
+
+
+def _compact_node_list_for_yjs(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    keys = (
+        "id",
+        "node_id",
+        "label",
+        "title",
+        "role",
+        "kind",
+        "state",
+        "selected",
+        "connected",
+        "node_index",
+        "node_compact_label",
+        "node_color",
+        "node_names",
+    )
+    return [
+        {key: _cache_copy(item.get(key)) for key in keys if key in item}
+        for item in value
+        if isinstance(item, dict)
+    ]
+
+
+def _compact_yjs_webspace_list_for_yjs(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    keys = ("id", "label", "title", "subtitle", "selected")
+    return [
+        {key: _cache_copy(item.get(key)) for key in keys if key in item}
+        for item in value
+        if isinstance(item, dict)
+    ]
+
+
+def _compact_ui_state_for_yjs(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    keys = (
+        "selected_node_id",
+        "background_refresh_running",
+        "background_refresh_pending",
+        "background_refresh_error",
+        "background_refresh_reason",
+        "background_refresh_webspace_id",
+        "last_action",
+        "last_error",
+    )
+    return {key: _cache_copy(value.get(key)) for key in keys if key in value}
 
 
 def _truncate_text(text: str, limit: int | None = None) -> str:
@@ -5359,7 +5468,9 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
     } and not receiver.startswith(_details_receiver_prefix()):
         return
     webspace_id = _webspace_id_from_payload(payload)
-    _remember_stream_receiver(webspace_id, receiver)
+    is_detail_receiver = receiver.startswith(_details_receiver_prefix())
+    if not is_detail_receiver:
+        _remember_stream_receiver(webspace_id, receiver)
     if not _consume_stream_snapshot_request(webspace_id=webspace_id, receiver=receiver):
         return
     # Initial stream subscriptions arrive as a burst; share one fresh-enough
@@ -5371,6 +5482,8 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
         webspace_id=webspace_id,
         force=True,
     )
+    if is_detail_receiver:
+        _forget_stream_receiver(webspace_id, receiver)
 
 
 @subscribe("webio.stream.subscription.changed")
@@ -5382,6 +5495,9 @@ def on_webio_stream_subscription_changed(evt: Any) -> None:
     if not receiver.startswith("infrastate."):
         return
     webspace_id = _webspace_id_from_payload(payload)
+    if receiver.startswith(_details_receiver_prefix()):
+        _forget_stream_receiver(webspace_id, receiver)
+        return
     action = str(payload.get("action") or "").strip().lower() or "subscribed"
     if action == "unsubscribed":
         _forget_stream_receiver(webspace_id, receiver)
