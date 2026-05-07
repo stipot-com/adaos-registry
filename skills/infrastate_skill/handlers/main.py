@@ -863,6 +863,8 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "snapshot_request_total": int(_projection_diag.get("snapshot_request_total") or 0),
         "snapshot_request_forced_total": int(_projection_diag.get("snapshot_request_forced_total") or 0),
         "snapshot_request_coalesced_total": int(_projection_diag.get("snapshot_request_coalesced_total") or 0),
+        "tool_project_suppressed_total": int(_projection_diag.get("tool_project_suppressed_total") or 0),
+        "pressure_cache_ttl_s": float(_projection_diag.get("pressure_cache_ttl_s") or 0.0),
         "last_policy_state": str(_projection_diag.get("last_policy_state") or ""),
         "last_policy_owner": str(_projection_diag.get("last_policy_owner") or ""),
         "last_policy_observed_state": str(_projection_diag.get("last_policy_observed_state") or ""),
@@ -870,6 +872,10 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "last_policy_throttled_roots": list(_projection_diag.get("last_policy_throttled_roots") or []),
         "last_policy_blocked_roots": list(_projection_diag.get("last_policy_blocked_roots") or []),
         "last_policy_reason": str(_projection_diag.get("last_policy_reason") or ""),
+        "last_tool_project_suppressed_reason": str(_projection_diag.get("last_tool_project_suppressed_reason") or ""),
+        "last_tool_project_suppressed_policy_state": str(_projection_diag.get("last_tool_project_suppressed_policy_state") or ""),
+        "last_tool_project_suppressed_observed_state": str(_projection_diag.get("last_tool_project_suppressed_observed_state") or ""),
+        "last_tool_project_suppressed_at": float(_projection_diag.get("last_tool_project_suppressed_at") or 0.0),
         "fingerprinted_webspaces": sorted(_projection_fingerprints),
     }
 
@@ -893,6 +899,38 @@ def _projection_pressure_policy(webspace_id: str | None) -> dict[str, Any]:
     except Exception:
         _log.debug("failed to evaluate infrastate YJS pressure policy", exc_info=True)
     return {"policy_state": "ok", "observed_state": "idle", "throttled_roots": []}
+
+
+def _snapshot_cache_ttl_for_pressure(webspace_id: str | None) -> float:
+    ttl = _SNAPSHOT_CACHE_TTL_S
+    try:
+        policy = _projection_pressure_policy(webspace_id)
+    except Exception:
+        return ttl
+    policy_state = str(policy.get("policy_state") or "").strip().lower()
+    observed_state = str(policy.get("observed_state") or "").strip().lower()
+    if policy_state in {"block", "throttle"} or observed_state == "critical":
+        ttl = max(ttl, 10.0)
+    _projection_diag["pressure_cache_ttl_s"] = ttl
+    return ttl
+
+
+def _should_project_snapshot_result(webspace_id: str | None, *, reason: str) -> bool:
+    try:
+        policy = _projection_pressure_policy(webspace_id)
+    except Exception:
+        return True
+    policy_state = str(policy.get("policy_state") or "").strip().lower()
+    observed_state = str(policy.get("observed_state") or "").strip().lower()
+    if policy_state in {"block", "throttle"} or observed_state == "critical":
+        _projection_diag["tool_project_suppressed_total"] = int(_projection_diag.get("tool_project_suppressed_total") or 0) + 1
+        _projection_diag["last_tool_project_suppressed_reason"] = reason
+        _projection_diag["last_tool_project_suppressed_policy_state"] = policy_state
+        _projection_diag["last_tool_project_suppressed_observed_state"] = observed_state
+        _projection_diag["last_tool_project_suppressed_at"] = time.time()
+        return False
+    return True
+
 
 def _normalize_node_names(value: Any, *, limit: int = 8) -> list[str]:
     # Local copy for backward/forward compatibility with core.
@@ -5359,7 +5397,8 @@ def _snapshot_or_fallback(*, webspace_id: str | None = None) -> dict[str, Any]:
 
 def _snapshot_or_fallback_cached(*, webspace_id: str | None = None, allow_cache: bool = True) -> dict[str, Any]:
     cache_key = _snapshot_cache_key(webspace_id)
-    if allow_cache and _SNAPSHOT_CACHE_TTL_S > 0:
+    cache_ttl_s = _snapshot_cache_ttl_for_pressure(webspace_id)
+    if allow_cache and cache_ttl_s > 0:
         # Coalesce concurrent initial stream subscriptions for the same
         # webspace; otherwise every receiver can rebuild the same snapshot.
         with _snapshot_cache_lock_for(cache_key):
@@ -5367,7 +5406,7 @@ def _snapshot_or_fallback_cached(*, webspace_id: str | None = None, allow_cache:
             cached = _snapshot_cache.get(cache_key)
             if cached is not None:
                 cached_at, cached_snapshot = cached
-                if now - cached_at <= _SNAPSHOT_CACHE_TTL_S:
+                if now - cached_at <= cache_ttl_s:
                     _projection_diag["cache_hit_total"] = int(_projection_diag.get("cache_hit_total") or 0) + 1
                     return _cache_copy(cached_snapshot)
             snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
@@ -5514,7 +5553,7 @@ def get_snapshot(
     **_: Any,
 ) -> dict[str, Any]:
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
-    if project or bool(snapshot.get("fallback")):
+    if (project or bool(snapshot.get("fallback"))) and _should_project_snapshot_result(webspace_id, reason="tool.get_snapshot"):
         _project(snapshot, webspace_id=webspace_id)
     return _compact_snapshot_for_client(snapshot)
 
