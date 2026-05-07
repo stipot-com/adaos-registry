@@ -1,0 +1,71 @@
+name: demo_metrics_skill
+version: 0.2.0
+description: Neutral demo skill for semantic Web UI migration with a metrics table,
+  chart payload, and live event stream.
+runtime:
+  python: '3.11'
+data_projections:
+- scope: webspace
+  slot: demo.metrics.summary
+  targets:
+  - backend: yjs
+    path: data/demo_metrics/summary
+- scope: webspace
+  slot: demo.metrics.table
+  targets:
+  - backend: yjs
+    path: data/demo_metrics/table
+- scope: webspace
+  slot: demo.metrics.chart
+  targets:
+  - backend: yjs
+    path: data/demo_metrics/chart
+- scope: webspace
+  slot: demo.metrics.selection
+  targets:
+  - backend: yjs
+    path: data/demo_metrics/selection
+events:
+  subscribe:
+  - webio.stream.snapshot.requested
+  - webio.stream.subscription.changed
+tools:
+- name: get_demo_snapshot
+  description: Return the static demo metrics snapshot used by the browser demo surfaces.
+  entry: handlers.main:get_demo_snapshot
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      snapshot:
+        type: object
+    required:
+    - ok
+    - snapshot
+- name: list_demo_series
+  description: Return the chart-oriented series payload for the current demo metrics
+    selection.
+  entry: handlers.main:list_demo_series
+  input_schema:
+    type: object
+    properties:
+      metric_id:
+        type: string
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      series:
+        type: object
+    required:
+    - ok
+    - series
+updated_at: '2026-05-07T14:04:04+00:00'
+

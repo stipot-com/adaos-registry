@@ -1,0 +1,274 @@
+{
+  "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "webio": {
+    "receivers": {
+      "demo_metrics.events": {
+        "mode": "append",
+        "collectionKey": "items",
+        "dedupeBy": "id",
+        "maxItems": 50,
+        "initialState": {
+          "items": [
+            {
+              "id": "evt-0",
+              "title": "Waiting for live updates",
+              "description": "The event stream remains local to the current browser session."
+            }
+          ]
+        }
+      }
+    }
+  },
+  "ydoc_defaults": {
+    "data/demo_metrics/summary": {
+      "value": "3",
+      "label": "Demo metrics",
+      "description": "Neutral semantic Web UI control task"
+    },
+    "data/demo_metrics/table": {
+      "items": [
+        {
+          "id": "cpu",
+          "title": "CPU Load",
+          "status": "healthy",
+          "value": 42,
+          "unit": "%",
+          "updated_at": "2026-05-07T10:00:00Z",
+          "group": "compute"
+        },
+        {
+          "id": "memory",
+          "title": "Memory Pressure",
+          "status": "warning",
+          "value": 76,
+          "unit": "%",
+          "updated_at": "2026-05-07T10:00:00Z",
+          "group": "compute"
+        },
+        {
+          "id": "queue",
+          "title": "Queue Depth",
+          "status": "healthy",
+          "value": 7,
+          "unit": "jobs",
+          "updated_at": "2026-05-07T10:00:00Z",
+          "group": "runtime"
+        }
+      ]
+    },
+    "data/demo_metrics/chart": {
+      "metric_id": "cpu",
+      "title": "CPU Load",
+      "x_key": "ts",
+      "y_key": "value",
+      "points": [
+        { "ts": "10:00", "value": 31 },
+        { "ts": "10:05", "value": 34 },
+        { "ts": "10:10", "value": 39 },
+        { "ts": "10:15", "value": 42 }
+      ]
+    },
+    "data/demo_metrics/selection": {
+      "metric_id": "cpu",
+      "status_filter": "all",
+      "group_filter": "all"
+    }
+  },
+  "apps": [
+    {
+      "id": "demo_metrics_app",
+      "title": "Demo Metrics",
+      "icon": "bar-chart-outline",
+      "launchModal": "demo_metrics_modal"
+    }
+  ],
+  "widgets": [
+    {
+      "id": "demo_metrics_summary",
+      "type": "visual.metricTile",
+      "title": "Demo Metrics",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/demo_metrics/summary"
+      }
+    }
+  ],
+  "registry": {
+    "modals": {
+      "demo_metrics_modal": {
+        "title": "Demo Metrics",
+        "schema": {
+          "id": "demo_metrics_modal",
+          "layout": {
+            "type": "split",
+            "areas": [
+              { "id": "main", "role": "main" },
+              { "id": "right", "role": "aux" },
+              { "id": "bottom", "role": "footer" }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "demo-metrics-table",
+              "type": "ui.table",
+              "area": "main",
+              "title": "Metrics table",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/demo_metrics/table"
+              },
+              "inputs": {
+                "columns": [
+                  { "key": "title", "label": "Metric" },
+                  { "key": "status", "label": "Status", "width": "120px" },
+                  { "key": "value", "label": "Value", "width": "100px" },
+                  { "key": "unit", "label": "Unit", "width": "90px" },
+                  { "key": "updated_at", "label": "Updated", "width": "180px", "mono": true }
+                ],
+                "emptyText": "No demo metrics yet"
+              }
+            },
+            {
+              "id": "demo-metrics-chart-payload",
+              "type": "ui.jsonViewer",
+              "area": "right",
+              "title": "Chart payload (compatibility)",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/demo_metrics/chart"
+              },
+              "inputs": {
+                "emptyText": "No chart payload yet"
+              }
+            },
+            {
+              "id": "demo-metrics-events",
+              "type": "ui.list",
+              "area": "bottom",
+              "title": "Events",
+              "dataSource": {
+                "kind": "stream",
+                "receiver": "demo_metrics.events"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "showDetails": false,
+                "itemAccordion": false,
+                "emptyText": "No live demo events yet"
+              }
+            }
+          ],
+          "semantic": {
+            "$schema": "../../../../src/adaos/abi/webui.semantic.v0.schema.json",
+            "id": "demo_metrics_modal_semantic",
+            "title": "Demo Metrics Semantic Surface",
+            "layout": {
+              "pattern": "split",
+              "areas": [
+                { "id": "main", "role": "main" },
+                { "id": "right", "role": "aux" },
+                { "id": "bottom", "role": "footer" }
+              ]
+            },
+            "viewState": [
+              {
+                "ref": "view:demo_metrics.selection",
+                "default": {
+                  "metric_id": "cpu",
+                  "status_filter": "all",
+                  "group_filter": "all"
+                },
+                "persistence": "local_persisted"
+              }
+            ],
+            "views": [
+              {
+                "id": "metrics_grid",
+                "kind": "collection_grid",
+                "area": "main",
+                "title": "Metrics table",
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/table",
+                  "scope": "shared"
+                },
+                "selection": {
+                  "kind": "view",
+                  "ref": "view:demo_metrics.selection",
+                  "scope": "local"
+                },
+                "config": {
+                  "columns": [
+                    { "key": "title", "label": "Metric" },
+                    { "key": "status", "label": "Status" },
+                    { "key": "value", "label": "Value" },
+                    { "key": "unit", "label": "Unit" },
+                    { "key": "updated_at", "label": "Updated" }
+                  ]
+                },
+                "actions": [
+                  {
+                    "ref": "action:view.demo_metrics.select_metric",
+                    "kind": "set_view_state",
+                    "trigger": "select",
+                    "payload": {
+                      "metric_id": "$event.id"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "metrics_chart",
+                "kind": "metric_chart",
+                "area": "right",
+                "title": "Metric trend",
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/chart",
+                  "scope": "shared"
+                },
+                "selection": {
+                  "kind": "view",
+                  "ref": "view:demo_metrics.selection",
+                  "scope": "local"
+                },
+                "config": {
+                  "xKey": "ts",
+                  "yKey": "value",
+                  "seriesLabelKey": "title"
+                }
+              },
+              {
+                "id": "metrics_events",
+                "kind": "event_log",
+                "area": "bottom",
+                "title": "Events",
+                "source": {
+                  "kind": "stream",
+                  "ref": "stream:demo_metrics.events",
+                  "scope": "shared",
+                  "transport": "auto"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "contributions": [
+    {
+      "extensionPoint": "desktop.apps",
+      "type": "app",
+      "id": "demo_metrics_app",
+      "autoInstall": true
+    },
+    {
+      "extensionPoint": "desktop.widgets",
+      "type": "widget",
+      "id": "demo_metrics_summary",
+      "autoInstall": false
+    }
+  ]
+}

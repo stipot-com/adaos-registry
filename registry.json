@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-07T12:56:06+00:00",
+  "updated_at": "2026-05-07T14:04:04+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -44,6 +44,27 @@
       "entry": "handlers/main.py",
       "runtime_python": "3.11",
       "tools_count": 0
+    },
+    {
+      "kind": "skill",
+      "id": "demo_metrics_skill",
+      "name": "demo_metrics_skill",
+      "version": "0.2.0",
+      "updated_at": "2026-05-07T14:04:04+00:00",
+      "path": "skills/demo_metrics_skill",
+      "manifest": "skills/demo_metrics_skill/skill.yaml",
+      "source": {
+        "path": "skills/demo_metrics_skill",
+        "manifest": "skills/demo_metrics_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "demo_metrics_skill",
+        "id": "demo_metrics_skill"
+      },
+      "description": "Neutral demo skill for semantic Web UI migration with a metrics table, chart payload, and live event stream.",
+      "runtime_python": "3.11",
+      "tools_count": 2
     },
     {
       "kind": "skill",
