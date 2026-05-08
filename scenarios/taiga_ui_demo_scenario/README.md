@@ -9,6 +9,7 @@ The scenario exists to validate:
 
 - one table-oriented semantic view
 - one chart-oriented semantic view
+- one chat-oriented semantic view
 - one shared selection model
 - one live event stream
 - one staged loading contract
@@ -26,13 +27,15 @@ Current implementation status:
 - table row selection now updates shared local `view:` state
 - the semantic table surface now renders through the first Taiga-backed grid
   renderer
-- the chart surface is no longer a JSON placeholder and now renders as a simple
-  temporary trend widget
+- the semantic chart surface now renders through a Taiga-backed chart renderer
+- the semantic chat surface now renders through the shared chat widget path
 
 Stand verification checklist:
 
 - load `taiga_ui_demo_scenario`
-- verify the desktop surface shows summary, table, chart, and event areas
+- verify the desktop surface shows summary, table, chart, event, and chat areas
 - confirm the main table is rendered by the Taiga-backed semantic grid path
+- confirm the chart is rendered by the Taiga-backed semantic chart path
+- confirm the operator notes chat is rendered by the semantic chat path
 - click different table rows and confirm the chart changes accordingly
 - use the sidebar action to open the modal and repeat the same check there

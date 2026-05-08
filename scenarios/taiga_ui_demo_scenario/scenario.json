@@ -112,6 +112,20 @@
                 "itemAccordion": false,
                 "emptyText": "No demo events yet"
               }
+            },
+            {
+              "id": "demo-chat",
+              "type": "ui.chat",
+              "area": "bottom",
+              "title": "Operator notes",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/demo_metrics/chat"
+              },
+              "inputs": {
+                "hint": "Notes are seeded from shared demo state.",
+                "alignRightFrom": "operator"
+              }
             }
           ],
           "semantic": {
@@ -209,6 +223,21 @@
                   "ref": "stream:demo_metrics.events",
                   "scope": "shared",
                   "transport": "auto"
+                }
+              },
+              {
+                "id": "demo_metric_chat",
+                "kind": "chat_panel",
+                "area": "bottom",
+                "title": "Operator notes",
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/chat",
+                  "scope": "shared"
+                },
+                "config": {
+                  "hint": "Notes are seeded from shared demo state.",
+                  "alignRightFrom": "operator"
                 }
               }
             ]
