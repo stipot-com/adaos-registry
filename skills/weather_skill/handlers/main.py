@@ -520,6 +520,12 @@ async def on_weather_city_changed(evt) -> None:
     except Exception:
         local_node_id = ""
     if target_node_id and local_node_id and target_node_id != local_node_id:
+        _log.info(
+            "weather_city_changed ignored: target_node_mismatch target_node_id=%s local_node_id=%s payload_keys=%s",
+            target_node_id,
+            local_node_id,
+            sorted(payload.keys()),
+        )
         return
     meta = payload.get("_meta") if isinstance(payload, dict) else None
     raw_ws = (payload.get("webspace_id") or payload.get("workspace_id")) or (meta or {}).get("webspace_id") or (meta or {}).get("workspace_id") or None
