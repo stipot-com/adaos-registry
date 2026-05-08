@@ -93,6 +93,22 @@ def _snapshot() -> dict[str, Any]:
             },
         ]
     }
+    chat = {
+        "messages": [
+            {
+                "id": "chat-1",
+                "from": "hub",
+                "text": "Semantic chat_panel is now part of the demo surface.",
+                "ts": "2026-05-07T10:00:00Z",
+            },
+            {
+                "id": "chat-2",
+                "from": "operator",
+                "text": "The first rollout keeps chat read-only and shared-state backed.",
+                "ts": "2026-05-07T10:01:00Z",
+            },
+        ]
+    }
     return {
         "summary": {
             "value": "3",
@@ -107,6 +123,7 @@ def _snapshot() -> dict[str, Any]:
             "group_filter": "all",
         },
         "events": events,
+        "chat": chat,
     }
 
 

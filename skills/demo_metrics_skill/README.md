@@ -8,6 +8,7 @@ Its role is to provide one compact, reusable validation surface for:
 
 - table-like semantic views
 - chart-like semantic views
+- chat-oriented semantic views
 - shared selection state
 - Yjs-backed shared browser state
 - stream-backed live event tails
@@ -24,14 +25,16 @@ Current implementation status:
 - `collection_grid` now renders through a first Taiga-backed grid surface
 - `metric_chart` now renders through a Taiga-backed chart surface
 - `event_log` already maps to the current list/event surface
+- `chat_panel` now maps to the current chat surface through the semantic adapter
 
 Stand verification checklist:
 
 - open `Demo Metrics` from the desktop or the scenario sidebar
-- confirm the metrics table, chart, and event log all render
+- confirm the metrics table, chart, event log, and operator notes chat all render
 - confirm the table uses the Taiga-styled grid surface rather than the old
   compatibility table
 - confirm the chart uses the Taiga-styled semantic chart surface
+- confirm the operator notes block is rendered through the semantic chat path
 - select `CPU Load`, `Memory Pressure`, and `Queue Depth` in the table
 - confirm the chart title/value/line change with the selected row
 - confirm the same behavior works in the modal demo surface
@@ -45,3 +48,4 @@ Recommended semantic kinds exercised here:
 - `collection_grid`
 - `metric_chart`
 - `event_log`
+- `chat_panel`
