@@ -24,6 +24,8 @@ Current implementation status:
 - the semantic schema is already consumed through the runtime compatibility
   bridge
 - table row selection now updates shared local `view:` state
+- the semantic table surface now renders through the first Taiga-backed grid
+  renderer
 - the chart surface is no longer a JSON placeholder and now renders as a simple
   temporary trend widget
 
@@ -31,5 +33,6 @@ Stand verification checklist:
 
 - load `taiga_ui_demo_scenario`
 - verify the desktop surface shows summary, table, chart, and event areas
+- confirm the main table is rendered by the Taiga-backed semantic grid path
 - click different table rows and confirm the chart changes accordingly
 - use the sidebar action to open the modal and repeat the same check there
