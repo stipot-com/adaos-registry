@@ -22,7 +22,7 @@ Current implementation status:
 
 - semantic desktop and modal schemas are adapted into current browser widgets
 - `collection_grid` now renders through a first Taiga-backed grid surface
-- `metric_chart` already maps to a dedicated temporary chart widget
+- `metric_chart` now renders through a Taiga-backed chart surface
 - `event_log` already maps to the current list/event surface
 
 Stand verification checklist:
@@ -31,6 +31,7 @@ Stand verification checklist:
 - confirm the metrics table, chart, and event log all render
 - confirm the table uses the Taiga-styled grid surface rather than the old
   compatibility table
+- confirm the chart uses the Taiga-styled semantic chart surface
 - select `CPU Load`, `Memory Pressure`, and `Queue Depth` in the table
 - confirm the chart title/value/line change with the selected row
 - confirm the same behavior works in the modal demo surface
