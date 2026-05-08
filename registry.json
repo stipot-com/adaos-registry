@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-07T15:08:04+00:00",
+  "updated_at": "2026-05-08T04:40:15+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -421,6 +421,31 @@
       "skills": {
         "required": [
           "prompt_engineer_skill"
+        ]
+      }
+    },
+    {
+      "kind": "scenario",
+      "id": "taiga_ui_demo_scenario",
+      "name": "taiga_ui_demo_scenario",
+      "version": "0.2.0",
+      "updated_at": "2026-05-08T04:40:15+00:00",
+      "path": "scenarios/taiga_ui_demo_scenario",
+      "manifest": "scenarios/taiga_ui_demo_scenario/scenario.yaml",
+      "source": {
+        "path": "scenarios/taiga_ui_demo_scenario",
+        "manifest": "scenarios/taiga_ui_demo_scenario/scenario.yaml"
+      },
+      "install": {
+        "kind": "scenario",
+        "name": "taiga_ui_demo_scenario",
+        "id": "taiga_ui_demo_scenario"
+      },
+      "description": "Desktop demo scenario for the first semantic Web UI control task with a table, chart payload, and live event stream.",
+      "skills": {
+        "required": [
+          "web_desktop_skill",
+          "demo_metrics_skill"
         ]
       }
     },

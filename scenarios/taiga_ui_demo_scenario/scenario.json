@@ -1,0 +1,220 @@
+{
+  "$schema": "../../../../src/adaos/abi/scenario.schema.json",
+  "id": "taiga_ui_demo_scenario",
+  "version": "0.1.0",
+  "name": "Taiga UI Demo Scenario",
+  "type": "desktop",
+  "title": "Taiga UI Demo",
+  "description": "Control scenario for the first semantic Web UI slice with a shared metrics table, chart payload, and event stream.",
+  "depends": [
+    "web_desktop_skill",
+    "demo_metrics_skill"
+  ],
+  "ui": {
+    "application": {
+      "version": "0.1",
+      "desktop": {
+        "pageSchema": {
+          "id": "taiga_ui_demo",
+          "title": "Taiga UI Demo",
+          "layout": {
+            "type": "split",
+            "areas": [
+              { "id": "sidebar", "role": "sidebar" },
+              { "id": "main", "role": "main" },
+              { "id": "right", "role": "aux" },
+              { "id": "bottom", "role": "footer" }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "demo-launch",
+              "type": "input.commandBar",
+              "area": "sidebar",
+              "title": "Demo",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "open-demo",
+                    "label": "Open Demo Metrics"
+                  }
+                ],
+                "size": "small"
+              },
+              "actions": [
+                {
+                  "on": "click:open-demo",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "demo_metrics_modal"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "demo-summary",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Summary",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/demo_metrics/summary"
+              }
+            },
+            {
+              "id": "demo-table",
+              "type": "ui.table",
+              "area": "main",
+              "title": "Metrics table",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/demo_metrics/table"
+              },
+              "inputs": {
+                "columns": [
+                  { "key": "title", "label": "Metric" },
+                  { "key": "status", "label": "Status", "width": "120px" },
+                  { "key": "value", "label": "Value", "width": "100px" },
+                  { "key": "unit", "label": "Unit", "width": "90px" }
+                ],
+                "emptyText": "No demo metrics yet"
+              }
+            },
+            {
+              "id": "demo-chart-payload",
+              "type": "visual.metricChart",
+              "area": "right",
+              "title": "Metric trend",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/demo_metrics/chart"
+              },
+              "inputs": {
+                "stateKey": "demo_metrics.selection",
+                "xKey": "ts",
+                "yKey": "value",
+                "emptyText": "No chart payload yet"
+              }
+            },
+            {
+              "id": "demo-events",
+              "type": "ui.list",
+              "area": "bottom",
+              "title": "Events",
+              "dataSource": {
+                "kind": "stream",
+                "receiver": "demo_metrics.events"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "showDetails": false,
+                "itemAccordion": false,
+                "emptyText": "No demo events yet"
+              }
+            }
+          ],
+          "semantic": {
+            "$schema": "../../../../src/adaos/abi/webui.semantic.v0.schema.json",
+            "id": "taiga_ui_demo_surface",
+            "title": "Taiga UI Demo Surface",
+            "layout": {
+              "pattern": "split",
+              "areas": [
+                { "id": "main", "role": "main" },
+                { "id": "right", "role": "aux" },
+                { "id": "bottom", "role": "footer" }
+              ]
+            },
+            "load": {
+              "structure": "eager",
+              "data": "visible",
+              "focus": "primary",
+              "offFocusReadyState": "hydrating"
+            },
+            "viewState": [
+              {
+                "ref": "view:demo_metrics.selection",
+                "default": {
+                  "metric_id": "cpu",
+                  "status_filter": "all",
+                  "group_filter": "all"
+                },
+                "persistence": "local_persisted"
+              }
+            ],
+            "views": [
+              {
+                "id": "demo_metrics_grid",
+                "kind": "collection_grid",
+                "area": "main",
+                "title": "Metrics table",
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/table",
+                  "scope": "shared"
+                },
+                "selection": {
+                  "kind": "view",
+                  "ref": "view:demo_metrics.selection",
+                  "scope": "local"
+                },
+                "config": {
+                  "columns": [
+                    { "key": "title", "label": "Metric" },
+                    { "key": "status", "label": "Status" },
+                    { "key": "value", "label": "Value" },
+                    { "key": "unit", "label": "Unit" },
+                    { "key": "group", "label": "Group" }
+                  ]
+                },
+                "actions": [
+                  {
+                    "ref": "action:view.demo_metrics.select_metric",
+                    "kind": "set_view_state",
+                    "trigger": "select",
+                    "payload": {
+                      "metric_id": "$event.id"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "demo_metric_chart",
+                "kind": "metric_chart",
+                "area": "right",
+                "title": "Metric trend",
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/chart",
+                  "scope": "shared"
+                },
+                "selection": {
+                  "kind": "view",
+                  "ref": "view:demo_metrics.selection",
+                  "scope": "local"
+                },
+                "config": {
+                  "xKey": "ts",
+                  "yKey": "value"
+                }
+              },
+              {
+                "id": "demo_metric_events",
+                "kind": "event_log",
+                "area": "bottom",
+                "title": "Events",
+                "source": {
+                  "kind": "stream",
+                  "ref": "stream:demo_metrics.events",
+                  "scope": "shared",
+                  "transport": "auto"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
