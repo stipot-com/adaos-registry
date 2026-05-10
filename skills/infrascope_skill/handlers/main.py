@@ -110,7 +110,7 @@ def _refresh_debounce_s() -> float:
             return max(0.0, min(value, 10.0))
     except Exception:
         pass
-    return 0.25
+    return 1.5
 
 
 def _stream_request_debounce_s() -> float:
@@ -729,34 +729,60 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
     if token.startswith(overview_prefix):
         section = str(token[len(overview_prefix):] or "").strip()
         overview = coerce_mapping(snapshot.get("overview"))
-        return list(overview.get(section) or [])
+        return [_compact_row_for_stream(row) for row in list(overview.get(section) or [])]
     inventory_prefix = "infrascope.inventory."
     if token.startswith(inventory_prefix):
         kind = _inventory_kind_token(token[len(inventory_prefix):])
         inventory = coerce_mapping(snapshot.get("inventory"))
-        return list(inventory.get(kind) or [])
+        return [_compact_row_for_stream(row) for row in list(inventory.get(kind) or [])]
     inspector_prefix = "infrascope.inspector."
     if token.startswith(inspector_prefix):
         object_id = str(token[len(inspector_prefix):] or "local").strip() or "local"
-        inspectors = coerce_mapping(snapshot.get("inspectors"))
-        payload = inspectors.get(object_id)
-        if payload is None and object_id != "local":
-            payload = inspectors.get("local")
-        return coerce_mapping(payload)
+        return _inspector_payload_from_snapshot(snapshot, object_id)
     inspector_field_prefix = "infrascope.inspector_field."
     if token.startswith(inspector_field_prefix):
         remainder = str(token[len(inspector_field_prefix):] or "").strip()
         field, _, object_id = remainder.partition(".")
         field = str(field or "").strip()
         object_id = str(object_id or "local").strip() or "local"
-        inspectors = coerce_mapping(snapshot.get("inspectors"))
-        payload = coerce_mapping(inspectors.get(object_id))
-        if not payload and object_id != "local":
-            payload = coerce_mapping(inspectors.get("local"))
+        payload = _inspector_payload_from_snapshot(snapshot, object_id)
         if field in {"incidents", "actions"}:
             return list(payload.get(field) or [])
         return coerce_mapping(payload.get(field))
     return None
+
+
+def _compact_row_for_stream(raw: Any) -> dict[str, Any]:
+    row = coerce_mapping(raw)
+    object_id = str(row.get("object_id") or row.get("id") or "").strip()
+    compact = {
+        key: value
+        for key, value in row.items()
+        if key not in {"details", "object", "raw", "payload"}
+    }
+    if object_id:
+        compact.setdefault("object_id", object_id)
+        compact.setdefault("details_receiver", _inspector_receiver(object_id))
+        compact["has_details"] = True
+    return compact
+
+
+def _inspector_payload_from_snapshot(snapshot: dict[str, Any], object_id: str) -> dict[str, Any]:
+    token = str(object_id or "local").strip() or "local"
+    inspectors = coerce_mapping(snapshot.get("inspectors"))
+    payload = coerce_mapping(inspectors.get(token))
+    if payload:
+        return payload
+    meta = coerce_mapping(snapshot.get("meta"))
+    webspace_id = str(meta.get("webspace_id") or default_webspace_id()).strip() or default_webspace_id()
+    task_goal = str(meta.get("task_goal") or _DEFAULT_TASK_GOAL).strip() or _DEFAULT_TASK_GOAL
+    try:
+        payload = get_object_inspector(token, task_goal=task_goal, webspace_id=webspace_id)
+    except Exception as exc:
+        payload = _fallback_inspector(token, warning=f"{type(exc).__name__}: {exc}")
+    inspectors[token] = dict(payload)
+    snapshot["inspectors"] = inspectors
+    return coerce_mapping(payload)
 
 
 def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str) -> None:
@@ -931,8 +957,10 @@ def _fallback_inspector(object_id: str, *, warning: str) -> dict[str, Any]:
 
 def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -> dict[str, Any]:
     errors: list[str] = []
+    overview_projection: Any | None = None
     try:
-        summary = get_overview_summary(webspace_id=webspace_id)
+        overview_projection = current_overview_projection(webspace_id=webspace_id)
+        summary = _overview_summary_from_projection(overview_projection)
     except Exception as exc:
         _record_snapshot_error(errors, "summary", exc)
         summary = _summary_warning_fallback(webspace_id=webspace_id, errors=errors)
@@ -941,7 +969,10 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
     overview: dict[str, list[dict[str, Any]]] = {}
     for section in _OVERVIEW_SECTIONS:
         try:
-            overview[section] = list_overview_collection(section, webspace_id=webspace_id)
+            if overview_projection is None:
+                overview[section] = []
+            else:
+                overview[section] = _overview_collection_from_projection(overview_projection, section)
         except Exception as exc:
             _record_snapshot_error(errors, f"overview:{section}", exc)
             overview[section] = []
@@ -967,20 +998,6 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
     local_actual_id = str(local_inspector.get("object_id") or summary.get("object_id") or "local").strip() or "local"
     inspectors["local"] = dict(local_inspector)
     inspectors[local_actual_id] = dict(local_inspector)
-    try:
-        object_ids = _object_ids(webspace_id=webspace_id)
-    except Exception as exc:
-        _record_snapshot_error(errors, "object_ids", exc)
-        object_ids = []
-    for object_id in object_ids:
-        if object_id in inspectors:
-            continue
-        try:
-            inspectors[object_id] = get_object_inspector(object_id, task_goal=goal, webspace_id=webspace_id)
-        except Exception as exc:
-            _record_snapshot_error(errors, f"inspector:{object_id}", exc)
-            inspectors[object_id] = _fallback_inspector(object_id, warning=f"{type(exc).__name__}: {exc}")
-
     operations = _operations_snapshot(webspace_id=webspace_id)
     operation_rows = (
         _active_operation_rows(webspace_id=webspace_id)
@@ -1003,7 +1020,7 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
         "meta": {
             "task_goal": goal,
             "webspace_id": str(webspace_id or "").strip() or default_webspace_id(),
-            "object_total": len(inspectors),
+            "object_total": len(inventory.get("all") or inspectors),
             "partial": bool(errors),
             "error_total": len(errors),
         },
@@ -1207,9 +1224,7 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
     )
 
 
-@tool("get_overview_summary")
-def get_overview_summary(webspace_id: str | None = None) -> dict[str, Any]:
-    projection = current_overview_projection(webspace_id=webspace_id)
+def _overview_summary_from_projection(projection: Any) -> dict[str, Any]:
     context = coerce_mapping(getattr(projection, "context", {}))
     summary_tile = coerce_mapping(context.get("summary_tile"))
     subject = getattr(projection, "subject", None)
@@ -1232,15 +1247,25 @@ def get_overview_summary(webspace_id: str | None = None) -> dict[str, Any]:
     }
 
 
-@tool("list_overview_collection")
-def list_overview_collection(section: str, webspace_id: str | None = None) -> list[dict[str, Any]]:
-    projection = current_overview_projection(webspace_id=webspace_id)
+def _overview_collection_from_projection(projection: Any, section: str) -> list[dict[str, Any]]:
     context = coerce_mapping(getattr(projection, "context", {}))
     object_index = _projection_object_index(projection)
     items = list(context.get(section) or [])
     if section == "active_incidents":
         return _incident_rows(items, object_index=object_index)
     return [_decorate_row(item, object_index=object_index) for item in items if isinstance(item, dict)]
+
+
+@tool("get_overview_summary")
+def get_overview_summary(webspace_id: str | None = None) -> dict[str, Any]:
+    projection = current_overview_projection(webspace_id=webspace_id)
+    return _overview_summary_from_projection(projection)
+
+
+@tool("list_overview_collection")
+def list_overview_collection(section: str, webspace_id: str | None = None) -> list[dict[str, Any]]:
+    projection = current_overview_projection(webspace_id=webspace_id)
+    return _overview_collection_from_projection(projection, section)
 
 
 @tool("list_inventory")
