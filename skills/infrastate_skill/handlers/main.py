@@ -16,6 +16,7 @@ import yaml
 
 from adaos.build_info import BUILD_INFO
 from adaos.sdk.core.decorators import subscribe, tool
+from adaos.sdk.core.errors import SdkRuntimeNotInitialized
 from adaos.sdk.data.context import clear_current_skill, set_current_skill
 from adaos.sdk.data import ctx_subnet, skill_memory_get, skill_memory_set
 from adaos.sdk.io import stream_publish
@@ -49,6 +50,8 @@ _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
 _EVENTS_STATE_KEY = "infrastate.events"
 _SUMMARY_RENDER_STATE_KEY = "infrastate.summary_render_state"
+_UI_STATE_FALLBACK: dict[str, Any] = {}
+_SUMMARY_RENDER_STATE_FALLBACK: dict[str, Any] = {}
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
 _REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}
 _MARKETPLACE_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_CACHE_TTL_S") or "30"))
@@ -68,7 +71,11 @@ _MARKETPLACE_REGISTRY_JSON_URL = (
     ).strip()
     or "https://raw.githubusercontent.com/stipot-com/adaos-registry/refs/heads/main/registry.json"
 )
-_SNAPSHOT_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CACHE_TTL_S") or "1.5"))
+_SNAPSHOT_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CACHE_TTL_S") or "10.0"))
+_PRESSURE_SNAPSHOT_CACHE_TTL_S = max(
+    _SNAPSHOT_CACHE_TTL_S,
+    float(os.getenv("ADAOS_INFRASTATE_PRESSURE_SNAPSHOT_CACHE_TTL_S") or "30.0"),
+)
 _SNAPSHOT_CONTENT_MAX_BYTES = max(0, int(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CONTENT_MAX_BYTES") or "4096"))
 _background_refresh_task: asyncio.Task[Any] | None = None
 _background_refresh_thread: threading.Thread | None = None
@@ -79,6 +86,7 @@ _marketplace_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, An
 _snapshot_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _snapshot_cache_guard = threading.Lock()
 _snapshot_cache_locks: dict[str, threading.Lock] = {}
+_snapshot_cache_projection_fingerprints: dict[str, str] = {}
 _projection_fingerprints: dict[str, str] = {}
 _projection_last_applied_at: dict[str, float] = {}
 _active_stream_receivers_by_webspace: dict[str, set[str]] = {}
@@ -146,8 +154,28 @@ def _yjs_load_receiver() -> str:
     return "infrastate.yjs.load_mark"
 
 
+def _is_noncritical_stream_receiver(receiver: str) -> bool:
+    token = str(receiver or "").strip()
+    if token.startswith("infrastate.details."):
+        return True
+    return token in {
+        _logs_receiver(),
+        _events_receiver(),
+        _yjs_load_receiver(),
+        _build_receiver(),
+        _steps_receiver(),
+        _realtime_receiver(),
+        _slots_receiver(),
+        _skills_receiver(),
+        _scenarios_receiver(),
+        _marketplace_skills_receiver(),
+        _marketplace_scenarios_receiver(),
+        _core_update_diagnostics_receiver(),
+    }
+
+
 def _active_noncritical_stream_guardrail(webspace_id: str, receiver: str) -> dict[str, Any]:
-    if str(receiver or "").strip() != _events_receiver():
+    if not _is_noncritical_stream_receiver(receiver):
         return {}
     try:
         from adaos.services.yjs.gateway_ws import yjs_pressure_snapshot
@@ -748,9 +776,6 @@ def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None
 def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str | None) -> None:
     eager_receivers = (
         _operations_receiver(),
-        _logs_receiver(),
-        _events_receiver(),
-        _yjs_load_receiver(),
     )
     all_receivers = eager_receivers + (
         _build_receiver(),
@@ -768,6 +793,18 @@ def _publish_snapshot_streams(snapshot: dict[str, Any], *, webspace_id: str | No
     else:
         receivers = tuple(dict.fromkeys(eager_receivers + tuple(_active_stream_receivers(webspace_id))))
     for receiver in receivers:
+        guardrail = _active_noncritical_stream_guardrail(
+            str(webspace_id or "").strip() or default_webspace_id(),
+            receiver,
+        )
+        if guardrail:
+            _record_noncritical_stream_guardrail_suppression(
+                webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
+                receiver=receiver,
+                payload=[],
+                guardrail=guardrail,
+            )
+            continue
         _publish_stream_payload(
             receiver=receiver,
             data=_stream_payload_for_receiver(snapshot, receiver),
@@ -792,6 +829,7 @@ def _invalidate_runtime_caches(*, webspace_id: str | None = None, marketplace: b
     cache_key = _snapshot_cache_key(webspace_id)
     with _snapshot_cache_lock_for(cache_key):
         _snapshot_cache.pop(cache_key, None)
+        _snapshot_cache_projection_fingerprints.pop(cache_key, None)
     if marketplace:
         _marketplace_catalog_cache.clear()
 
@@ -844,6 +882,24 @@ def _snapshot_projection_fingerprint(snapshot: dict[str, Any]) -> str:
     return hashlib.sha1(_stable_json_bytes(payload)).hexdigest()
 
 
+def _cached_snapshot_projection_fingerprint(cache_key: str, snapshot: dict[str, Any]) -> str:
+    fingerprint = _snapshot_cache_projection_fingerprints.get(cache_key)
+    if fingerprint:
+        return fingerprint
+    fingerprint = _snapshot_projection_fingerprint(_compact_snapshot_for_yjs(snapshot))
+    _snapshot_cache_projection_fingerprints[cache_key] = fingerprint
+    return fingerprint
+
+
+def _snapshot_projection_is_current(webspace_id: str | None, snapshot: dict[str, Any]) -> bool:
+    cache_key = _snapshot_cache_key(webspace_id)
+    fingerprint = _cached_snapshot_projection_fingerprint(cache_key, snapshot)
+    for target_ws in _projection_webspace_ids(webspace_id):
+        if _projection_fingerprints.get(target_ws) != fingerprint:
+            return False
+    return True
+
+
 def _cache_copy(value: Any) -> Any:
     return _clone_json_like_for_cache(value)
 
@@ -864,6 +920,7 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "snapshot_request_forced_total": int(_projection_diag.get("snapshot_request_forced_total") or 0),
         "snapshot_request_coalesced_total": int(_projection_diag.get("snapshot_request_coalesced_total") or 0),
         "tool_project_suppressed_total": int(_projection_diag.get("tool_project_suppressed_total") or 0),
+        "tool_project_current_skip_total": int(_projection_diag.get("tool_project_current_skip_total") or 0),
         "pressure_cache_ttl_s": float(_projection_diag.get("pressure_cache_ttl_s") or 0.0),
         "last_policy_state": str(_projection_diag.get("last_policy_state") or ""),
         "last_policy_owner": str(_projection_diag.get("last_policy_owner") or ""),
@@ -909,8 +966,8 @@ def _snapshot_cache_ttl_for_pressure(webspace_id: str | None) -> float:
         return ttl
     policy_state = str(policy.get("policy_state") or "").strip().lower()
     observed_state = str(policy.get("observed_state") or "").strip().lower()
-    if policy_state in {"block", "throttle"} or observed_state == "critical":
-        ttl = max(ttl, 10.0)
+    if policy_state in {"block", "throttle", "warn"} or observed_state in {"high", "critical"}:
+        ttl = max(ttl, _PRESSURE_SNAPSHOT_CACHE_TTL_S)
     _projection_diag["pressure_cache_ttl_s"] = ttl
     return ttl
 
@@ -922,7 +979,7 @@ def _should_project_snapshot_result(webspace_id: str | None, *, reason: str) -> 
         return True
     policy_state = str(policy.get("policy_state") or "").strip().lower()
     observed_state = str(policy.get("observed_state") or "").strip().lower()
-    if policy_state in {"block", "throttle"} or observed_state == "critical":
+    if policy_state in {"block", "throttle", "warn"} or observed_state in {"high", "critical"}:
         _projection_diag["tool_project_suppressed_total"] = int(_projection_diag.get("tool_project_suppressed_total") or 0) + 1
         _projection_diag["last_tool_project_suppressed_reason"] = reason
         _projection_diag["last_tool_project_suppressed_policy_state"] = policy_state
@@ -2210,24 +2267,38 @@ def _effective_runtime_projection(
 
 
 def _ui_state() -> dict[str, Any]:
-    raw = skill_memory_get(_UI_STATE_KEY, {})
+    try:
+        raw = skill_memory_get(_UI_STATE_KEY, {})
+    except SdkRuntimeNotInitialized:
+        raw = _UI_STATE_FALLBACK
     return raw if isinstance(raw, dict) else {}
 
 
 def _write_ui_state(**updates: Any) -> dict[str, Any]:
+    global _UI_STATE_FALLBACK
     payload = dict(_ui_state())
     payload.update(updates)
-    skill_memory_set(_UI_STATE_KEY, payload)
+    try:
+        skill_memory_set(_UI_STATE_KEY, payload)
+    except SdkRuntimeNotInitialized:
+        _UI_STATE_FALLBACK = dict(payload)
     return payload
 
 
 def _summary_render_state() -> dict[str, Any]:
-    raw = skill_memory_get(_SUMMARY_RENDER_STATE_KEY, {})
+    try:
+        raw = skill_memory_get(_SUMMARY_RENDER_STATE_KEY, {})
+    except SdkRuntimeNotInitialized:
+        raw = _SUMMARY_RENDER_STATE_FALLBACK
     return raw if isinstance(raw, dict) else {}
 
 
 def _write_summary_render_state(payload: dict[str, Any]) -> dict[str, Any]:
-    skill_memory_set(_SUMMARY_RENDER_STATE_KEY, payload)
+    global _SUMMARY_RENDER_STATE_FALLBACK
+    try:
+        skill_memory_set(_SUMMARY_RENDER_STATE_KEY, payload)
+    except SdkRuntimeNotInitialized:
+        _SUMMARY_RENDER_STATE_FALLBACK = dict(payload)
     return payload
 
 
@@ -2384,6 +2455,29 @@ async def _background_refresh_worker() -> None:
             _schedule_snapshot_refresh(reason="background.refresh.retry")
 
 
+def _push_infrastate_skill_context() -> bool:
+    try:
+        if set_current_skill("infrastate_skill"):
+            return True
+    except Exception:
+        _log.debug("set_current_skill fallback for infrastate background refresh", exc_info=True)
+    try:
+        return bool(get_ctx().skill_ctx.set("infrastate_skill", Path(__file__).resolve().parent.parent))
+    except Exception:
+        _log.warning("failed to set infrastate skill context for background refresh", exc_info=True)
+        return False
+
+
+async def _background_refresh_worker_with_skill_context() -> None:
+    pushed = False
+    try:
+        pushed = _push_infrastate_skill_context()
+        await _background_refresh_worker()
+    finally:
+        if pushed:
+            clear_current_skill()
+
+
 def _background_refresh_done(task: asyncio.Task) -> None:
     try:
         exc = task.exception()
@@ -2395,6 +2489,7 @@ def _background_refresh_done(task: asyncio.Task) -> None:
     if exc is None:
         return
     try:
+        pushed = _push_infrastate_skill_context()
         _write_ui_state(
             background_refresh_running=False,
             background_refresh_finished_at=time.time(),
@@ -2402,6 +2497,9 @@ def _background_refresh_done(task: asyncio.Task) -> None:
         )
     except Exception:
         pass
+    finally:
+        if "pushed" in locals() and pushed:
+            clear_current_skill()
     _log.warning(
         "background infrastate refresh task failed",
         exc_info=(type(exc), exc, exc.__traceback__),
@@ -2412,7 +2510,7 @@ def _run_background_refresh_thread() -> None:
     global _background_refresh_thread
     pushed = False
     try:
-        pushed = set_current_skill("infrastate_skill")
+        pushed = _push_infrastate_skill_context()
         asyncio.run(_background_refresh_worker())
     except Exception:
         _log.warning("background infrastate refresh thread failed", exc_info=True)
@@ -2429,7 +2527,12 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
     global _background_refresh_task
     global _background_refresh_webspace_id
 
-    _set_background_refresh_pending(webspace_id=webspace_id, reason=reason)
+    pushed = _push_infrastate_skill_context()
+    try:
+        _set_background_refresh_pending(webspace_id=webspace_id, reason=reason)
+    finally:
+        if pushed:
+            clear_current_skill()
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -2437,7 +2540,7 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
     if _background_refresh_task is not None and not _background_refresh_task.done():
         return
     _background_refresh_task = loop.create_task(
-        _background_refresh_worker(),
+        _background_refresh_worker_with_skill_context(),
         name="infrastate-background-refresh",
     )
     _background_refresh_task.add_done_callback(_background_refresh_done)
@@ -3997,7 +4100,14 @@ def _summary(
     selected_kind = str(selected_node.get("kind") or "local")
     selected_node_id = str(selected_node.get("node_id") or getattr(conf, "node_id", "") or "")
     selected_label = str(selected_node.get("label") or ("hub" if str(getattr(conf, "role", "") or "") == "hub" else "member"))
-    active = str(slots_payload.get("active_slot") or "--")
+    active = str(slots_payload.get("active_slot") or "").strip()
+    if not active and selected_kind == "local":
+        env_type = str(os.getenv("ENV_TYPE") or "").strip().lower()
+        runtime_slot = str(os.getenv("ADAOS_ACTIVE_CORE_SLOT") or "").strip().upper()
+        if not runtime_slot and env_type == "dev" and _repo_root() is not None:
+            active = "dev"
+    if not active:
+        active = "--"
     phase = str(status.get("phase") or "")
     state = str(status.get("state") or "idle")
     message = str(status.get("message") or lifecycle.get("reason") or "No update in progress")
@@ -4134,7 +4244,9 @@ def _summary(
             selected_member,
         )
         summary_label = "Node state"
-        summary_value = str(status.get("state") or lifecycle.get("node_state") or selected_member.get("state") or "connected")
+        remote_connected = bool(selected_member.get("connected"))
+        remote_state = str(status.get("state") or lifecycle.get("node_state") or selected_member.get("state") or "connected")
+        summary_value = "Offline" if not remote_connected or remote_state.strip().lower() == "offline" else remote_state
         build_ref = str(build.get("runtime_git_short_commit") or build.get("runtime_version") or build.get("version") or "").strip()
         selected_compact = str(selected_node.get("node_compact_label") or "").strip()
         summary_subtitle = f"{selected_label} | {selected_compact or 'N?'}"
@@ -5408,13 +5520,24 @@ def _snapshot_or_fallback_cached(*, webspace_id: str | None = None, allow_cache:
                 cached_at, cached_snapshot = cached
                 if now - cached_at <= cache_ttl_s:
                     _projection_diag["cache_hit_total"] = int(_projection_diag.get("cache_hit_total") or 0) + 1
-                    return _cache_copy(cached_snapshot)
+                    # Cached snapshots are immutable after insertion in this module.
+                    # Returning the cached object avoids repeatedly deep-copying the
+                    # full diagnostic tree for bursty browser snapshot polls.
+                    return cached_snapshot
             snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
-            _snapshot_cache[cache_key] = (time.monotonic(), _cache_copy(snapshot))
+            cached_snapshot = _cache_copy(snapshot)
+            _snapshot_cache[cache_key] = (time.monotonic(), cached_snapshot)
+            _snapshot_cache_projection_fingerprints[cache_key] = _snapshot_projection_fingerprint(
+                _compact_snapshot_for_yjs(cached_snapshot)
+            )
             return snapshot
     snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
     with _snapshot_cache_lock_for(cache_key):
-        _snapshot_cache[cache_key] = (time.monotonic(), _cache_copy(snapshot))
+        cached_snapshot = _cache_copy(snapshot)
+        _snapshot_cache[cache_key] = (time.monotonic(), cached_snapshot)
+        _snapshot_cache_projection_fingerprints[cache_key] = _snapshot_projection_fingerprint(
+            _compact_snapshot_for_yjs(cached_snapshot)
+        )
     return snapshot
 
 
@@ -5443,7 +5566,13 @@ async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = Non
         if last_applied_at > 0 and now - last_applied_at < effective_min_interval_s:
             _projection_diag["rate_limited_total"] = int(_projection_diag.get("rate_limited_total") or 0) + 1
             continue
-        await ctx_subnet.set_async("infrastate.snapshot", compact, webspace_id=target_ws)
+        pushed = False
+        try:
+            pushed = set_current_skill("infrastate_skill")
+            await ctx_subnet.set_async("infrastate.snapshot", compact, webspace_id=target_ws)
+        finally:
+            if pushed:
+                clear_current_skill()
         _projection_fingerprints[target_ws] = fingerprint
         _projection_last_applied_at[target_ws] = now
         _projection_diag["apply_total"] = int(_projection_diag.get("apply_total") or 0) + 1
@@ -5467,7 +5596,7 @@ async def _refresh_snapshot_async(*, webspace_id: str | None = None, allow_cache
         allow_cache=allow_cache,
     )
     await _project_async(snapshot, webspace_id=webspace_id)
-    return {"ok": True, **snapshot}
+    return {"ok": True, **_compact_snapshot_for_client(snapshot)}
 
 
 def _webspace_id_from_payload(payload: Any) -> str | None:
@@ -5512,6 +5641,20 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
         _remember_stream_receiver(webspace_id, receiver)
     if not _consume_stream_snapshot_request(webspace_id=webspace_id, receiver=receiver):
         return
+    guardrail = _active_noncritical_stream_guardrail(
+        str(webspace_id or "").strip() or default_webspace_id(),
+        receiver,
+    )
+    if guardrail:
+        _record_noncritical_stream_guardrail_suppression(
+            webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
+            receiver=receiver,
+            payload=[],
+            guardrail=guardrail,
+        )
+        if is_detail_receiver:
+            _forget_stream_receiver(webspace_id, receiver)
+        return
     # Initial stream subscriptions arrive as a burst; share one fresh-enough
     # snapshot so each receiver does not rebuild the same heavy state.
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
@@ -5553,7 +5696,11 @@ def get_snapshot(
     **_: Any,
 ) -> dict[str, Any]:
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
-    if (project or bool(snapshot.get("fallback"))) and _should_project_snapshot_result(webspace_id, reason="tool.get_snapshot"):
+    projection_required = project or bool(snapshot.get("fallback"))
+    if projection_required and _snapshot_projection_is_current(webspace_id, snapshot):
+        projection_required = False
+        _projection_diag["tool_project_current_skip_total"] = int(_projection_diag.get("tool_project_current_skip_total") or 0) + 1
+    if projection_required and _should_project_snapshot_result(webspace_id, reason="tool.get_snapshot"):
         _project(snapshot, webspace_id=webspace_id)
     return _compact_snapshot_for_client(snapshot)
 
@@ -5567,7 +5714,7 @@ def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     _write_ui_state(last_refresh_ts=time.time())
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=False)
     _project(snapshot, webspace_id=webspace_id)
-    return {"ok": True, **snapshot}
+    return {"ok": True, **_compact_snapshot_for_client(snapshot)}
 
 
 @subscribe("infrastate.refresh")
