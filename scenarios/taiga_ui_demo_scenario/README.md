@@ -37,6 +37,10 @@ Current implementation status:
   workspace-manager bridge
 - the demo package now includes a second `operations`-class modal surface so
   workspace and operations composition can be compared on the same stand
+- semantic workspace metadata now projects into `runtime.surface.*` state so
+  typed actions can carry stable surface context
+- the scenario now also ships an explicit top-level `workspace` shell surface
+  under `ui.application.workspace.pageSchema`
 
 Stand verification checklist:
 
@@ -49,6 +53,8 @@ Stand verification checklist:
 - click `Host event` and confirm the event log receives a live update
 - click `Workspace` and confirm the workspace manager opens through the typed
   `open_workspace` path
+- click `Workspace shell` and confirm the browser navigates to `/workspace`
+  and renders the dedicated workspace shell surface
 - click `Operations` and confirm the operations modal opens with event, chart,
   and chat surfaces but without the workspace-only grid
 - click `Open Demo Metrics` and confirm the modal opens through the typed action

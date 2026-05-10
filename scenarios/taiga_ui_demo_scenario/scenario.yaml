@@ -1,5 +1,5 @@
 id: taiga_ui_demo_scenario
-version: 0.7.0
+version: 0.8.0
 title: Taiga UI Demo Scenario
 description: Desktop demo scenario for the first semantic Web UI control task with
   a table, chart payload, and live event stream.
@@ -7,7 +7,7 @@ type: desktop
 depends:
 - web_desktop_skill
 - demo_metrics_skill
-updated_at: '2026-05-10T09:47:47+00:00'
+updated_at: '2026-05-10T11:34:40+00:00'
 data_projections:
 - scope: webspace
   slot: demo.metrics.summary
