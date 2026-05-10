@@ -27,8 +27,33 @@
       }
     }
   },
-  "apps": [],
+  "apps": [
+    {
+      "id": "browsers",
+      "title": "Browsers",
+      "subtitle": "Browser sessions and access links",
+      "icon": "browsers-outline",
+      "launchModal": "browsers_modal",
+      "action": {
+        "openModal": "browsers_modal"
+      }
+    }
+  ],
   "widgets": [],
+  "contributions": [
+    {
+      "extensionPoint": "desktop.apps",
+      "type": "app",
+      "id": "browsers",
+      "title": "Browsers",
+      "subtitle": "Browser sessions and access links",
+      "icon": "browsers-outline",
+      "launchModal": "browsers_modal",
+      "action": {
+        "openModal": "browsers_modal"
+      }
+    }
+  ],
   "registry": {
     "modals": {
       "browsers_modal": {
