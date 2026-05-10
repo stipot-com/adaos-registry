@@ -493,6 +493,71 @@ def resolve_location(*, text: str, lang: str = "ru", slots: Dict[str, Any] | Non
 __all__ = [*__all__, "resolve_location"] if "__all__" in globals() else ["resolve_location"]
 
 
+_WEATHER_UPDATE_TASKS: Dict[str, asyncio.Task[None]] = {}
+
+
+def _weather_current_payload(city: str, live: Dict[str, Any] | None = None, *, ok: bool = False, error: str = "") -> Dict[str, Any]:
+    canonical = _canonical_city_key(city)
+    snapshot = CITY_SNAPSHOTS.get(canonical, CITY_SNAPSHOTS["Berlin"])
+    live = live or {}
+    temp_value = (live.get("temp") or live.get("temp_c")) if ok else None
+    condition_value = live.get("description") if ok else ""
+    wind_value = live.get("wind_ms") if ok else None
+    data = {
+        "city": canonical or city,
+        "temp_c": temp_value if temp_value is not None else snapshot["temp_c"],
+        "condition": condition_value or snapshot["condition"],
+        "wind_ms": wind_value if wind_value is not None else snapshot["wind_ms"],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "source": "api" if ok else "snapshot",
+    }
+    if error:
+        data["error"] = error
+    return data
+
+
+def _project_weather_current(data: Dict[str, Any], *, webspace_id: Optional[str], status: str = "") -> None:
+    payload: Dict[str, Any] = {"current": data}
+    if status:
+        payload["status"] = status
+    try:
+        set_current_skill("weather_skill")
+        ctx_subnet.set("weather.snapshot", payload, webspace_id=webspace_id)
+    except Exception:
+        _log.warning("failed to project weather.snapshot via ctx_subnet", exc_info=True)
+
+
+async def _refresh_weather_live_snapshot(
+    *,
+    task_key: str,
+    api_entry_point: str,
+    city: str,
+    webspace_id: Optional[str],
+) -> None:
+    try:
+        ok, live = await _fetch_weather_async(api_entry_point, city)
+        if _WEATHER_UPDATE_TASKS.get(task_key) is not asyncio.current_task():
+            return
+        error_text = "" if ok else str(live.get("error") or live.get("error_code") or "weather_api_unavailable")
+        data = _weather_current_payload(city, live if ok else None, ok=ok, error=error_text)
+        _log.info(
+            "weather_city_changed live update webspace=%s city=%s ok=%s temp_c=%s source=%s",
+            webspace_id or "default",
+            data.get("city"),
+            ok,
+            data.get("temp_c"),
+            data.get("source"),
+        )
+        _project_weather_current(data, webspace_id=webspace_id, status="ok" if ok else "fallback")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        _log.warning("weather live refresh failed city=%s webspace=%s", city, webspace_id or "default", exc_info=True)
+    finally:
+        if _WEATHER_UPDATE_TASKS.get(task_key) is asyncio.current_task():
+            _WEATHER_UPDATE_TASKS.pop(task_key, None)
+
+
 @subscribe("weather.city_changed")
 async def on_weather_city_changed(evt) -> None:
     """
@@ -537,33 +602,26 @@ async def on_weather_city_changed(evt) -> None:
         _log.info("weather_city_changed ignored: missing city payload_keys=%s", sorted(payload.keys()))
         return
     api_entry_point, _ = _load_config()
-    ok, live = await _fetch_weather_async(api_entry_point, city)
-    snapshot = CITY_SNAPSHOTS.get(str(city), CITY_SNAPSHOTS["Berlin"])
-    temp_value = (live.get("temp") or live.get("temp_c")) if ok else None
-    condition_value = live.get("description") if ok else ""
-    wind_value = live.get("wind_ms") if ok else None
-    data = {
-        "city": city,
-        "temp_c": temp_value if temp_value is not None else snapshot["temp_c"],
-        "condition": condition_value or snapshot["condition"],
-        "wind_ms": wind_value if wind_value is not None else snapshot["wind_ms"],
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    data = _weather_current_payload(city)
     _log.info(
-        "weather_city_changed webspace=%s city=%s ok=%s temp_c=%s source=%s",
+        "weather_city_changed accepted webspace=%s city=%s temp_c=%s source=snapshot",
         webspace_id or "default",
-        city,
-        ok,
+        data.get("city"),
         data.get("temp_c"),
-        "api" if ok else "snapshot",
     )
-    # Route snapshot via ProjectionRegistry: subnet/weather.snapshot
-    try:
-        # Wrap into {"current": ...} so that data.weather.current is
-        # available for widgets reading data/weather/current.
-        ctx_subnet.set("weather.snapshot", {"current": data}, webspace_id=webspace_id)
-    except Exception:
-        _log.warning("failed to project weather.snapshot via ctx_subnet", exc_info=True)
+    _project_weather_current(data, webspace_id=webspace_id, status="refreshing")
+    task_key = str(webspace_id or "default").strip() or "default"
+    previous = _WEATHER_UPDATE_TASKS.get(task_key)
+    if previous and not previous.done():
+        previous.cancel()
+    _WEATHER_UPDATE_TASKS[task_key] = asyncio.create_task(
+        _refresh_weather_live_snapshot(
+            task_key=task_key,
+            api_entry_point=api_entry_point,
+            city=city,
+            webspace_id=webspace_id,
+        )
+    )
 
 
 CITY_SNAPSHOTS = {
