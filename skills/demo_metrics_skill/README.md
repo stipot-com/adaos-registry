@@ -13,6 +13,7 @@ Its role is to provide one compact, reusable validation surface for:
 - Yjs-backed shared browser state
 - stream-backed live event tails
 - typed semantic browser actions
+- explicit shared browser ownership through `webui_owner: shared`
 
 The current `webui.json` keeps one compatibility-era browser modal so the skill
 can coexist with `webui.v1`.
@@ -34,11 +35,17 @@ Current implementation status:
   workspace-manager bridge
 - the skill now ships a second `operations`-class modal surface that reuses the
   same typed refs while filtering out workspace-only views
+- semantic workspace metadata now also lands in `runtime.surface.*` page state
+  and is stamped into typed host/skill action envelopes
+- the skill now declares `webui_owner: shared` so its browser-facing Yjs defaults
+  and Web UI declarations stay shared across scenario and skill entrypoints
 
 Stand verification checklist:
 
 - open `Demo Metrics` from the desktop or the scenario sidebar
 - confirm the metrics table, chart, event log, and operator notes chat all render
+- confirm the same shared demo state appears both from the scenario surface and
+  from the skill modal/app entrypoint
 - confirm the table uses the Taiga-styled grid surface rather than the old
   compatibility table
 - confirm the chart uses the Taiga-styled semantic chart surface

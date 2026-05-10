@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-10T13:04:27+00:00",
+  "updated_at": "2026-05-10T13:16:15+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -49,8 +49,8 @@
       "kind": "skill",
       "id": "demo_metrics_skill",
       "name": "demo_metrics_skill",
-      "version": "0.9.0",
-      "updated_at": "2026-05-10T09:48:06+00:00",
+      "version": "0.10.0",
+      "updated_at": "2026-05-10T13:16:15+00:00",
       "path": "skills/demo_metrics_skill",
       "manifest": "skills/demo_metrics_skill/skill.yaml",
       "source": {
