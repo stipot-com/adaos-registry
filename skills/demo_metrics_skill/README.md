@@ -22,6 +22,8 @@ draft block intended for the next browser/runtime migration step.
 Current implementation status:
 
 - semantic desktop and modal schemas are adapted into current browser widgets
+- semantic workspace metadata now declares capability-aware composition rules
+  for the demo surface
 - `collection_grid` now renders through a first Taiga-backed grid surface
 - `metric_chart` now renders through a Taiga-backed chart surface
 - `event_log` already maps to the current list/event surface
