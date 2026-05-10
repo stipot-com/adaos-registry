@@ -26,6 +26,8 @@
       "description": "Neutral semantic Web UI control task",
       "buttons": [
         { "id": "open-demo", "label": "Open modal" },
+        { "id": "open-workspace", "label": "Workspace" },
+        { "id": "open-operations", "label": "Operations" },
         { "id": "emit-skill", "label": "Skill event" },
         { "id": "emit-host", "label": "Host event" }
       ]
@@ -149,6 +151,20 @@
           "on": "click:open-demo",
           "type": "openModal",
           "params": { "modalId": "demo_metrics_modal" }
+        },
+        {
+          "on": "click:open-workspace",
+          "type": "openWorkspace",
+          "params": {
+            "modalId": "workspace_manager",
+            "workspaceRef": "workspace:demo_metrics",
+            "entityRef": "skill:demo_metrics_skill"
+          }
+        },
+        {
+          "on": "click:open-operations",
+          "type": "openModal",
+          "params": { "modalId": "demo_metrics_operations_modal" }
         },
         {
           "on": "click:emit-skill",
@@ -426,6 +442,239 @@
                 "config": {
                   "hint": "Notes are seeded from shared demo state.",
                   "alignRightFrom": "operator"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "demo_metrics_operations_modal": {
+        "title": "Demo Operations",
+        "schema": {
+          "id": "demo_metrics_operations_modal",
+          "layout": {
+            "type": "split",
+            "areas": [
+              { "id": "main", "role": "main" },
+              { "id": "right", "role": "aux" },
+              { "id": "bottom", "role": "footer" }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "demo-operations-events",
+              "type": "ui.list",
+              "area": "main",
+              "title": "Live events",
+              "dataSource": {
+                "kind": "stream",
+                "receiver": "demo_metrics.events"
+              },
+              "inputs": {
+                "titleKey": "title",
+                "subtitleKey": "description",
+                "showDetails": false,
+                "itemAccordion": false,
+                "emptyText": "No live demo events yet"
+              }
+            },
+            {
+              "id": "demo-operations-actions",
+              "type": "input.commandBar",
+              "area": "right",
+              "title": "Actions",
+              "inputs": {
+                "variant": "stack",
+                "size": "small",
+                "buttons": [
+                  { "id": "workspace", "label": "Workspace" },
+                  { "id": "emit-skill", "label": "Skill event" },
+                  { "id": "emit-host", "label": "Host event" }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:workspace",
+                  "type": "openWorkspace",
+                  "params": {
+                    "modalId": "workspace_manager",
+                    "workspaceRef": "workspace:demo_metrics",
+                    "entityRef": "skill:demo_metrics_skill"
+                  }
+                },
+                {
+                  "on": "click:emit-skill",
+                  "type": "callSkill",
+                  "target": "demo_metrics_skill.emit_demo_event",
+                  "params": {
+                    "action_id": "operations_skill_button",
+                    "metric_id": "$state.demo_metrics.selection.metric_id"
+                  }
+                },
+                {
+                  "on": "click:emit-host",
+                  "type": "callHost",
+                  "target": "demo_metrics.host_action",
+                  "params": {
+                    "action_id": "operations_host_button",
+                    "metric_id": "$state.demo_metrics.selection.metric_id"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "demo-operations-chart-payload",
+              "type": "visual.metricChart",
+              "area": "right",
+              "title": "Selected metric",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/demo_metrics/chart"
+              },
+              "inputs": {
+                "stateKey": "demo_metrics.selection",
+                "xKey": "ts",
+                "yKey": "value",
+                "emptyText": "No chart payload yet"
+              }
+            },
+            {
+              "id": "demo-operations-chat",
+              "type": "ui.chat",
+              "area": "bottom",
+              "title": "Operator notes",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/demo_metrics/chat"
+              },
+              "inputs": {
+                "hint": "Operations surface keeps notes visible next to live state.",
+                "alignRightFrom": "operator"
+              }
+            }
+          ],
+          "semantic": {
+            "$schema": "../../../../src/adaos/abi/webui.semantic.v0.schema.json",
+            "id": "demo_metrics_operations_semantic",
+            "title": "Demo Operations Semantic Surface",
+            "workspace": {
+              "surfaceClass": "operations",
+              "objectKind": "demo_metric_suite",
+              "entityRef": "skill:demo_metrics_skill",
+              "capabilities": [
+                "inspectable",
+                "streamable",
+                "eventful"
+              ],
+              "lifecycleStage": "active"
+            },
+            "layout": {
+              "pattern": "split",
+              "areas": [
+                { "id": "main", "role": "main" },
+                { "id": "right", "role": "aux" },
+                { "id": "bottom", "role": "footer" }
+              ]
+            },
+            "viewState": [
+              {
+                "ref": "view:demo_metrics.selection",
+                "default": {
+                  "metric_id": "cpu",
+                  "status_filter": "all",
+                  "group_filter": "all"
+                },
+                "persistence": "local_persisted"
+              }
+            ],
+            "views": [
+              {
+                "id": "operations_events",
+                "kind": "event_log",
+                "area": "main",
+                "title": "Live events",
+                "when": {
+                  "requiredCapabilities": ["eventful"],
+                  "surfaceClasses": ["operations"],
+                  "lifecycleStages": ["active"]
+                },
+                "source": {
+                  "kind": "stream",
+                  "ref": "stream:demo_metrics.events",
+                  "scope": "shared",
+                  "transport": "auto"
+                }
+              },
+              {
+                "id": "operations_chart",
+                "kind": "metric_chart",
+                "area": "right",
+                "title": "Selected metric",
+                "when": {
+                  "requiredCapabilities": ["inspectable"],
+                  "surfaceClasses": ["operations"],
+                  "lifecycleStages": ["active"]
+                },
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/chart",
+                  "scope": "shared"
+                },
+                "selection": {
+                  "kind": "view",
+                  "ref": "view:demo_metrics.selection",
+                  "scope": "local"
+                },
+                "config": {
+                  "xKey": "ts",
+                  "yKey": "value",
+                  "seriesLabelKey": "title"
+                }
+              },
+              {
+                "id": "operations_chat",
+                "kind": "chat_panel",
+                "area": "bottom",
+                "title": "Operator notes",
+                "when": {
+                  "requiredCapabilities": ["streamable"],
+                  "surfaceClasses": ["operations"],
+                  "lifecycleStages": ["active"]
+                },
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/chat",
+                  "scope": "shared"
+                },
+                "config": {
+                  "hint": "Operations surface keeps notes visible next to live state.",
+                  "alignRightFrom": "operator"
+                }
+              },
+              {
+                "id": "workspace_only_grid_proof",
+                "kind": "collection_grid",
+                "area": "main",
+                "title": "Workspace-only grid",
+                "when": {
+                  "requiredCapabilities": ["listable"],
+                  "surfaceClasses": ["workspace"],
+                  "lifecycleStages": ["active"]
+                },
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/table",
+                  "scope": "shared"
+                },
+                "selection": {
+                  "kind": "view",
+                  "ref": "view:demo_metrics.selection",
+                  "scope": "local"
+                },
+                "config": {
+                  "columns": [
+                    { "key": "title", "label": "Metric" }
+                  ]
                 }
               }
             ]

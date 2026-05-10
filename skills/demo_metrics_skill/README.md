@@ -30,6 +30,10 @@ Current implementation status:
 - `chat_panel` now maps to the current chat surface through the semantic adapter
 - desktop and modal action buttons now exercise `open_modal`, `call_host`, and
   `invoke_skill_action` paths against the live demo surface
+- the summary tile now also exercises typed `open_workspace` through the
+  workspace-manager bridge
+- the skill now ships a second `operations`-class modal surface that reuses the
+  same typed refs while filtering out workspace-only views
 
 Stand verification checklist:
 
@@ -41,6 +45,10 @@ Stand verification checklist:
 - confirm the operator notes block is rendered through the semantic chat path
 - click `Skill event` and confirm a new live event appears in the event log
 - click `Host event` and confirm a new live event appears in the event log
+- click `Workspace` and confirm the workspace manager opens through the typed
+  `open_workspace` path
+- click `Operations` and confirm the operations modal opens with event, chart,
+  and operator-notes surfaces
 - click `Open modal` and confirm the modal opens through the typed `open_modal`
   path
 - select `CPU Load`, `Memory Pressure`, and `Queue Depth` in the table

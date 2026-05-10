@@ -1,5 +1,5 @@
 name: demo_metrics_skill
-version: 0.8.0
+version: 0.9.0
 description: Neutral demo skill for semantic Web UI migration with a metrics table,
   chart payload, and live event stream.
 runtime:
@@ -90,5 +90,5 @@ tools:
     required:
     - ok
     - event
-updated_at: '2026-05-10T04:49:20+00:00'
+updated_at: '2026-05-10T09:48:06+00:00'
 
