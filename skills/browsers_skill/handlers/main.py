@@ -9,7 +9,7 @@ from adaos.sdk.data import access_links as sdk_access_links
 from adaos.sdk.data import device_access as sdk_device_access
 from adaos.sdk.data import ctx_subnet
 from adaos.sdk.io import stream_publish
-from adaos.services.workspaces import index as workspace_index
+from adaos.services.yjs.webspace import default_webspace_id
 
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
 REQUIRES_DATA_PROJECTIONS = [
@@ -54,15 +54,11 @@ def _iso(value: Any) -> str | None:
     return datetime.fromtimestamp(token, tz=timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _known_webspaces(target_ws: str | None = None) -> list[str]:
-    values = {"default"}
-    if target_ws:
-        values.add(str(target_ws or "").strip() or "default")
-    for row in list(workspace_index.list_workspaces() or []):
-        token = str(getattr(row, "workspace_id", "") or "").strip()
-        if token:
-            values.add(token)
-    return sorted(values)
+def _target_webspaces(target_ws: str | None = None) -> list[str]:
+    token = str(target_ws or "").strip()
+    if token:
+        return [token]
+    return [default_webspace_id()]
 
 
 def _run_coro(coro: Any) -> Any:
@@ -171,7 +167,7 @@ def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
         "subtitle": f"{len(devices)} devices | {len(clients)} clients",
         "details": f"{sum(1 for entry in all_entries if bool(entry.get('online')))} online",
     }
-    effective_ws = str(target_ws or "default").strip() or "default"
+    effective_ws = str(target_ws or default_webspace_id()).strip() or default_webspace_id()
     current_device_id = _resolve_current_browser_id(devices + clients, effective_ws)
     current_summary, current_name = _current_browser_payload(current_device_id)
     return ({
@@ -186,7 +182,7 @@ def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
 async def _publish_snapshot(target_ws: str | None = None) -> dict[str, Any]:
     payload, effective_ws = _build_snapshot(target_ws)
     available_entries = list(payload["devices"]) + list(payload["clients"])
-    for ws in _known_webspaces(effective_ws):
+    for ws in _target_webspaces(effective_ws):
         await ctx_subnet.set_async("browsers.summary", payload["summary"], webspace_id=ws)
         await ctx_subnet.set_async("browsers.devices", payload["devices"], webspace_id=ws)
         await ctx_subnet.set_async("browsers.clients", payload["clients"], webspace_id=ws)
