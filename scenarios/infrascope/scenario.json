@@ -204,10 +204,14 @@
                 "titleKey": "title",
                 "subtitleKey": "subtitle",
                 "iconKey": "icon",
-                "itemAccordion": true,
-                "detailsPath": "details",
+                "itemAccordion": false,
+                "detailsPath": "",
                 "detailsModal": true,
-                "detailsModalTitleKey": "title"
+                "detailsModalTitleKey": "title",
+                "detailsDataSource": {
+                  "kind": "stream",
+                  "receiver": "infrascope.inspector.$event.object_id"
+                }
               },
               "actions": [
                 {
@@ -247,10 +251,14 @@
                 "titleKey": "title",
                 "subtitleKey": "subtitle",
                 "iconKey": "icon",
-                "itemAccordion": true,
-                "detailsPath": "details",
+                "itemAccordion": false,
+                "detailsPath": "",
                 "detailsModal": true,
-                "detailsModalTitleKey": "title"
+                "detailsModalTitleKey": "title",
+                "detailsDataSource": {
+                  "kind": "stream",
+                  "receiver": "infrascope.inspector.$event.object_id"
+                }
               },
               "actions": [
                 {
@@ -279,10 +287,14 @@
                 "titleKey": "title",
                 "subtitleKey": "subtitle",
                 "iconKey": "icon",
-                "itemAccordion": true,
-                "detailsPath": "details",
+                "itemAccordion": false,
+                "detailsPath": "",
                 "detailsModal": true,
-                "detailsModalTitleKey": "title"
+                "detailsModalTitleKey": "title",
+                "detailsDataSource": {
+                  "kind": "stream",
+                  "receiver": "infrascope.inspector.$event.object_id"
+                }
               },
               "actions": [
                 {
