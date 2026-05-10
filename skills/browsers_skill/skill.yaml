@@ -1,12 +1,38 @@
 name: browsers_skill
-version: 0.6.0
+version: 0.7.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
 description: ''
 dependencies: []
 events: {}
+data_projections:
+- scope: subnet
+  slot: browsers.summary
+  targets:
+  - backend: yjs
+    path: data/browsers/summary
+- scope: subnet
+  slot: browsers.devices
+  targets:
+  - backend: yjs
+    path: data/browsers/devices
+- scope: subnet
+  slot: browsers.clients
+  targets:
+  - backend: yjs
+    path: data/browsers/clients
+- scope: subnet
+  slot: browsers.current_summary
+  targets:
+  - backend: yjs
+    path: data/browsers/current_summary
+- scope: subnet
+  slot: browsers.current_name
+  targets:
+  - backend: yjs
+    path: data/browsers/current_name
 tools: []
 exports: {}
-updated_at: '2026-05-06T22:27:39+00:00'
+updated_at: '2026-05-10T03:04:46+00:00'
 
