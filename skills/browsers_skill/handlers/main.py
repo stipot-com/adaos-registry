@@ -12,6 +12,13 @@ from adaos.sdk.io import stream_publish
 from adaos.services.workspaces import index as workspace_index
 
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
+REQUIRES_DATA_PROJECTIONS = [
+    "browsers.summary",
+    "browsers.devices",
+    "browsers.clients",
+    "browsers.current_summary",
+    "browsers.current_name",
+]
 
 
 def lang_res() -> Dict[str, str]:
@@ -270,7 +277,7 @@ def _coerce_device_ref(
 @tool
 def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     payload = _refresh_snapshot_sync(webspace_id)
-    return {"ok": True, "summary": payload.get("summary") or {}}
+    return {"ok": True, "summary": payload.get("summary") or {}, "delivery": "stream"}
 
 
 @subscribe("webio.stream.snapshot.requested")
