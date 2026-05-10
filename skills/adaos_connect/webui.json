@@ -58,7 +58,7 @@
                 {
                   "on": "click:browser",
                   "type": "callHost",
-                  "target": "adaos_connect.prepare",
+                  "target": "adaos_connect.prepare.browser",
                   "params": {
                     "mode": "browser",
                     "refresh": true
@@ -74,7 +74,7 @@
                 {
                   "on": "click:telegram",
                   "type": "callHost",
-                  "target": "adaos_connect.prepare",
+                  "target": "adaos_connect.prepare.telegram",
                   "params": {
                     "mode": "telegram",
                     "refresh": true
@@ -90,7 +90,7 @@
                 {
                   "on": "click:node",
                   "type": "callHost",
-                  "target": "adaos_connect.prepare",
+                  "target": "adaos_connect.prepare.node",
                   "params": {
                     "mode": "node",
                     "refresh": true

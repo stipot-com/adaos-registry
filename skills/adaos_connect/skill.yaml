@@ -1,5 +1,5 @@
 name: adaos_connect
-version: 0.12.0
+version: 0.14.0
 entry: handlers/main.py
 description: Network expansion assistant for browser, Telegram, and node join flows
   via YJS-driven modal UI.
@@ -7,14 +7,59 @@ runtime:
   python: '3.11'
 dependencies:
 - httpx>=0.27
+- PyYAML>=6
 - y-py>=0.6
 events:
   subscribe:
   - adaos_connect.prepare
-  publish: []
-tools: []
+  - adaos_connect.prepare.browser
+  - adaos_connect.prepare.telegram
+  - adaos_connect.prepare.node
+  publish:
+  - adaos_connect.ready
+  - adaos_connect.error
+data_projections:
+- scope: subnet
+  slot: adaos_connect.current
+  targets:
+  - backend: yjs
+    path: data/adaos_connect/current
+tools:
+- name: prepare
+  description: Prepare browser, Telegram, or node join connection data and project
+    it to the AdaOS Connect UI.
+  entry: handlers.main:prepare
+  input_schema:
+    type: object
+    properties:
+      mode:
+        type: string
+        enum:
+        - browser
+        - telegram
+        - node
+      webspace_id:
+        type: string
+      refresh:
+        type: boolean
+      force_new:
+        type: boolean
+      renew:
+        type: boolean
+  output_schema:
+    type: object
+    required:
+    - ok
+    properties:
+      ok:
+        type: boolean
+      current:
+        type: object
+      cached:
+        type: boolean
 exports:
-  tools: []
+  tools:
+  - prepare
 prototype: default
-updated_at: '2026-05-05T09:08:05+00:00'
+updated_at: '2026-05-10T12:04:50+00:00'
 

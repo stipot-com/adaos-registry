@@ -7,11 +7,15 @@ import os
 import shlex
 import time
 from itertools import count
+from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from adaos.sdk.core.decorators import subscribe
-from adaos.sdk.web import webspace_ydoc
+import yaml
+
+from adaos.sdk.core.context import clear_current_skill, set_current_skill
+from adaos.sdk.core.decorators import subscribe, tool
+from adaos.sdk.data import ctx_subnet
 from adaos.services.agent_context import get_ctx
 from adaos.services.node_config import _expand_path, load_config
 from adaos.services.root.client import RootHttpClient, RootHttpError
@@ -31,6 +35,7 @@ _prepare_request_counter = count(1)
 _prepare_latest_request: dict[str, str] = {}
 _prepare_tasks: dict[str, asyncio.Task[None]] = {}
 _prepare_cache: dict[tuple[str, str], dict[str, Any]] = {}
+_projections_loaded = False
 
 
 def _payload(evt: Any) -> Dict[str, Any]:
@@ -258,6 +263,34 @@ def _root_client(context: Dict[str, Any], *, use_cert: bool) -> RootHttpClient:
     )
 
 
+def _load_skill_data_projections() -> None:
+    global _projections_loaded
+    if _projections_loaded:
+        return
+    try:
+        ctx = get_ctx()
+        try:
+            existing = ctx.projections.resolve("subnet", "adaos_connect.current")
+        except Exception:
+            existing = []
+        if existing:
+            _projections_loaded = True
+            return
+        skills_root = ctx.paths.skills_workspace_dir()
+        skills_root = skills_root() if callable(skills_root) else skills_root
+        manifest_path = Path(skills_root) / "adaos_connect" / "skill.yaml"
+        if not manifest_path.exists():
+            _log.warning("adaos_connect skill.yaml not found for data_projections path=%s", manifest_path)
+            return
+        spec = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        entries = spec.get("data_projections") or []
+        if isinstance(entries, list) and entries:
+            ctx.projections.load_entries(entries)
+            _projections_loaded = True
+    except Exception:
+        _log.debug("failed to load adaos_connect data_projections", exc_info=True)
+
+
 def _browser_link(*, app_base_url: str, code: str, zone_id: str | None) -> str:
     parsed = urlsplit(app_base_url)
     query = {"pair_code": code}
@@ -353,17 +386,18 @@ def _node_connect_command(*, code: str, root_base_url: str, hub_id: str | None) 
 
 
 async def _write_current(webspace_id: str, current: Dict[str, Any]) -> None:
-    async with webspace_ydoc(webspace_id, load_mark_roots=["data"]) as ydoc:
-        data_map = ydoc.get_map("data")
-        current_root = data_map.get("adaos_connect") or {}
-        if isinstance(current_root, dict):
-            next_root = dict(current_root)
-        else:
-            items = getattr(current_root, "items", None)
-            next_root = dict(items()) if callable(items) else {}
-        next_root["current"] = current
-        with ydoc.begin_transaction() as txn:
-            data_map.set(txn, "adaos_connect", next_root)
+    _load_skill_data_projections()
+    pushed = False
+    try:
+        pushed = set_current_skill("adaos_connect")
+        await ctx_subnet.set_async(
+            "adaos_connect.current",
+            dict(current),
+            webspace_id=webspace_id,
+        )
+    finally:
+        if pushed:
+            clear_current_skill()
 
 
 def _base_current(mode: str) -> Dict[str, Any]:
@@ -641,6 +675,50 @@ async def _finish_prepare(mode: str, webspace_id: str, request_id: str, context:
 @subscribe("adaos_connect.prepare")
 async def on_prepare(evt: Any) -> None:
     payload = _payload(evt)
+    await _prepare_from_payload(payload)
+
+
+@subscribe("adaos_connect.prepare.browser")
+async def on_prepare_browser(evt: Any) -> None:
+    payload = _payload(evt)
+    payload["mode"] = "browser"
+    await _prepare_from_payload(payload)
+
+
+@subscribe("adaos_connect.prepare.telegram")
+async def on_prepare_telegram(evt: Any) -> None:
+    payload = _payload(evt)
+    payload["mode"] = "telegram"
+    await _prepare_from_payload(payload)
+
+
+@subscribe("adaos_connect.prepare.node")
+async def on_prepare_node(evt: Any) -> None:
+    payload = _payload(evt)
+    payload["mode"] = "node"
+    await _prepare_from_payload(payload)
+
+
+@tool("prepare")
+async def prepare(
+    mode: str = "browser",
+    webspace_id: str | None = None,
+    refresh: bool = True,
+    force_new: bool = False,
+    renew: bool = False,
+    **_: Any,
+) -> dict[str, Any]:
+    payload = {
+        "mode": mode,
+        "webspace_id": webspace_id,
+        "refresh": refresh,
+        "force_new": force_new,
+        "renew": renew,
+    }
+    return await _prepare_from_payload(payload, wait=True)
+
+
+async def _prepare_from_payload(payload: Dict[str, Any], *, wait: bool = False) -> dict[str, Any]:
     mode = str(payload.get("mode") or "browser").strip().lower() or "browser"
     webspace_id = _webspace_id(payload)
     context = _resolve_context()
@@ -650,8 +728,12 @@ async def on_prepare(evt: Any) -> None:
         cached = _cached_current(webspace_id, mode, context, request_id=request_id)
         if cached is not None:
             await _write_current(webspace_id, cached)
-            return
+            return {"ok": True, "cached": True, "current": cached}
     await _write_current(webspace_id, _pending_current(mode, context, request_id=request_id))
+    if wait:
+        await _finish_prepare(mode, webspace_id, request_id, context)
+        current = _cached_current(webspace_id, mode, context, request_id=request_id)
+        return {"ok": bool(current and current.get("status") == "ready"), "cached": False, "current": current or {}}
     task = asyncio.create_task(
         _finish_prepare(mode, webspace_id, request_id, context),
         name=f"adaos-connect-prepare:{webspace_id}:{mode}",
@@ -663,3 +745,4 @@ async def on_prepare(evt: Any) -> None:
             _prepare_tasks.pop(ws, None)
 
     task.add_done_callback(lambda done, ws=webspace_id: _cleanup(done, ws=ws))
+    return {"ok": True, "accepted": True, "webspace_id": webspace_id, "mode": mode, "request_id": request_id}
