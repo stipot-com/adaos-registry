@@ -1,5 +1,5 @@
 name: voice_chat_skill
-version: 0.2.0
+version: 0.4.0
 description: Voice chat bridge for web_desktop (text in -> publish chat + TTS via
   io.out.*; RouterService projects into Yjs by webspace_id).
 runtime:
@@ -9,6 +9,12 @@ events:
   publish:
   - io.out.chat.append
   - io.out.say
+data_projections:
+- scope: subnet
+  slot: voice_chat.state
+  targets:
+  - backend: yjs
+    path: data/voice_chat
 default_tool: handle_text
 tools:
 - name: handle_text
@@ -31,5 +37,5 @@ tools:
     additionalProperties: true
   output_schema:
     type: object
-updated_at: '2026-05-07T12:55:43+00:00'
+updated_at: '2026-05-10T12:41:14+00:00'
 

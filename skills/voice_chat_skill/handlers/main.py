@@ -5,14 +5,12 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 import logging
-import queue
-import threading
 
 from adaos.sdk.core.decorators import tool
+from adaos.sdk.data import ctx_subnet
 from adaos.sdk.io.out import chat_append, say
 from adaos.services.agent_context import get_ctx
-from adaos.services.scenario.node_data_scope import node_scope_data_path
-from adaos.services.yjs.doc import get_ydoc
+from adaos.services.yjs.webspace import default_webspace_id
 from adaos.skills.runtime_runner import execute_tool
 
 
@@ -48,83 +46,74 @@ _CITY_ALIASES: dict[str, tuple[str, str]] = {
 }
 
 _log = logging.getLogger("adaos.voice_chat_skill")
+REQUIRES_DATA_PROJECTIONS = ["voice_chat.state"]
+_MAX_MESSAGES = 80
+_STATE_BY_KEY: dict[str, dict[str, Any]] = {}
 
 
-def _voice_chat_data_path(target_node_id: str | None) -> str:
-    return node_scope_data_path("data/voice_chat", str(target_node_id or "").strip())
+def _webspace_id_from_meta(meta: Mapping[str, Any] | None) -> str:
+    if isinstance(meta, Mapping):
+        token = str(meta.get("webspace_id") or meta.get("workspace_id") or "").strip()
+        if token:
+            return token
+    return default_webspace_id()
 
 
-def _read_voice_chat_state(webspace_id: str, target_node_id: str | None = None) -> dict[str, Any]:
-    path = _voice_chat_data_path(target_node_id)
-    segments = [segment for segment in str(path or "").split("/") if segment]
-    with get_ydoc(str(webspace_id or "default")) as ydoc:
-        data_map = ydoc.get_map("data")
-        current = data_map.to_json() if hasattr(data_map, "to_json") else {}
-    if isinstance(current, str):
-        try:
-            import json
+def _state_key(webspace_id: str, target_node_id: str | None = None) -> str:
+    return f"{str(webspace_id or default_webspace_id()).strip() or default_webspace_id()}\0{str(target_node_id or '').strip()}"
 
-            current = json.loads(current)
-        except Exception:
-            current = {}
-    if not isinstance(current, dict):
-        return {"messages": [], "last_refresh_ts": time.time()}
-    cursor: Any = current
-    for segment in segments[1:]:
-        if not isinstance(cursor, dict):
-            return {"messages": [], "last_refresh_ts": time.time()}
-        cursor = cursor.get(segment)
-    state = dict(cursor) if isinstance(cursor, dict) else {}
-    messages = state.get("messages")
-    if not isinstance(messages, list):
+
+def _state_for(webspace_id: str, target_node_id: str | None = None) -> dict[str, Any]:
+    key = _state_key(webspace_id, target_node_id)
+    state = _STATE_BY_KEY.get(key)
+    if not isinstance(state, dict):
+        state = {"messages": [], "last_refresh_ts": time.time()}
+        _STATE_BY_KEY[key] = state
+    if not isinstance(state.get("messages"), list):
         state["messages"] = []
-    state.setdefault("last_refresh_ts", time.time())
     return state
 
 
-def _read_voice_chat_state_guarded(
-    webspace_id: str,
-    target_node_id: str | None = None,
-    *,
-    timeout_s: float = 1.5,
-) -> dict[str, Any]:
-    result_q: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
-
-    def _worker() -> None:
-        try:
-            result_q.put((True, _read_voice_chat_state(webspace_id, target_node_id)), block=False)
-        except Exception as exc:
-            try:
-                result_q.put((False, exc), block=False)
-            except Exception:
-                pass
-
-    thread = threading.Thread(target=_worker, name="voice-chat-snapshot-read", daemon=True)
-    thread.start()
-    try:
-        ok, value = result_q.get(timeout=timeout_s)
-    except queue.Empty:
-        _log.warning(
-            "voice_chat snapshot read timed out webspace=%s target_node_id=%s timeout_s=%.1f",
-            webspace_id,
-            target_node_id or "",
-            timeout_s,
-        )
-        return {
-            "messages": [],
-            "last_refresh_ts": time.time(),
-            "degraded": True,
-            "error": "voice_snapshot_timeout",
-        }
-    if ok and isinstance(value, dict):
-        return value
-    _log.warning("voice_chat snapshot read failed webspace=%s error=%s", webspace_id, value)
+def _message(from_: str, text: str) -> dict[str, Any]:
+    ts = time.time()
     return {
-        "messages": [],
-        "last_refresh_ts": time.time(),
-        "degraded": True,
-        "error": f"voice_snapshot_failed:{type(value).__name__}",
+        "id": f"m.{int(ts * 1000)}.{from_}",
+        "from": str(from_ or "hub").strip() or "hub",
+        "text": str(text or ""),
+        "ts": ts,
     }
+
+
+def _project_state(webspace_id: str, target_node_id: str | None = None) -> None:
+    state = _state_for(webspace_id, target_node_id)
+    payload = {
+        "messages": list(state.get("messages") or [])[-_MAX_MESSAGES:],
+        "last_refresh_ts": state.get("last_refresh_ts") or time.time(),
+    }
+    try:
+        ctx_subnet.set("voice_chat.state", payload, webspace_id=webspace_id)
+    except Exception as exc:
+        _log.warning("voice_chat projection failed webspace=%s error=%s", webspace_id, exc)
+
+
+def _append_projected_message(
+    webspace_id: str,
+    target_node_id: str | None,
+    *,
+    from_: str,
+    text: str,
+) -> None:
+    state = _state_for(webspace_id, target_node_id)
+    messages = list(state.get("messages") or [])
+    messages.append(_message(from_, text))
+    state["messages"] = messages[-_MAX_MESSAGES:]
+    state["last_refresh_ts"] = time.time()
+    _project_state(webspace_id, target_node_id)
+
+
+def _append_reply(reply: str, *, webspace_id: str, target_node_id: str | None) -> None:
+    chat_append(reply, from_="hub", _meta={"webspace_id": webspace_id, "target_node_id": target_node_id})
+    _append_projected_message(webspace_id, target_node_id, from_="hub", text=reply)
 
 
 def _normalize_city_key(text: str) -> str:
@@ -215,38 +204,41 @@ def handle_text(text: str, _meta: Mapping[str, Any] | None = None, **_: Any) -> 
     if not isinstance(text, str) or not text.strip():
         return {"ok": False, "error": "text_required"}
     text = text.strip()
+    webspace_id = _webspace_id_from_meta(meta)
+    target_node_id = str(meta.get("target_node_id") or meta.get("node_id") or "").strip() or None
+    _append_projected_message(webspace_id, target_node_id, from_="user", text=text)
 
     city_raw = _extract_city(text)
     if not city_raw:
         reply = "Пока я понимаю только запросы про погоду. Скажи: «Какая погода в Москве?»"
-        chat_append(reply, from_="hub")
+        _append_reply(reply, webspace_id=webspace_id, target_node_id=target_node_id)
         return {"ok": False, "error": "intent_not_supported"}
 
     city_for_weather, city_display = _canon_city_for_weather(city_raw)
     if not city_for_weather:
         reply = "Не понял город. Попробуй: «Какая погода в Москве?»"
-        chat_append(reply, from_="hub")
+        _append_reply(reply, webspace_id=webspace_id, target_node_id=target_node_id)
         return {"ok": False, "error": "city_required"}
 
     try:
         result = _call_weather_tool(city_for_weather)
     except Exception as exc:
         reply = f"Ошибка при получении погоды: {exc}"
-        chat_append(reply, from_="hub")
+        _append_reply(reply, webspace_id=webspace_id, target_node_id=target_node_id)
         return {"ok": False, "error": str(exc)}
 
     ok = isinstance(result, dict) and bool(result.get("ok"))
     if not ok:
         err = result.get("error") if isinstance(result, dict) else None
         reply = f"Не удалось получить погоду в {city_display}." + (f" ({err})" if err else "")
-        chat_append(reply, from_="hub")
+        _append_reply(reply, webspace_id=webspace_id, target_node_id=target_node_id)
         return {"ok": False, "error": err or "weather_failed"}
 
     temp = result.get("temp_c") if result.get("temp_c") is not None else result.get("temp")
     desc = result.get("condition") or result.get("description") or ""
     reply = f"Погода в {city_display}: {temp}°C, {desc}".strip().rstrip(",")
 
-    chat_append(reply, from_="hub")
+    _append_reply(reply, webspace_id=webspace_id, target_node_id=target_node_id)
     say(reply, lang=meta.get("lang") or "ru-RU")
     return {"ok": True, "reply": reply, "ts": time.time()}
 
@@ -260,8 +252,9 @@ def get_snapshot(
     **_: Any,
 ) -> Mapping[str, Any]:
     selected_node_id = str(target_node_id or node_id or "").strip() or None
-    selected_webspace = str(webspace_id or "default").strip() or "default"
-    snapshot = _read_voice_chat_state_guarded(selected_webspace, selected_node_id)
+    selected_webspace = str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
+    snapshot = dict(_state_for(selected_webspace, selected_node_id))
+    _project_state(selected_webspace, selected_node_id)
     return {
         "voice_chat": snapshot,
         **snapshot,
