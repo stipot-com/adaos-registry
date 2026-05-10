@@ -13,6 +13,10 @@
       "id": "mediaserver_widget",
       "title": "Media Server",
       "type": "media.videoBrowser",
+      "dataSource": {
+        "kind": "y",
+        "path": "data/media/library"
+      },
       "inputs": {
         "compact": true,
         "modalId": "mediaserver_modal",
@@ -41,6 +45,10 @@
               "type": "media.videoBrowser",
               "area": "main",
               "title": "Media Library",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/media/library"
+              },
               "inputs": {
                 "compact": false,
                 "modalId": "mediaserver_modal",
@@ -53,7 +61,18 @@
     },
     "widgets": {}
   },
-  "ydoc_defaults": {},
+  "ydoc_defaults": {
+    "data/media/library": {
+      "items": [],
+      "capabilities": {},
+      "summary": {
+        "title": "Media Server",
+        "value": 0,
+        "subtitle": "0 media files",
+        "details": "waiting for projection"
+      }
+    }
+  },
   "contributions": [
     {
       "extensionPoint": "desktop.apps",

@@ -1,5 +1,5 @@
 name: mediaserver
-version: 0.5.0
+version: 0.7.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -7,6 +7,12 @@ description: Local MVP media debugging skill for upload/playback diagnostics and
   readiness checks.
 dependencies: []
 events: {}
+data_projections:
+- scope: subnet
+  slot: mediaserver.library
+  targets:
+  - backend: yjs
+    path: data/media/library
 default_tool: get_snapshot
 tools:
 - name: get_snapshot
@@ -22,5 +28,13 @@ tools:
     - ok
     - items
     - capabilities
-updated_at: '2026-05-05T16:51:25+00:00'
+- name: refresh_snapshot
+  description: Refresh media library projection and return a lightweight acknowledgement.
+  entry: handlers.main:refresh_snapshot
+  input_schema:
+    type: object
+    additionalProperties: true
+  output_schema:
+    type: object
+updated_at: '2026-05-10T12:40:58+00:00'
 

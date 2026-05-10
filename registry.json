@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-10T12:40:47+00:00",
+  "updated_at": "2026-05-10T12:40:58+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -192,8 +192,8 @@
       "kind": "skill",
       "id": "mediaserver",
       "name": "mediaserver",
-      "version": "0.5.0",
-      "updated_at": "2026-05-05T16:51:25+00:00",
+      "version": "0.7.0",
+      "updated_at": "2026-05-10T12:40:58+00:00",
       "path": "skills/mediaserver",
       "manifest": "skills/mediaserver/skill.yaml",
       "source": {
@@ -208,7 +208,7 @@
       "description": "Local MVP media debugging skill for upload/playback diagnostics and media-channel readiness checks.",
       "entry": "handlers/main.py",
       "runtime_python": "3.11",
-      "tools_count": 1
+      "tools_count": 2
     },
     {
       "kind": "skill",
