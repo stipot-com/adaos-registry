@@ -39,6 +39,14 @@
                     "label": "Open Demo Metrics"
                   },
                   {
+                    "id": "open-workspace",
+                    "label": "Workspace"
+                  },
+                  {
+                    "id": "open-operations",
+                    "label": "Operations"
+                  },
+                  {
                     "id": "emit-skill",
                     "label": "Skill event"
                   },
@@ -55,6 +63,22 @@
                   "type": "openModal",
                   "params": {
                     "modalId": "demo_metrics_modal"
+                  }
+                },
+                {
+                  "on": "click:open-workspace",
+                  "type": "openWorkspace",
+                  "params": {
+                    "modalId": "workspace_manager",
+                    "workspaceRef": "workspace:demo_metrics",
+                    "entityRef": "scenario:taiga_ui_demo_scenario"
+                  }
+                },
+                {
+                  "on": "click:open-operations",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "demo_metrics_operations_modal"
                   }
                 },
                 {
@@ -92,6 +116,22 @@
                   "type": "openModal",
                   "params": {
                     "modalId": "demo_metrics_modal"
+                  }
+                },
+                {
+                  "on": "click:open-workspace",
+                  "type": "openWorkspace",
+                  "params": {
+                    "modalId": "workspace_manager",
+                    "workspaceRef": "workspace:demo_metrics",
+                    "entityRef": "scenario:taiga_ui_demo_scenario"
+                  }
+                },
+                {
+                  "on": "click:open-operations",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "demo_metrics_operations_modal"
                   }
                 },
                 {

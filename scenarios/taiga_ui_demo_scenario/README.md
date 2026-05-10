@@ -33,6 +33,10 @@ Current implementation status:
 - the semantic chat surface now renders through the shared chat widget path
 - desktop and modal actions now drive live demo events through both host and
   skill action paths
+- the desktop launch surface now exercises typed `open_workspace` through the
+  workspace-manager bridge
+- the demo package now includes a second `operations`-class modal surface so
+  workspace and operations composition can be compared on the same stand
 
 Stand verification checklist:
 
@@ -43,6 +47,10 @@ Stand verification checklist:
 - confirm the operator notes chat is rendered by the semantic chat path
 - click `Skill event` and confirm the event log receives a live update
 - click `Host event` and confirm the event log receives a live update
+- click `Workspace` and confirm the workspace manager opens through the typed
+  `open_workspace` path
+- click `Operations` and confirm the operations modal opens with event, chart,
+  and chat surfaces but without the workspace-only grid
 - click `Open Demo Metrics` and confirm the modal opens through the typed action
   path
 - click different table rows and confirm the chart changes accordingly
