@@ -13,9 +13,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
 
-from adaos.sdk.core.context import clear_current_skill, set_current_skill
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet
+from adaos.sdk.data.context import clear_current_skill, set_current_skill
 from adaos.services.agent_context import get_ctx
 from adaos.services.node_config import _expand_path, load_config
 from adaos.services.root.client import RootHttpClient, RootHttpError
