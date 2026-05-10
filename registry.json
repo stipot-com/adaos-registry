@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-10T12:40:14+00:00",
+  "updated_at": "2026-05-10T12:40:32+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -125,8 +125,8 @@
       "kind": "skill",
       "id": "infrascope_skill",
       "name": "infrascope_skill",
-      "version": "0.24.0",
-      "updated_at": "2026-05-10T11:50:33+00:00",
+      "version": "0.26.0",
+      "updated_at": "2026-05-10T12:40:32+00:00",
       "path": "skills/infrascope_skill",
       "manifest": "skills/infrascope_skill/skill.yaml",
       "source": {

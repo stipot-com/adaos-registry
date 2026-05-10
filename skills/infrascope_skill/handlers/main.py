@@ -1142,7 +1142,8 @@ def _refresh_snapshot_targets(targets: list[str]) -> dict[str, Any]:
         "ok": True,
         "projected": projected,
         "webspaces": targets,
-        "snapshot": last_snapshot or {},
+        "snapshot": _compact_snapshot_for_yjs(last_snapshot or {}),
+        "details": {"delivery": "streams"},
     }
 
 
@@ -1330,7 +1331,7 @@ def get_object_inspector(
 @tool("get_snapshot")
 def get_snapshot(webspace_id: str | None = None, task_goal: str | None = None) -> dict[str, Any]:
     _ensure_skill_data_projections()
-    return _snapshot_or_fallback(webspace_id=webspace_id, task_goal=task_goal)
+    return _compact_snapshot_for_yjs(_snapshot_or_fallback(webspace_id=webspace_id, task_goal=task_goal))
 
 
 @tool("refresh_snapshot")
@@ -1345,7 +1346,13 @@ def refresh_snapshot(webspace_id: str | None = None, task_goal: str | None = Non
             if _project_snapshot(snapshot, webspace_id=target_ws):
                 projected += 1
             _publish_snapshot_streams(snapshot, webspace_id=target_ws)
-        return {"ok": True, "projected": projected, "webspaces": targets, "snapshot": last_snapshot or {}}
+        return {
+            "ok": True,
+            "projected": projected,
+            "webspaces": targets,
+            "snapshot": _compact_snapshot_for_yjs(last_snapshot or {}),
+            "details": {"delivery": "streams"},
+        }
     return _refresh_snapshot_targets(_refresh_projection_targets(webspace_id=webspace_id))
 
 
