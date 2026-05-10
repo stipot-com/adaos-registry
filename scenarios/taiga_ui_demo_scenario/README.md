@@ -41,11 +41,15 @@ Current implementation status:
   typed actions can carry stable surface context
 - the scenario now also ships an explicit top-level `workspace` shell surface
   under `ui.application.workspace.pageSchema`
+- the paired demo skill now declares `webui_owner: shared` so the scenario and
+  the skill entrypoint read the same browser-facing Yjs state
 
 Stand verification checklist:
 
 - load `taiga_ui_demo_scenario`
 - verify the desktop surface shows summary, table, chart, event, and chat areas
+- confirm the same demo state is visible when the paired skill opens its own
+  modal/app surface
 - confirm the main table is rendered by the Taiga-backed semantic grid path
 - confirm the chart is rendered by the Taiga-backed semantic chart path
 - confirm the operator notes chat is rendered by the semantic chat path
