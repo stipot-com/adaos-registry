@@ -581,6 +581,27 @@ def _compact_snapshot_for_client(snapshot: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _minimal_snapshot_for_client(snapshot: dict[str, Any]) -> dict[str, Any]:
+    compact = _compact_snapshot_for_yjs(snapshot)
+    compact["details"] = {
+        "delivery": "streams",
+        "receivers": [
+            _build_receiver(),
+            _steps_receiver(),
+            _realtime_receiver(),
+            _slots_receiver(),
+            _skills_receiver(),
+            _scenarios_receiver(),
+            _logs_receiver(),
+            _events_receiver(),
+            _yjs_load_receiver(),
+        ],
+    }
+    if "projection_diag" in snapshot:
+        compact["projection_diag"] = _cache_copy(snapshot.get("projection_diag"))
+    return compact
+
+
 def _detail_section_for_receiver(receiver: str) -> tuple[str, str] | None:
     token = str(receiver or "").strip()
     prefix = _details_receiver_prefix()
@@ -5596,7 +5617,7 @@ async def _refresh_snapshot_async(*, webspace_id: str | None = None, allow_cache
         allow_cache=allow_cache,
     )
     await _project_async(snapshot, webspace_id=webspace_id)
-    return {"ok": True, **_compact_snapshot_for_client(snapshot)}
+    return {"ok": True, **_minimal_snapshot_for_client(snapshot)}
 
 
 def _webspace_id_from_payload(payload: Any) -> str | None:
@@ -5702,7 +5723,7 @@ def get_snapshot(
         _projection_diag["tool_project_current_skip_total"] = int(_projection_diag.get("tool_project_current_skip_total") or 0) + 1
     if projection_required and _should_project_snapshot_result(webspace_id, reason="tool.get_snapshot"):
         _project(snapshot, webspace_id=webspace_id)
-    return _compact_snapshot_for_client(snapshot)
+    return _minimal_snapshot_for_client(snapshot)
 
 
 @tool("refresh_snapshot")
@@ -5714,7 +5735,7 @@ def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     _write_ui_state(last_refresh_ts=time.time())
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=False)
     _project(snapshot, webspace_id=webspace_id)
-    return {"ok": True, **_compact_snapshot_for_client(snapshot)}
+    return {"ok": True, **_minimal_snapshot_for_client(snapshot)}
 
 
 @subscribe("infrastate.refresh")

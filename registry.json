@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-10T12:40:32+00:00",
+  "updated_at": "2026-05-10T12:40:47+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -159,8 +159,8 @@
       "kind": "skill",
       "id": "infrastate_skill",
       "name": "infrastate_skill",
-      "version": "0.70.0",
-      "updated_at": "2026-05-10T11:50:52+00:00",
+      "version": "0.72.0",
+      "updated_at": "2026-05-10T12:40:47+00:00",
       "path": "skills/infrastate_skill",
       "manifest": "skills/infrastate_skill/skill.yaml",
       "source": {
