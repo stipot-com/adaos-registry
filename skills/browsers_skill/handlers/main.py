@@ -8,6 +8,7 @@ from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import access_links as sdk_access_links
 from adaos.sdk.data import device_access as sdk_device_access
 from adaos.sdk.data import ctx_subnet
+from adaos.sdk.io import stream_publish
 from adaos.services.workspaces import index as workspace_index
 
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
@@ -28,6 +29,12 @@ def _webspace_id_from_payload(payload: Any) -> str | None:
             if token:
                 return token
     return None
+
+
+def _receiver_from_payload(payload: Any) -> str:
+    if not isinstance(payload, Mapping):
+        return ""
+    return str(payload.get("receiver") or "").strip()
 
 
 def _iso(value: Any) -> str | None:
@@ -180,7 +187,49 @@ async def _publish_snapshot(target_ws: str | None = None) -> dict[str, Any]:
         ws_current_summary, ws_current_name = _current_browser_payload(current_id)
         await ctx_subnet.set_async("browsers.current_summary", ws_current_summary, webspace_id=ws)
         await ctx_subnet.set_async("browsers.current_name", ws_current_name, webspace_id=ws)
+        _publish_streams(
+            {
+                **payload,
+                "current_summary": ws_current_summary,
+                "current_name": ws_current_name,
+            },
+            webspace_id=ws,
+        )
     return payload
+
+
+def _publish_stream(receiver: str, data: Any, *, webspace_id: str | None = None) -> None:
+    stream_publish(
+        receiver,
+        data,
+        _meta={
+            "webspace_id": str(webspace_id or "default").strip() or "default",
+        },
+    )
+
+
+def _publish_streams(payload: Mapping[str, Any], *, webspace_id: str | None = None) -> None:
+    _publish_stream("browsers.summary", payload.get("summary"), webspace_id=webspace_id)
+    _publish_stream("browsers.devices", payload.get("devices"), webspace_id=webspace_id)
+    _publish_stream("browsers.clients", payload.get("clients"), webspace_id=webspace_id)
+    _publish_stream("browsers.current_summary", payload.get("current_summary"), webspace_id=webspace_id)
+    _publish_stream("browsers.current_name", payload.get("current_name"), webspace_id=webspace_id)
+
+
+def _publish_stream_snapshot(receiver: str, webspace_id: str | None = None) -> None:
+    payload, effective_ws = _build_snapshot(webspace_id)
+    available_entries = list(payload["devices"]) + list(payload["clients"])
+    current_id = _resolve_current_browser_id(available_entries, effective_ws)
+    current_summary, current_name = _current_browser_payload(current_id)
+    data_by_receiver = {
+        "browsers.summary": payload["summary"],
+        "browsers.devices": payload["devices"],
+        "browsers.clients": payload["clients"],
+        "browsers.current_summary": current_summary,
+        "browsers.current_name": current_name,
+    }
+    if receiver in data_by_receiver:
+        _publish_stream(receiver, data_by_receiver[receiver], webspace_id=effective_ws)
 
 
 def _refresh_snapshot_sync(target_ws: str | None = None) -> dict[str, Any]:
@@ -220,7 +269,30 @@ def _coerce_device_ref(
 
 @tool
 def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
-    return _refresh_snapshot_sync(webspace_id)
+    payload = _refresh_snapshot_sync(webspace_id)
+    return {"ok": True, "summary": payload.get("summary") or {}}
+
+
+@subscribe("webio.stream.snapshot.requested")
+def on_webio_stream_snapshot_requested(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    receiver = _receiver_from_payload(payload)
+    if not receiver.startswith("browsers."):
+        return
+    _publish_stream_snapshot(receiver, _webspace_id_from_payload(payload))
+
+
+@subscribe("webio.stream.subscription.changed")
+def on_webio_stream_subscription_changed(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    if not isinstance(payload, Mapping):
+        return
+    if str(payload.get("action") or "").strip().lower() == "unsubscribed":
+        return
+    receiver = _receiver_from_payload(payload)
+    if not receiver.startswith("browsers."):
+        return
+    _publish_stream_snapshot(receiver, _webspace_id_from_payload(payload))
 
 
 @tool
@@ -229,8 +301,8 @@ def select_browser(device_id: str, webspace_id: str | None = None) -> dict[str, 
     target_ws = str(webspace_id or "default").strip() or "default"
     if token:
         _SELECTED_BROWSER_BY_WS[target_ws] = token
-    snapshot = _refresh_snapshot_sync(target_ws)
-    return {"ok": True, "selected_device_id": token, "snapshot": snapshot}
+    _refresh_snapshot_sync(target_ws)
+    return {"ok": True, "selected_device_id": token}
 
 
 @tool

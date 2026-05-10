@@ -1,5 +1,5 @@
 name: browsers_skill
-version: 0.7.0
+version: 0.8.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -34,5 +34,5 @@ data_projections:
     path: data/browsers/current_name
 tools: []
 exports: {}
-updated_at: '2026-05-10T03:04:46+00:00'
+updated_at: '2026-05-10T09:46:11+00:00'
 

@@ -1,5 +1,32 @@
 {
   "$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
+  "webio": {
+    "receivers": {
+      "browsers.summary": {
+        "mode": "replace",
+        "transport": "hub"
+      },
+      "browsers.devices": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": []
+      },
+      "browsers.clients": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": []
+      },
+      "browsers.current_summary": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": []
+      },
+      "browsers.current_name": {
+        "mode": "replace",
+        "transport": "hub"
+      }
+    }
+  },
   "apps": [],
   "widgets": [],
   "registry": {
@@ -46,8 +73,9 @@
               "area": "main",
               "title": "Browsers",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/summary"
+                "kind": "stream",
+                "receiver": "browsers.summary",
+                "transport": "hub"
               }
             },
             {
@@ -56,8 +84,9 @@
               "area": "main",
               "title": "Devices",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/devices"
+                "kind": "stream",
+                "receiver": "browsers.devices",
+                "transport": "hub"
               },
               "inputs": {
                 "titleKey": "title",
@@ -91,8 +120,9 @@
               "area": "main",
               "title": "Clients",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/clients"
+                "kind": "stream",
+                "receiver": "browsers.clients",
+                "transport": "hub"
               },
               "inputs": {
                 "titleKey": "title",
@@ -143,8 +173,9 @@
               "area": "main",
               "title": "Browser",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/current_summary"
+                "kind": "stream",
+                "receiver": "browsers.current_summary",
+                "transport": "hub"
               },
               "inputs": {
                 "titleKey": "title",
@@ -159,8 +190,9 @@
               "area": "main",
               "title": "Device name",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/current_name"
+                "kind": "stream",
+                "receiver": "browsers.current_name",
+                "transport": "hub"
               },
               "inputs": {
                 "bindField": "value",
