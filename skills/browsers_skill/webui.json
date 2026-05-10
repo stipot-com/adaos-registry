@@ -119,11 +119,18 @@
                 "detailsPath": "content",
                 "showDetails": true,
                 "itemAccordion": true,
-                "emptyText": "No permanent browser devices"
+                "emptyText": "No permanent browser devices",
+                "buttons": [
+                  {
+                    "id": "settings",
+                    "label": "Settings",
+                    "icon": "settings-outline"
+                  }
+                ]
               },
               "actions": [
                 {
-                  "on": "select",
+                  "on": "click:settings",
                   "type": "callSkill",
                   "target": "browsers_skill.select_browser",
                   "params": {
@@ -131,7 +138,7 @@
                   }
                 },
                 {
-                  "on": "select",
+                  "on": "click:settings",
                   "type": "openModal",
                   "params": {
                     "modalId": "browser_link_settings_modal"
@@ -155,11 +162,18 @@
                 "detailsPath": "content",
                 "showDetails": true,
                 "itemAccordion": true,
-                "emptyText": "No temporary browser clients"
+                "emptyText": "No temporary browser clients",
+                "buttons": [
+                  {
+                    "id": "settings",
+                    "label": "Settings",
+                    "icon": "settings-outline"
+                  }
+                ]
               },
               "actions": [
                 {
-                  "on": "select",
+                  "on": "click:settings",
                   "type": "callSkill",
                   "target": "browsers_skill.select_browser",
                   "params": {
@@ -167,7 +181,7 @@
                   }
                 },
                 {
-                  "on": "select",
+                  "on": "click:settings",
                   "type": "openModal",
                   "params": {
                     "modalId": "browser_link_settings_modal"
@@ -301,6 +315,5 @@
         }
       }
     }
-  },
-  "contributions": []
+  }
 }
