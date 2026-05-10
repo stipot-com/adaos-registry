@@ -185,6 +185,18 @@
             "$schema": "../../../../src/adaos/abi/webui.semantic.v0.schema.json",
             "id": "taiga_ui_demo_surface",
             "title": "Taiga UI Demo Surface",
+            "workspace": {
+              "surfaceClass": "workspace",
+              "objectKind": "demo_metric_suite",
+              "entityRef": "scenario:taiga_ui_demo_scenario",
+              "capabilities": [
+                "inspectable",
+                "listable",
+                "streamable",
+                "eventful"
+              ],
+              "lifecycleStage": "active"
+            },
             "layout": {
               "pattern": "split",
               "areas": [
@@ -216,6 +228,11 @@
                 "kind": "collection_grid",
                 "area": "main",
                 "title": "Metrics table",
+                "when": {
+                  "requiredCapabilities": ["listable"],
+                  "surfaceClasses": ["workspace"],
+                  "lifecycleStages": ["active"]
+                },
                 "source": {
                   "kind": "y",
                   "ref": "y:data/demo_metrics/table",
@@ -251,6 +268,11 @@
                 "kind": "metric_chart",
                 "area": "right",
                 "title": "Metric trend",
+                "when": {
+                  "requiredCapabilities": ["inspectable"],
+                  "surfaceClasses": ["workspace"],
+                  "lifecycleStages": ["active"]
+                },
                 "source": {
                   "kind": "y",
                   "ref": "y:data/demo_metrics/chart",
@@ -271,6 +293,11 @@
                 "kind": "event_log",
                 "area": "bottom",
                 "title": "Events",
+                "when": {
+                  "requiredCapabilities": ["eventful"],
+                  "surfaceClasses": ["workspace"],
+                  "lifecycleStages": ["active"]
+                },
                 "source": {
                   "kind": "stream",
                   "ref": "stream:demo_metrics.events",
@@ -283,6 +310,11 @@
                 "kind": "chat_panel",
                 "area": "bottom",
                 "title": "Operator notes",
+                "when": {
+                  "requiredCapabilities": ["streamable"],
+                  "surfaceClasses": ["workspace"],
+                  "lifecycleStages": ["active"]
+                },
                 "source": {
                   "kind": "y",
                   "ref": "y:data/demo_metrics/chat",

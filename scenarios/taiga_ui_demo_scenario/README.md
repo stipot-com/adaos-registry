@@ -24,6 +24,8 @@ Current implementation status:
 
 - the semantic schema is already consumed through the runtime compatibility
   bridge
+- the semantic surface now declares workspace class, lifecycle stage, and
+  capability-aware view availability
 - table row selection now updates shared local `view:` state
 - the semantic table surface now renders through the first Taiga-backed grid
   renderer
