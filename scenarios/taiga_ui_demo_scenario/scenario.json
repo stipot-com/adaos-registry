@@ -37,6 +37,14 @@
                   {
                     "id": "open-demo",
                     "label": "Open Demo Metrics"
+                  },
+                  {
+                    "id": "emit-skill",
+                    "label": "Skill event"
+                  },
+                  {
+                    "id": "emit-host",
+                    "label": "Host event"
                   }
                 ],
                 "size": "small"
@@ -47,6 +55,24 @@
                   "type": "openModal",
                   "params": {
                     "modalId": "demo_metrics_modal"
+                  }
+                },
+                {
+                  "on": "click:emit-skill",
+                  "type": "callSkill",
+                  "target": "demo_metrics_skill.emit_demo_event",
+                  "params": {
+                    "action_id": "desktop_skill_button",
+                    "metric_id": "$state.demo_metrics.selection.metric_id"
+                  }
+                },
+                {
+                  "on": "click:emit-host",
+                  "type": "callHost",
+                  "target": "demo_metrics.host_action",
+                  "params": {
+                    "action_id": "desktop_host_button",
+                    "metric_id": "$state.demo_metrics.selection.metric_id"
                   }
                 }
               ]
@@ -59,7 +85,34 @@
               "dataSource": {
                 "kind": "y",
                 "path": "data/demo_metrics/summary"
-              }
+              },
+              "actions": [
+                {
+                  "on": "click:open-demo",
+                  "type": "openModal",
+                  "params": {
+                    "modalId": "demo_metrics_modal"
+                  }
+                },
+                {
+                  "on": "click:emit-skill",
+                  "type": "callSkill",
+                  "target": "demo_metrics_skill.emit_demo_event",
+                  "params": {
+                    "action_id": "summary_skill_button",
+                    "metric_id": "$state.demo_metrics.selection.metric_id"
+                  }
+                },
+                {
+                  "on": "click:emit-host",
+                  "type": "callHost",
+                  "target": "demo_metrics.host_action",
+                  "params": {
+                    "action_id": "summary_host_button",
+                    "metric_id": "$state.demo_metrics.selection.metric_id"
+                  }
+                }
+              ]
             },
             {
               "id": "demo-table",

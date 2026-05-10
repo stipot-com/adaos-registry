@@ -29,6 +29,8 @@ Current implementation status:
   renderer
 - the semantic chart surface now renders through a Taiga-backed chart renderer
 - the semantic chat surface now renders through the shared chat widget path
+- desktop and modal actions now drive live demo events through both host and
+  skill action paths
 
 Stand verification checklist:
 
@@ -37,5 +39,9 @@ Stand verification checklist:
 - confirm the main table is rendered by the Taiga-backed semantic grid path
 - confirm the chart is rendered by the Taiga-backed semantic chart path
 - confirm the operator notes chat is rendered by the semantic chat path
+- click `Skill event` and confirm the event log receives a live update
+- click `Host event` and confirm the event log receives a live update
+- click `Open Demo Metrics` and confirm the modal opens through the typed action
+  path
 - click different table rows and confirm the chart changes accordingly
 - use the sidebar action to open the modal and repeat the same check there
