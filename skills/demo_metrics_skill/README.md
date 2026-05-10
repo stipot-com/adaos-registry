@@ -26,6 +26,8 @@ Current implementation status:
 - `metric_chart` now renders through a Taiga-backed chart surface
 - `event_log` already maps to the current list/event surface
 - `chat_panel` now maps to the current chat surface through the semantic adapter
+- desktop and modal action buttons now exercise `open_modal`, `call_host`, and
+  `invoke_skill_action` paths against the live demo surface
 
 Stand verification checklist:
 
@@ -35,6 +37,10 @@ Stand verification checklist:
   compatibility table
 - confirm the chart uses the Taiga-styled semantic chart surface
 - confirm the operator notes block is rendered through the semantic chat path
+- click `Skill event` and confirm a new live event appears in the event log
+- click `Host event` and confirm a new live event appears in the event log
+- click `Open modal` and confirm the modal opens through the typed `open_modal`
+  path
 - select `CPU Load`, `Memory Pressure`, and `Queue Depth` in the table
 - confirm the chart title/value/line change with the selected row
 - confirm the same behavior works in the modal demo surface

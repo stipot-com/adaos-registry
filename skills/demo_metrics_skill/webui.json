@@ -23,7 +23,12 @@
     "data/demo_metrics/summary": {
       "value": "3",
       "label": "Demo metrics",
-      "description": "Neutral semantic Web UI control task"
+      "description": "Neutral semantic Web UI control task",
+      "buttons": [
+        { "id": "open-demo", "label": "Open modal" },
+        { "id": "emit-skill", "label": "Skill event" },
+        { "id": "emit-host", "label": "Host event" }
+      ]
     },
     "data/demo_metrics/table": {
       "items": [
@@ -138,7 +143,32 @@
       "dataSource": {
         "kind": "y",
         "path": "data/demo_metrics/summary"
-      }
+      },
+      "actions": [
+        {
+          "on": "click:open-demo",
+          "type": "openModal",
+          "params": { "modalId": "demo_metrics_modal" }
+        },
+        {
+          "on": "click:emit-skill",
+          "type": "callSkill",
+          "target": "demo_metrics_skill.emit_demo_event",
+          "params": {
+            "action_id": "emit_skill_button",
+            "metric_id": "$state.demo_metrics.selection.metric_id"
+          }
+        },
+        {
+          "on": "click:emit-host",
+          "type": "callHost",
+          "target": "demo_metrics.host_action",
+          "params": {
+            "action_id": "emit_host_button",
+            "metric_id": "$state.demo_metrics.selection.metric_id"
+          }
+        }
+      ]
     }
   ],
   "registry": {
@@ -175,6 +205,40 @@
                 ],
                 "emptyText": "No demo metrics yet"
               }
+            },
+            {
+              "id": "demo-metrics-actions",
+              "type": "input.commandBar",
+              "area": "right",
+              "title": "Actions",
+              "inputs": {
+                "variant": "stack",
+                "size": "small",
+                "buttons": [
+                  { "id": "emit-skill", "label": "Skill event" },
+                  { "id": "emit-host", "label": "Host event" }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:emit-skill",
+                  "type": "callSkill",
+                  "target": "demo_metrics_skill.emit_demo_event",
+                  "params": {
+                    "action_id": "modal_skill_button",
+                    "metric_id": "$state.demo_metrics.selection.metric_id"
+                  }
+                },
+                {
+                  "on": "click:emit-host",
+                  "type": "callHost",
+                  "target": "demo_metrics.host_action",
+                  "params": {
+                    "action_id": "modal_host_button",
+                    "metric_id": "$state.demo_metrics.selection.metric_id"
+                  }
+                }
+              ]
             },
             {
               "id": "demo-metrics-chart-payload",

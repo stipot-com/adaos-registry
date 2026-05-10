@@ -1,5 +1,5 @@
 name: demo_metrics_skill
-version: 0.6.0
+version: 0.7.0
 description: Neutral demo skill for semantic Web UI migration with a metrics table,
   chart payload, and live event stream.
 runtime:
@@ -29,6 +29,7 @@ events:
   subscribe:
   - webio.stream.snapshot.requested
   - webio.stream.subscription.changed
+  - demo_metrics.host_action
 tools:
 - name: get_demo_snapshot
   description: Return the static demo metrics snapshot used by the browser demo surfaces.
@@ -67,5 +68,27 @@ tools:
     required:
     - ok
     - series
-updated_at: '2026-05-08T16:03:55+00:00'
+- name: emit_demo_event
+  description: Publish one live demo event into the browser event stream.
+  entry: handlers.main:emit_demo_event
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+      action_id:
+        type: string
+      metric_id:
+        type: string
+  output_schema:
+    type: object
+    properties:
+      ok:
+        type: boolean
+      event:
+        type: object
+    required:
+    - ok
+    - event
+updated_at: '2026-05-10T02:39:17+00:00'
 
