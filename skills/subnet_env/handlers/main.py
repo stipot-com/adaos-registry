@@ -141,6 +141,18 @@ _SUBNET_ACTIONS = {
     "subnet_yjs_replication_on": ("ADAOS_SUBNET_YJS_REPLICATION", "1"),
     "subnet_yjs_replication_off": ("ADAOS_SUBNET_YJS_REPLICATION", "0"),
 }
+_DATA_PROJECTION_ENTRIES = [
+    {
+        "scope": "subnet",
+        "slot": "subnet_env.snapshot",
+        "targets": [
+            {
+                "backend": "yjs",
+                "path": "data/subnet_env",
+            },
+        ],
+    },
+]
 
 _LOG_LEVEL_ACTIONS = {
     "log_level_info": ("ADAOS_LOG_LEVEL", "INFO"),
@@ -345,9 +357,15 @@ def _ensure_skill_data_projections() -> None:
         existing = ctx.projections.resolve("subnet", "subnet_env.snapshot")
         if existing:
             return
+        entries: list[dict[str, Any]] = []
         manifest_path = Path(__file__).resolve().parents[1] / "skill.yaml"
-        payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-        entries = payload.get("data_projections") or []
+        if manifest_path.exists():
+            payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+            raw_entries = payload.get("data_projections") or []
+            if isinstance(raw_entries, list):
+                entries = [entry for entry in raw_entries if isinstance(entry, dict)]
+        if not entries:
+            entries = list(_DATA_PROJECTION_ENTRIES)
         if isinstance(entries, list) and entries:
             ctx.projections.load_entries(entries)
     except Exception:
@@ -612,9 +630,19 @@ def _build_snapshot() -> dict[str, Any]:
     return snapshot
 
 
+def _projection_webspace_id(webspace_id: str | None = None) -> str:
+    token = str(
+        webspace_id
+        or os.environ.get("ADAOS_WEBSPACE_ID")
+        or os.environ.get("ADAOS_CURRENT_WEBSPACE_ID")
+        or "desktop"
+    ).strip()
+    return token or "desktop"
+
+
 def _project_snapshot(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> None:
     _ensure_skill_data_projections()
-    ctx_subnet.set("subnet_env.snapshot", snapshot, webspace_id=webspace_id)
+    ctx_subnet.set("subnet_env.snapshot", snapshot, webspace_id=_projection_webspace_id(webspace_id))
 
 
 def _refresh(*, webspace_id: str | None = None) -> dict[str, Any]:

@@ -47,6 +47,18 @@ _CITY_ALIASES: dict[str, tuple[str, str]] = {
 
 _log = logging.getLogger("adaos.voice_chat_skill")
 REQUIRES_DATA_PROJECTIONS = ["voice_chat.state"]
+_DATA_PROJECTION_ENTRIES = [
+    {
+        "scope": "subnet",
+        "slot": "voice_chat.state",
+        "targets": [
+            {
+                "backend": "yjs",
+                "path": "data/voice_chat",
+            },
+        ],
+    },
+]
 _MAX_MESSAGES = 80
 _STATE_BY_KEY: dict[str, dict[str, Any]] = {}
 
@@ -84,7 +96,18 @@ def _message(from_: str, text: str) -> dict[str, Any]:
     }
 
 
+def _ensure_skill_data_projections() -> None:
+    try:
+        ctx = get_ctx()
+        if ctx.projections.resolve("subnet", "voice_chat.state"):
+            return
+        ctx.projections.load_entries(_DATA_PROJECTION_ENTRIES)
+    except Exception:
+        pass
+
+
 def _project_state(webspace_id: str, target_node_id: str | None = None) -> None:
+    _ensure_skill_data_projections()
     state = _state_for(webspace_id, target_node_id)
     payload = {
         "messages": list(state.get("messages") or [])[-_MAX_MESSAGES:],

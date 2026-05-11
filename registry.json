@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-11T08:39:58+00:00",
+  "updated_at": "2026-05-11T08:39:59+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -299,8 +299,8 @@
       "kind": "skill",
       "id": "subnet_env",
       "name": "subnet_env",
-      "version": "0.7.0",
-      "updated_at": "2026-05-05T16:50:52+00:00",
+      "version": "0.8.0",
+      "updated_at": "2026-05-11T08:39:59+00:00",
       "path": "skills/subnet_env",
       "manifest": "skills/subnet_env/skill.yaml",
       "source": {
@@ -333,8 +333,8 @@
       "kind": "skill",
       "id": "voice_chat_skill",
       "name": "voice_chat_skill",
-      "version": "0.4.0",
-      "updated_at": "2026-05-10T12:41:14+00:00",
+      "version": "0.5.0",
+      "updated_at": "2026-05-11T08:39:59+00:00",
       "path": "skills/voice_chat_skill",
       "manifest": "skills/voice_chat_skill/skill.yaml",
       "source": {

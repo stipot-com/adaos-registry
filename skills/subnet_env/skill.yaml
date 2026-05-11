@@ -1,5 +1,5 @@
 name: subnet_env
-version: 0.7.0
+version: 0.8.0
 description: Local subnet environment operator skill for safe SDK-first web_desktop
   workflows.
 runtime:
@@ -79,5 +79,5 @@ tools:
   output_schema:
     type: object
 exports: {}
-updated_at: '2026-05-05T16:50:52+00:00'
+updated_at: '2026-05-11T08:39:59+00:00'
 
