@@ -1,0 +1,16 @@
+{
+  "dependencies": [
+    "--no-deps",
+    "-e",
+    "file:///D:/git/adaos/src/adaos/integrations/rasa-port"
+  ],
+  "files": {
+    "skill.yaml": "99fec1a9f6adac2800c6c24b18f31f286558dc7c2c57219805eb8e08789e9117",
+    "requirements.in": "53f0dca116fe14987bcaa30f0ebc784ff8a502cb49f4bb18dbca39cf6bf1332b",
+    "README.md": "666b3b038e885c32d82e1ee728416e403ddff142e6332d99b9e16e185be67cbc",
+    "handlers/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "handlers/main.py": "17e3770503f9eb66915b3dc3deb32e72c3abfb623af4c3084b677585466991c5",
+    "handlers/service.py": "4a624fbc6ba4b98f8bf34a688942272e33b67c285c972972c171c76ae95f7ba1"
+  },
+  "fingerprint": "2ed7f5eb2979edf8e27ab6e6daa5bd5885228e49061525f82f362765f156e145"
+}
