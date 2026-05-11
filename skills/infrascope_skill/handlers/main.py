@@ -611,11 +611,104 @@ def _json_fingerprint(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
 
 
+def _stream_payload_bytes(value: Any) -> int:
+    try:
+        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"))
+    except Exception:
+        try:
+            return len(repr(value).encode("utf-8", errors="replace"))
+        except Exception:
+            return 0
+
+
+def _stream_payload_max_bytes() -> int:
+    try:
+        raw = str(os.getenv("INFRASCOPE_STREAM_PAYLOAD_MAX_BYTES") or "196608").strip()
+        return max(8192, int(raw))
+    except Exception:
+        return 196608
+
+
+def _payload_truncated_notice(*, receiver: str, payload_bytes: int, max_bytes: int) -> dict[str, Any]:
+    return {
+        "id": "payload-truncated",
+        "title": "Payload truncated",
+        "status": CanonicalStatus.WARNING.value,
+        "icon": "warning-outline",
+        "warning": (
+            f"Infrascope detail payload for {receiver} is too large "
+            f"({payload_bytes} bytes > {max_bytes} bytes)."
+        ),
+        "payload_bytes": payload_bytes,
+        "max_bytes": max_bytes,
+    }
+
+
+def _fit_stream_payload(receiver: str, data: Any) -> Any:
+    max_bytes = _stream_payload_max_bytes()
+    payload_bytes = _stream_payload_bytes(data)
+    if payload_bytes <= max_bytes:
+        return data
+    if isinstance(data, list):
+        trimmed: list[Any] = []
+        notice = _payload_truncated_notice(receiver=receiver, payload_bytes=payload_bytes, max_bytes=max_bytes)
+        for item in data:
+            candidate = [*trimmed, item, notice]
+            if _stream_payload_bytes(candidate) > max_bytes:
+                break
+            trimmed.append(item)
+        trimmed.append(notice)
+        return trimmed
+    notice = _payload_truncated_notice(receiver=receiver, payload_bytes=payload_bytes, max_bytes=max_bytes)
+    return {
+        "status": "truncated",
+        "warning": notice["warning"],
+        "payload_bytes": payload_bytes,
+        "max_bytes": max_bytes,
+        "receiver": receiver,
+    }
+
+
+def _compact_inspector_payload(raw: Any) -> dict[str, Any]:
+    payload = coerce_mapping(raw)
+    compact: dict[str, Any] = {}
+    for key in (
+        "label",
+        "value",
+        "subtitle",
+        "description",
+        "warning",
+        "object_id",
+        "object_title",
+        "buttons",
+    ):
+        if key in payload:
+            compact[key] = payload.get(key)
+    obj = coerce_mapping(payload.get("object"))
+    if obj:
+        compact["object"] = {
+            key: obj.get(key)
+            for key in ("id", "kind", "title", "status", "summary")
+            if obj.get(key) not in (None, "")
+        }
+    if "object_id" not in compact and compact.get("object"):
+        compact["object_id"] = compact["object"].get("id")
+    if "object_title" not in compact and compact.get("object"):
+        compact["object_title"] = compact["object"].get("title")
+    return compact
+
+
 def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
     compact = {
         "summary": coerce_mapping(snapshot.get("summary")),
         "meta": coerce_mapping(snapshot.get("meta")),
     }
+    inspectors = coerce_mapping(snapshot.get("inspectors"))
+    if inspectors:
+        compact["inspectors"] = {
+            str(object_id or "").strip() or "local": _compact_inspector_payload(inspector)
+            for object_id, inspector in inspectors.items()
+        }
     errors = list(snapshot.get("errors") or [])
     if errors:
         compact["errors"] = errors
@@ -682,6 +775,7 @@ def _active_stream_receivers(webspace_id: str) -> list[str]:
 
 def _publish_stream_payload(receiver: str, data: Any, *, webspace_id: str, force: bool = False) -> None:
     key = _stream_cache_key(webspace_id, receiver)
+    data = _fit_stream_payload(receiver, data)
     fingerprint = _json_fingerprint(data)
     if not force and _last_stream_fingerprints.get(key) == fingerprint:
         return
@@ -738,7 +832,7 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
     inspector_prefix = "infrascope.inspector."
     if token.startswith(inspector_prefix):
         object_id = str(token[len(inspector_prefix):] or "local").strip() or "local"
-        return _inspector_payload_from_snapshot(snapshot, object_id)
+        return _compact_inspector_payload(_inspector_payload_from_snapshot(snapshot, object_id))
     inspector_field_prefix = "infrascope.inspector_field."
     if token.startswith(inspector_field_prefix):
         remainder = str(token[len(inspector_field_prefix):] or "").strip()
