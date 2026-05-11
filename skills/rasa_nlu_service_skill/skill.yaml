@@ -1,48 +1,27 @@
-# yaml-language-server: $schema=../../../../src/adaos/abi/skill.schema.json
 name: rasa_nlu_service_skill
-version: "0.0.1"
-description: Rasa NLU service skill (Python 3.10) providing HTTP API for parse/train.
+version: 0.2.0
+description: Local Rasa NLU-only service for AdaOS intent detection
 runtime:
   kind: service
-  python: "3.10"
   env:
     mode: venv
-    python: "3.10"
+    python: '3.11'
 service:
-  host: "127.0.0.1"
-  port: 6179
-  workdir: "."
-  healthcheck:
-    type: http
-    path: "/health"
-    timeout_ms: 1000
-  self_managed:
-    enabled: true
-    crash:
-      max_in_window: 3
-      window_s: 60
-      cooloff_s: 30
-    health:
-      interval_s: 10
-      failures_before_issue: 3
-    hooks:
-      on_issue: handlers.main:on_issue
-      on_self_heal: handlers.main:on_self_heal
-      timeout_s: 5.0
-    doctor:
-      enabled: true
-      cooldown_s: 60
-      issue_types: ["rasa_timeout", "rasa_failed", "crash_loop", "healthcheck_failed"]
-      include_log_tail_lines: 200
-  # The platform prepends the selected python interpreter.
+  host: 127.0.0.1
+  port: 18092
   command:
-    - "-m"
-    - "sanic"
-    - "handlers.service:app"
-    - "--host=127.0.0.1"
-    - "--port=6179"
-dependencies:
-  - "rasa==3.6.20"
+  - -m
+  - handlers.main
+  healthcheck:
+    path: /health
+    timeout_ms: 1000
+permissions:
+- network
 events:
-  subscribe: []
-  publish: []
+  subscribe:
+  - nlp.intent.detect.rasa
+  - nlp.rasa.train
+  publish:
+  - nlp.intent.detected
+updated_at: '2026-05-11T06:56:01+00:00'
+

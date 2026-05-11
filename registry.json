@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-11T06:55:17+00:00",
+  "updated_at": "2026-05-11T06:56:01+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -253,6 +253,25 @@
       "entry": "handlers/main.py",
       "runtime_python": "3.11",
       "tools_count": 23
+    },
+    {
+      "kind": "skill",
+      "id": "rasa_nlu_service_skill",
+      "name": "rasa_nlu_service_skill",
+      "version": "0.2.0",
+      "updated_at": "2026-05-11T06:56:01+00:00",
+      "path": "skills/rasa_nlu_service_skill",
+      "manifest": "skills/rasa_nlu_service_skill/skill.yaml",
+      "source": {
+        "path": "skills/rasa_nlu_service_skill",
+        "manifest": "skills/rasa_nlu_service_skill/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "rasa_nlu_service_skill",
+        "id": "rasa_nlu_service_skill"
+      },
+      "description": "Local Rasa NLU-only service for AdaOS intent detection"
     },
     {
       "kind": "skill",
