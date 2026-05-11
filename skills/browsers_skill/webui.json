@@ -98,9 +98,8 @@
               "area": "main",
               "title": "Browsers",
               "dataSource": {
-                "kind": "stream",
-                "receiver": "browsers.summary",
-                "transport": "hub"
+                "kind": "y",
+                "path": "data/browsers/summary"
               }
             },
             {
@@ -109,9 +108,8 @@
               "area": "main",
               "title": "Devices",
               "dataSource": {
-                "kind": "stream",
-                "receiver": "browsers.devices",
-                "transport": "hub"
+                "kind": "y",
+                "path": "data/browsers/devices"
               },
               "inputs": {
                 "titleKey": "title",
@@ -152,9 +150,8 @@
               "area": "main",
               "title": "Clients",
               "dataSource": {
-                "kind": "stream",
-                "receiver": "browsers.clients",
-                "transport": "hub"
+                "kind": "y",
+                "path": "data/browsers/clients"
               },
               "inputs": {
                 "titleKey": "title",
@@ -212,9 +209,8 @@
               "area": "main",
               "title": "Browser",
               "dataSource": {
-                "kind": "stream",
-                "receiver": "browsers.current_summary",
-                "transport": "hub"
+                "kind": "y",
+                "path": "data/browsers/current_summary"
               },
               "inputs": {
                 "titleKey": "title",
@@ -229,9 +225,8 @@
               "area": "main",
               "title": "Device name",
               "dataSource": {
-                "kind": "stream",
-                "receiver": "browsers.current_name",
-                "transport": "hub"
+                "kind": "y",
+                "path": "data/browsers/current_name"
               },
               "inputs": {
                 "bindField": "value",
