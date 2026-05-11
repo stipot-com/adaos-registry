@@ -8,6 +8,7 @@ import os
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,18 @@ _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
 _EVENTS_STATE_KEY = "infrastate.events"
 _SUMMARY_RENDER_STATE_KEY = "infrastate.summary_render_state"
+_DATA_PROJECTION_ENTRIES = [
+    {
+        "scope": "subnet",
+        "slot": "infrastate.snapshot",
+        "targets": [
+            {
+                "backend": "yjs",
+                "path": "data/infrastate",
+            },
+        ],
+    },
+]
 _UI_STATE_FALLBACK: dict[str, Any] = {}
 _SUMMARY_RENDER_STATE_FALLBACK: dict[str, Any] = {}
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
@@ -110,6 +123,7 @@ _projection_diag = {
     "snapshot_request_forced_total": 0,
     "snapshot_request_coalesced_total": 0,
 }
+_PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="infrastate-projection")
 _MIN_YJS_PROJECTION_INTERVAL_S = 1.0
 _THROTTLED_YJS_PROJECTION_INTERVAL_S = max(
     _MIN_YJS_PROJECTION_INTERVAL_S,
@@ -2168,14 +2182,15 @@ def _ensure_skill_data_projections() -> None:
         if existing:
             return
         manifest_path = _skill_manifest_path()
-        if manifest_path is None:
-            return
-        payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-        if not isinstance(payload, dict):
-            return
-        entries = payload.get("data_projections") or []
-        if not isinstance(entries, list) or not entries:
-            return
+        entries: list[dict[str, Any]] = []
+        if manifest_path is not None:
+            payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+            if isinstance(payload, dict):
+                raw_entries = payload.get("data_projections") or []
+                if isinstance(raw_entries, list):
+                    entries = [entry for entry in raw_entries if isinstance(entry, dict)]
+        if not entries:
+            entries = list(_DATA_PROJECTION_ENTRIES)
         ctx.projections.load_entries(entries)
         _log.debug("loaded infrastate data_projections path=%s entries=%d", manifest_path, len(entries))
     except Exception:
@@ -5602,11 +5617,13 @@ async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = Non
 
 def _project(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         asyncio.run(_project_async(snapshot, webspace_id=webspace_id))
         return
-    loop.create_task(_project_async(snapshot, webspace_id=webspace_id))
+    _PROJECTION_EXECUTOR.submit(
+        lambda: asyncio.run(_project_async(snapshot, webspace_id=webspace_id))
+    ).result()
 
 
 async def _refresh_snapshot_async(*, webspace_id: str | None = None, allow_cache: bool = True) -> dict[str, Any]:
