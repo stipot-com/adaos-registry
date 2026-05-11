@@ -192,8 +192,8 @@
       "kind": "skill",
       "id": "mediaserver",
       "name": "mediaserver",
-      "version": "0.7.0",
-      "updated_at": "2026-05-10T12:40:58+00:00",
+      "version": "0.8.0",
+      "updated_at": "2026-05-11T08:40:02+00:00",
       "path": "skills/mediaserver",
       "manifest": "skills/mediaserver/skill.yaml",
       "source": {
