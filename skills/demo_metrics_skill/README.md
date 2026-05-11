@@ -52,7 +52,9 @@ Stand verification checklist:
 - confirm the operator notes block is rendered through the semantic chat path
 - click `Skill event` and confirm a new live event appears in the event log
 - click `Host event` and confirm a new live event appears in the event log
-- click `Workspace` and confirm the workspace manager opens through the typed
+- confirm the event log shows its receiver-backed initial state even before
+  manual actions are triggered
+- click `Workspace` and confirm the Webspaces manager opens through the typed
   `open_workspace` path
 - click `Operations` and confirm the operations modal opens with event, chart,
   and operator-notes surfaces
