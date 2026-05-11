@@ -55,6 +55,20 @@ def _webspace_id_from_payload(payload: Any) -> str | None:
     return None
 
 
+def _target_id_from_payload(payload: Any) -> str | None:
+    if not isinstance(payload, Mapping):
+        return None
+    token = str(payload.get("target_id") or payload.get("target_node_id") or payload.get("node_id") or "").strip()
+    if token:
+        return token
+    meta = payload.get("_meta")
+    if isinstance(meta, Mapping):
+        token = str(meta.get("target_id") or meta.get("target_node_id") or meta.get("node_id") or "").strip()
+        if token:
+            return token
+    return None
+
+
 def _format_when(value: Any) -> str:
     token = str(value or "").strip()
     return token or "unknown"
@@ -593,15 +607,27 @@ def _snapshot_or_cached(*, force: bool = False, target_id: str | None = None) ->
 
 
 @tool("get_snapshot")
-def get_snapshot(webspace_id: str | None = None, target_id: str | None = None) -> dict[str, Any]:
-    snapshot = _snapshot_or_cached(force=False, target_id=target_id)
+def get_snapshot(
+    webspace_id: str | None = None,
+    target_id: str | None = None,
+    target_node_id: str | None = None,
+    node_id: str | None = None,
+) -> dict[str, Any]:
+    effective_target_id = str(target_id or target_node_id or node_id or "").strip() or None
+    snapshot = _snapshot_or_cached(force=False, target_id=effective_target_id)
     _project(snapshot, webspace_id=webspace_id)
     return snapshot
 
 
 @tool("refresh_snapshot")
-def refresh_snapshot(webspace_id: str | None = None, target_id: str | None = None) -> dict[str, Any]:
-    snapshot = _snapshot_or_cached(force=True, target_id=target_id)
+def refresh_snapshot(
+    webspace_id: str | None = None,
+    target_id: str | None = None,
+    target_node_id: str | None = None,
+    node_id: str | None = None,
+) -> dict[str, Any]:
+    effective_target_id = str(target_id or target_node_id or node_id or "").strip() or None
+    snapshot = _snapshot_or_cached(force=True, target_id=effective_target_id)
     _project(snapshot, webspace_id=webspace_id)
     return snapshot
 
@@ -656,7 +682,7 @@ def _on_action(evt: Any) -> None:
         return
     action_id = str(payload.get("id") or "").strip().lower()
     webspace_id = _webspace_id_from_payload(payload)
-    target_id = str(payload.get("target_id") or "").strip() or None
+    target_id = _target_id_from_payload(payload)
     if action_id == "refresh":
         try:
             refresh_snapshot(webspace_id=webspace_id, target_id=target_id)
@@ -690,7 +716,7 @@ def _on_refresh(evt: Any) -> None:
     if event_type == "sys.ready":
         return
     webspace_id = _webspace_id_from_payload(payload)
-    target_id = str(payload.get("target_id") or "").strip() or None if isinstance(payload, Mapping) else None
+    target_id = _target_id_from_payload(payload)
     _schedule_subscription_refresh(webspace_id=webspace_id, target_id=target_id)
 
 
@@ -698,14 +724,14 @@ def handle(topic: str, payload: Mapping[str, Any] | None = None) -> dict[str, An
     data = dict(payload or {})
     topic_token = str(topic or "").strip().lower()
     if topic_token in {"infra_access.refresh", "desktop.webspace.refresh", "sys.ready"}:
-        return refresh_snapshot(webspace_id=_webspace_id_from_payload(data), target_id=str(data.get("target_id") or "").strip() or None)
+        return refresh_snapshot(webspace_id=_webspace_id_from_payload(data), target_id=_target_id_from_payload(data))
     if topic_token == "infra_access.action":
         action_id = str(data.get("id") or "").strip().lower()
         if action_id == "refresh":
-            return refresh_snapshot(webspace_id=_webspace_id_from_payload(data), target_id=str(data.get("target_id") or "").strip() or None)
+            return refresh_snapshot(webspace_id=_webspace_id_from_payload(data), target_id=_target_id_from_payload(data))
         if action_id == "issue_codex_session":
             return issue_codex_connection(
-                target_id=str(data.get("target_id") or "").strip() or None,
+                target_id=_target_id_from_payload(data),
                 capability_profile=str(data.get("capability_profile") or "ProfileOpsRead"),
                 ttl_seconds=int(data.get("ttl_seconds") or 28_800),
                 webspace_id=_webspace_id_from_payload(data),

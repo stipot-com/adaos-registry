@@ -1,5 +1,5 @@
 name: infra_access_skill
-version: 0.20.0
+version: 0.21.0
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -47,6 +47,14 @@ tools:
         type:
         - string
         - 'null'
+      target_node_id:
+        type:
+        - string
+        - 'null'
+      node_id:
+        type:
+        - string
+        - 'null'
   output_schema:
     type: object
 - name: refresh_snapshot
@@ -60,6 +68,14 @@ tools:
         - string
         - 'null'
       target_id:
+        type:
+        - string
+        - 'null'
+      target_node_id:
+        type:
+        - string
+        - 'null'
+      node_id:
         type:
         - string
         - 'null'
@@ -87,5 +103,5 @@ tools:
   output_schema:
     type: object
 exports: {}
-updated_at: '2026-05-11T08:40:00+00:00'
+updated_at: '2026-05-11T11:35:50+00:00'
 
