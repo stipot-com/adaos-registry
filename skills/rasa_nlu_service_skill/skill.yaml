@@ -23,5 +23,5 @@ events:
   - nlp.rasa.train
   publish:
   - nlp.intent.detected
-updated_at: '2026-05-11T06:56:01+00:00'
+updated_at: '2026-05-11T07:25:56+00:00'
 
