@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
 
@@ -17,6 +18,19 @@ _log = logging.getLogger("skills.infra_access_skill")
 _LAST_ISSUED: dict[str, Any] = {}
 _REFRESH_THREAD: threading.Thread | None = None
 _REFRESH_LOCK = threading.Lock()
+_PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="infra-access-projection")
+_DATA_PROJECTION_ENTRIES = [
+    {
+        "scope": "subnet",
+        "slot": "infra_access.snapshot",
+        "targets": [
+            {
+                "backend": "yjs",
+                "path": "data/infra_access",
+            },
+        ],
+    },
+]
 
 
 def lang_res() -> Dict[str, str]:
@@ -505,18 +519,33 @@ def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
     return sorted(ids)
 
 
+def _ensure_skill_data_projections() -> None:
+    try:
+        from adaos.services.agent_context import get_ctx
+
+        ctx = get_ctx()
+        if ctx.projections.resolve("subnet", "infra_access.snapshot"):
+            return
+        ctx.projections.load_entries(_DATA_PROJECTION_ENTRIES)
+    except Exception:
+        pass
+
+
 async def _project_async(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> None:
+    _ensure_skill_data_projections()
     for target_ws in _projection_webspace_ids(webspace_id):
         await ctx_subnet.set_async("infra_access.snapshot", snapshot, webspace_id=target_ws)
 
 
 def _project(snapshot: dict[str, Any], *, webspace_id: str | None = None) -> None:
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         asyncio.run(_project_async(snapshot, webspace_id=webspace_id))
         return
-    loop.create_task(_project_async(snapshot, webspace_id=webspace_id))
+    _PROJECTION_EXECUTOR.submit(
+        lambda: asyncio.run(_project_async(snapshot, webspace_id=webspace_id))
+    ).result()
 
 
 def _schedule_subscription_refresh(*, webspace_id: str | None = None, target_id: str | None = None) -> None:
