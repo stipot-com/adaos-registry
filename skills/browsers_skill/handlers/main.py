@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
 
@@ -12,12 +13,20 @@ from adaos.sdk.io import stream_publish
 from adaos.services.yjs.webspace import default_webspace_id
 
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
+_PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browsers-projection")
 REQUIRES_DATA_PROJECTIONS = [
     "browsers.summary",
     "browsers.devices",
     "browsers.clients",
     "browsers.current_summary",
     "browsers.current_name",
+]
+_DATA_PROJECTION_ENTRIES = [
+    {"scope": "subnet", "slot": "browsers.summary", "targets": [{"backend": "yjs", "path": "data/browsers/summary"}]},
+    {"scope": "subnet", "slot": "browsers.devices", "targets": [{"backend": "yjs", "path": "data/browsers/devices"}]},
+    {"scope": "subnet", "slot": "browsers.clients", "targets": [{"backend": "yjs", "path": "data/browsers/clients"}]},
+    {"scope": "subnet", "slot": "browsers.current_summary", "targets": [{"backend": "yjs", "path": "data/browsers/current_summary"}]},
+    {"scope": "subnet", "slot": "browsers.current_name", "targets": [{"backend": "yjs", "path": "data/browsers/current_name"}]},
 ]
 
 
@@ -63,11 +72,22 @@ def _target_webspaces(target_ws: str | None = None) -> list[str]:
 
 def _run_coro(coro: Any) -> Any:
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    loop.create_task(coro)
-    return None
+    return _PROJECTION_EXECUTOR.submit(lambda: asyncio.run(coro)).result()
+
+
+def _ensure_skill_data_projections() -> None:
+    try:
+        from adaos.services.agent_context import get_ctx
+
+        ctx = get_ctx()
+        if ctx.projections.resolve("subnet", "browsers.devices"):
+            return
+        ctx.projections.load_entries(_DATA_PROJECTION_ENTRIES)
+    except Exception:
+        pass
 
 
 def _browser_title(entry: Mapping[str, Any]) -> str:
@@ -180,6 +200,7 @@ def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
 
 
 async def _publish_snapshot(target_ws: str | None = None) -> dict[str, Any]:
+    _ensure_skill_data_projections()
     payload, effective_ws = _build_snapshot(target_ws)
     available_entries = list(payload["devices"]) + list(payload["clients"])
     for ws in _target_webspaces(effective_ws):
