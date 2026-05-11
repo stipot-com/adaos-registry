@@ -35,8 +35,8 @@ Current implementation status:
   skill action paths
 - the desktop launch surface now exercises typed `open_workspace` through the
   workspace-manager bridge
-- the demo package now includes a second `operations`-class modal surface so
-  workspace and operations composition can be compared on the same stand
+- the demo package now includes an explicit top-level `operations` shell
+  surface in addition to the `workspace` shell surface
 - semantic workspace metadata now projects into `runtime.surface.*` state so
   typed actions can carry stable surface context
 - the scenario now also ships an explicit top-level `workspace` shell surface
@@ -55,12 +55,15 @@ Stand verification checklist:
 - confirm the operator notes chat is rendered by the semantic chat path
 - click `Skill event` and confirm the event log receives a live update
 - click `Host event` and confirm the event log receives a live update
-- click `Workspace` and confirm the workspace manager opens through the typed
+- confirm `Live events` shows the receiver-backed initial stream state before
+  any manual action
+- click `Workspace` and confirm the Webspaces manager opens through the typed
   `open_workspace` path
 - click `Workspace shell` and confirm the browser navigates to `/workspace`
   and renders the dedicated workspace shell surface
-- click `Operations` and confirm the operations modal opens with event, chart,
-  and chat surfaces but without the workspace-only grid
+- click `Operations` and confirm the browser navigates to `/operations`
+  and renders the dedicated operations shell surface with event, chart,
+  and chat views but without the workspace-only grid
 - click `Open Demo Metrics` and confirm the modal opens through the typed action
   path
 - click different table rows and confirm the chart changes accordingly

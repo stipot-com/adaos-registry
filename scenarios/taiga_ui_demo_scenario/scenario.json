@@ -87,9 +87,9 @@
                 },
                 {
                   "on": "click:open-operations",
-                  "type": "openModal",
+                  "type": "openWorkspace",
                   "params": {
-                    "modalId": "demo_metrics_operations_modal"
+                    "surfaceRoute": "operations"
                   }
                 },
                 {
@@ -147,9 +147,9 @@
                 },
                 {
                   "on": "click:open-operations",
-                  "type": "openModal",
+                  "type": "openWorkspace",
                   "params": {
-                    "modalId": "demo_metrics_operations_modal"
+                    "surfaceRoute": "operations"
                   }
                 },
                 {
@@ -542,6 +542,152 @@
                 "config": {
                   "hint": "Workspace shell reuses the semantic demo surface.",
                   "alignRightFrom": "operator"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "operations": {
+        "pageSchema": {
+          "id": "taiga_ui_demo_operations",
+          "title": "Demo Metrics Operations",
+          "layout": {
+            "type": "split",
+            "areas": [
+              { "id": "main", "role": "main" },
+              { "id": "right", "role": "aux" },
+              { "id": "bottom", "role": "footer" }
+            ]
+          },
+          "widgets": [],
+          "semantic": {
+            "$schema": "../../../../src/adaos/abi/webui.semantic.v0.schema.json",
+            "id": "taiga_ui_demo_operations_surface",
+            "title": "Demo Metrics Operations Surface",
+            "workspace": {
+              "surfaceClass": "operations",
+              "objectKind": "demo_metric_suite",
+              "entityRef": "scenario:taiga_ui_demo_scenario",
+              "capabilities": [
+                "inspectable",
+                "streamable",
+                "eventful"
+              ],
+              "lifecycleStage": "active"
+            },
+            "layout": {
+              "pattern": "split",
+              "areas": [
+                { "id": "main", "role": "main" },
+                { "id": "right", "role": "aux" },
+                { "id": "bottom", "role": "footer" }
+              ]
+            },
+            "load": {
+              "structure": "eager",
+              "data": "visible",
+              "focus": "primary",
+              "offFocusReadyState": "hydrating"
+            },
+            "viewState": [
+              {
+                "ref": "view:demo_metrics.selection",
+                "default": {
+                  "metric_id": "cpu",
+                  "status_filter": "all",
+                  "group_filter": "all"
+                },
+                "persistence": "local_persisted"
+              }
+            ],
+            "views": [
+              {
+                "id": "operations_metric_events",
+                "kind": "event_log",
+                "area": "main",
+                "title": "Live events",
+                "when": {
+                  "requiredCapabilities": ["eventful"],
+                  "surfaceClasses": ["operations"],
+                  "lifecycleStages": ["active"]
+                },
+                "source": {
+                  "kind": "stream",
+                  "ref": "stream:demo_metrics.events",
+                  "scope": "shared",
+                  "transport": "auto"
+                }
+              },
+              {
+                "id": "operations_metric_chart",
+                "kind": "metric_chart",
+                "area": "right",
+                "title": "Selected metric",
+                "when": {
+                  "requiredCapabilities": ["inspectable"],
+                  "surfaceClasses": ["operations"],
+                  "lifecycleStages": ["active"]
+                },
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/chart",
+                  "scope": "shared"
+                },
+                "selection": {
+                  "kind": "view",
+                  "ref": "view:demo_metrics.selection",
+                  "scope": "local"
+                },
+                "config": {
+                  "xKey": "ts",
+                  "yKey": "value"
+                }
+              },
+              {
+                "id": "operations_metric_chat",
+                "kind": "chat_panel",
+                "area": "bottom",
+                "title": "Operator notes",
+                "when": {
+                  "requiredCapabilities": ["streamable"],
+                  "surfaceClasses": ["operations"],
+                  "lifecycleStages": ["active"]
+                },
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/chat",
+                  "scope": "shared"
+                },
+                "config": {
+                  "hint": "Operations shell keeps the live feed and operator notes together.",
+                  "alignRightFrom": "operator"
+                }
+              },
+              {
+                "id": "operations_workspace_only_grid_proof",
+                "kind": "collection_grid",
+                "area": "main",
+                "title": "Workspace-only grid",
+                "when": {
+                  "requiredCapabilities": ["listable"],
+                  "surfaceClasses": ["workspace"],
+                  "lifecycleStages": ["active"]
+                },
+                "source": {
+                  "kind": "y",
+                  "ref": "y:data/demo_metrics/table",
+                  "scope": "shared"
+                },
+                "selection": {
+                  "kind": "view",
+                  "ref": "view:demo_metrics.selection",
+                  "scope": "local"
+                },
+                "config": {
+                  "columns": [
+                    { "key": "title", "label": "Metric" }
+                  ]
                 }
               }
             ]
