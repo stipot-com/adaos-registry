@@ -21,7 +21,7 @@ import yaml
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data.bus import emit
-from adaos.sdk.data.context import get_current_skill, set_current_skill
+from adaos.sdk.data.context import clear_current_skill, get_current_skill, set_current_skill
 from adaos.sdk.data import ctx_subnet
 from adaos.sdk.data.i18n import _, I18n
 from adaos.sdk.data.skill_memory import get as memory_get, set as memory_set
@@ -34,6 +34,7 @@ REQUIRES_DATA_PROJECTIONS = [
 ]
 
 DEFAULT_API_ENDPOINT = "https://api.open-meteo.com/v1/forecast"
+_LEGACY_API_ENDPOINT_HOSTS = ("api.openweathermap.org",)
 _PLACE_RE = re.compile(r"(?:\bв|\bпо)\s+([A-Za-zА-Яа-яЁё\-]+)")
 _CANON_RE = re.compile(r"^[A-Za-z][A-Za-z\-\s]+,\s*[A-Za-z]{2}$")
 _CITY_CACHE: Dict[str, Tuple[float, Dict]] = {}
@@ -201,26 +202,40 @@ def _event_meta(evt: Any) -> Dict[str, Any]:
     return dict(meta) if isinstance(meta, dict) else {}
 
 
+def _normalize_api_entry_point(value: Any) -> str:
+    endpoint = str(value or "").strip() or DEFAULT_API_ENDPOINT
+    endpoint_l = endpoint.lower()
+    if any(host in endpoint_l for host in _LEGACY_API_ENDPOINT_HOSTS):
+        return DEFAULT_API_ENDPOINT
+    return endpoint
+
+
 def _load_config() -> Tuple[str, Optional[str]]:
     """Load runtime configuration from the SDK stores."""
 
-    api_entry_point = str(memory_get("api_entry_point") or DEFAULT_API_ENDPOINT)
+    raw_api_entry_point = memory_get("api_entry_point")
+    api_entry_point = _normalize_api_entry_point(raw_api_entry_point)
+    if raw_api_entry_point and api_entry_point != str(raw_api_entry_point).strip():
+        memory_set("api_entry_point", api_entry_point)
     default_city = _normalize_city_token(memory_get("default_city")) or "Moscow"
 
     # Legacy support: migrate values from the local prep cache if present.
     try:
         skill = get_current_skill()
         if skill:
-            prep_file = skill.path / "prep" / "prep_result.json"
-            if prep_file.exists():
+            prep_files = (skill.path / "prep" / "prep_result.json", skill.path / "prep_result.json")
+            for prep_file in prep_files:
+                if not prep_file.exists():
+                    continue
                 data = json.loads(prep_file.read_text(encoding="utf-8"))
                 resources = data.get("resources") or {}
                 if not memory_get("default_city") and resources.get("default_city"):
                     default_city = resources["default_city"]
                     memory_set("default_city", default_city)
                 if not memory_get("api_entry_point") and resources.get("api_entry_point"):
-                    api_entry_point = resources["api_entry_point"]
+                    api_entry_point = _normalize_api_entry_point(resources["api_entry_point"])
                     memory_set("api_entry_point", api_entry_point)
+                break
     except Exception:
         # Prep artefacts are optional; swallow errors to keep runtime resilient.
         pass
@@ -238,6 +253,7 @@ def _resolve_city(requested_city: Optional[str]) -> Optional[str]:
 
 def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
     # Map known cities to coordinates for Open-Meteo API.
+    api_entry_point = _normalize_api_entry_point(api_entry_point)
     city_key = _normalize_city_token(city)
     if not city_key:
         return False, {"error_code": "missing_city", "error": _("runtime.weather.errors.missing_city")}
@@ -320,7 +336,15 @@ def _fetch_weather(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
 
 async def _fetch_weather_async(api_entry_point: str, city: str) -> Tuple[bool, Dict]:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, functools.partial(_fetch_weather, api_entry_point, city))
+
+    def _run() -> Tuple[bool, Dict]:
+        set_current_skill("weather_skill")
+        try:
+            return _fetch_weather(api_entry_point, city)
+        finally:
+            clear_current_skill()
+
+    return await loop.run_in_executor(None, _run)
 
 
 def handle(topic: str, payload: dict) -> None:
@@ -516,15 +540,37 @@ def _weather_current_payload(city: str, live: Dict[str, Any] | None = None, *, o
     return data
 
 
-def _project_weather_current(data: Dict[str, Any], *, webspace_id: Optional[str], status: str = "") -> None:
+def _weather_projection_payload(data: Dict[str, Any], *, status: str = "") -> Dict[str, Any]:
     payload: Dict[str, Any] = {"current": data}
     if status:
         payload["status"] = status
+    return payload
+
+
+async def _project_weather_current_async(data: Dict[str, Any], *, webspace_id: Optional[str], status: str = "") -> None:
     try:
         set_current_skill("weather_skill")
-        ctx_subnet.set("weather.snapshot", payload, webspace_id=webspace_id)
+        await ctx_subnet.set_async(
+            "weather.snapshot",
+            _weather_projection_payload(data, status=status),
+            webspace_id=webspace_id,
+        )
     except Exception:
         _log.warning("failed to project weather.snapshot via ctx_subnet", exc_info=True)
+
+
+def _project_weather_current(data: Dict[str, Any], *, webspace_id: Optional[str], status: str = "") -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            set_current_skill("weather_skill")
+            ctx_subnet.set("weather.snapshot", _weather_projection_payload(data, status=status), webspace_id=webspace_id)
+        except Exception:
+            _log.warning("failed to project weather.snapshot via ctx_subnet", exc_info=True)
+        return
+
+    loop.create_task(_project_weather_current_async(data, webspace_id=webspace_id, status=status))
 
 
 async def _refresh_weather_live_snapshot(
@@ -548,7 +594,7 @@ async def _refresh_weather_live_snapshot(
             data.get("temp_c"),
             data.get("source"),
         )
-        _project_weather_current(data, webspace_id=webspace_id, status="ok" if ok else "fallback")
+        await _project_weather_current_async(data, webspace_id=webspace_id, status="ok" if ok else "fallback")
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -609,7 +655,7 @@ async def on_weather_city_changed(evt) -> None:
         data.get("city"),
         data.get("temp_c"),
     )
-    _project_weather_current(data, webspace_id=webspace_id, status="refreshing")
+    await _project_weather_current_async(data, webspace_id=webspace_id, status="refreshing")
     task_key = str(webspace_id or "default").strip() or "default"
     previous = _WEATHER_UPDATE_TASKS.get(task_key)
     if previous and not previous.done():
