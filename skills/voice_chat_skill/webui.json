@@ -34,6 +34,7 @@
 								"startLabel": "🎙️ Слушать",
 								"stopLabel": "⏹️ Стоп",
 								"sendCommand": "voice.chat.user",
+								"scope": "shared",
 								"meta": { "route_id": "voice_chat" },
 								"stt": {
 									"provider": "phone",
@@ -51,11 +52,13 @@
 							"title": "Voice chat",
 							"dataSource": {
 								"kind": "y",
-								"path": "data/voice_chat"
+								"path": "data/voice_chat",
+								"scope": "shared"
 							},
 							"inputs": {
 								"openCommand": "voice.chat.open",
 								"sendCommand": "voice.chat.user",
+								"scope": "shared",
 								"meta": { "route_id": "voice_chat" },
 								"alignRightFrom": "user",
 								"autoSpeak": true,
