@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-12T03:49:28+00:00",
+  "updated_at": "2026-05-12T03:49:29+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -447,8 +447,8 @@
       "kind": "scenario",
       "id": "taiga_ui_demo_scenario",
       "name": "taiga_ui_demo_scenario",
-      "version": "0.10.0",
-      "updated_at": "2026-05-11T05:10:51+00:00",
+      "version": "0.10.1",
+      "updated_at": "2026-05-12T03:49:29+00:00",
       "path": "scenarios/taiga_ui_demo_scenario",
       "manifest": "scenarios/taiga_ui_demo_scenario/scenario.yaml",
       "source": {

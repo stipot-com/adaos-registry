@@ -19,6 +19,7 @@
           "title": "Taiga UI Demo",
           "layout": {
             "type": "split",
+            "pattern": "split",
             "areas": [
               { "id": "sidebar", "role": "sidebar" },
               { "id": "main", "role": "main" },
@@ -391,9 +392,10 @@
         "pageSchema": {
           "id": "taiga_ui_demo_workspace",
           "title": "Demo Metrics Workspace",
-          "layout": {
-            "type": "split",
-            "areas": [
+              "layout": {
+                "type": "split",
+                "pattern": "split",
+                "areas": [
               { "id": "main", "role": "main" },
               { "id": "right", "role": "aux" },
               { "id": "bottom", "role": "footer" }
@@ -552,9 +554,10 @@
         "pageSchema": {
           "id": "taiga_ui_demo_operations",
           "title": "Demo Metrics Operations",
-          "layout": {
-            "type": "split",
-            "areas": [
+              "layout": {
+                "type": "split",
+                "pattern": "split",
+                "areas": [
               { "id": "main", "role": "main" },
               { "id": "right", "role": "aux" },
               { "id": "bottom", "role": "footer" }
