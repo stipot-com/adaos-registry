@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-12T03:49:07+00:00",
+  "updated_at": "2026-05-12T03:49:09+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -333,8 +333,8 @@
       "kind": "skill",
       "id": "voice_chat_skill",
       "name": "voice_chat_skill",
-      "version": "0.5.0",
-      "updated_at": "2026-05-11T08:39:59+00:00",
+      "version": "0.5.1",
+      "updated_at": "2026-05-12T03:49:08+00:00",
       "path": "skills/voice_chat_skill",
       "manifest": "skills/voice_chat_skill/skill.yaml",
       "source": {
@@ -354,8 +354,8 @@
       "kind": "skill",
       "id": "weather_skill",
       "name": "weather_skill",
-      "version": "2.5.0",
-      "updated_at": "2026-05-11T11:35:12+00:00",
+      "version": "2.5.1",
+      "updated_at": "2026-05-12T03:49:09+00:00",
       "path": "skills/weather_skill",
       "manifest": "skills/weather_skill/skill.yaml",
       "source": {

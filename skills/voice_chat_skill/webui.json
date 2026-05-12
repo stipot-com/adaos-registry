@@ -14,9 +14,10 @@
 				"title": "Voice",
 				"schema": {
 					"id": "voice_chat_modal",
-					"layout": {
-						"type": "single",
-						"areas": [
+				"layout": {
+					"type": "single",
+					"pattern": "stack",
+					"areas": [
 							{
 								"id": "main",
 								"role": "main"
