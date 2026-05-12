@@ -24,6 +24,7 @@
 					"id": "weather_modal",
 					"layout": {
 						"type": "single",
+						"pattern": "stack",
 						"areas": [
 							{
 								"id": "main",
