@@ -54,6 +54,7 @@
           "title": "Prompt IDE",
           "layout": {
             "type": "split",
+            "pattern": "split",
             "areas": [
               {
                 "id": "sidebar",
@@ -396,9 +397,10 @@
           "title": "Select project",
           "schema": {
             "id": "project_selector",
-            "layout": {
-              "type": "single",
-              "areas": [
+              "layout": {
+                "type": "single",
+                "pattern": "stack",
+                "areas": [
                 {
                   "id": "main",
                   "role": "main"
@@ -551,9 +553,10 @@
           "title": "Project git",
           "schema": {
             "id": "project_git_modal",
-            "layout": {
-              "type": "single",
-              "areas": [
+              "layout": {
+                "type": "single",
+                "pattern": "stack",
+                "areas": [
                 {
                   "id": "main",
                   "role": "main"
@@ -669,9 +672,10 @@
           "title": "Project details",
           "schema": {
             "id": "project_meta_modal",
-            "layout": {
-              "type": "single",
-              "areas": [
+              "layout": {
+                "type": "single",
+                "pattern": "stack",
+                "areas": [
                 {
                   "id": "main",
                   "role": "main"
@@ -795,9 +799,10 @@
           "title": "Add TZ addendum",
           "schema": {
             "id": "tz_addendum_modal",
-            "layout": {
-              "type": "single",
-              "areas": [
+              "layout": {
+                "type": "single",
+                "pattern": "stack",
+                "areas": [
                 {
                   "id": "main",
                   "role": "main"
@@ -847,9 +852,10 @@
           "title": "LLM profile",
           "schema": {
             "id": "llm_profile_modal",
-            "layout": {
-              "type": "single",
-              "areas": [
+              "layout": {
+                "type": "single",
+                "pattern": "stack",
+                "areas": [
                 {
                   "id": "main",
                   "role": "main"
@@ -874,9 +880,10 @@
           "title": "LLM status",
           "schema": {
             "id": "llm_status_modal",
-            "layout": {
-              "type": "single",
-              "areas": [
+              "layout": {
+                "type": "single",
+                "pattern": "stack",
+                "areas": [
                 {
                   "id": "main",
                   "role": "main"

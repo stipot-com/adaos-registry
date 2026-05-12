@@ -17,6 +17,7 @@
           "title": "Infrascope",
           "layout": {
             "type": "split",
+            "pattern": "split",
             "areas": [
               {
                 "id": "sidebar",

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-12T03:49:11+00:00",
+  "updated_at": "2026-05-12T03:49:28+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -399,8 +399,8 @@
       "kind": "scenario",
       "id": "infrascope",
       "name": "infrascope",
-      "version": "0.10.0",
-      "updated_at": "2026-05-10T11:52:26+00:00",
+      "version": "0.10.1",
+      "updated_at": "2026-05-12T03:49:28+00:00",
       "path": "scenarios/infrascope",
       "manifest": "scenarios/infrascope/scenario.yaml",
       "source": {
@@ -423,8 +423,8 @@
       "kind": "scenario",
       "id": "prompt_engineer_scenario",
       "name": "prompt_engineer_scenario",
-      "version": "0.3.0",
-      "updated_at": "2026-04-08T11:39:19+00:00",
+      "version": "0.3.1",
+      "updated_at": "2026-05-12T03:49:28+00:00",
       "path": "scenarios/prompt_engineer_scenario",
       "manifest": "scenarios/prompt_engineer_scenario/scenario.yaml",
       "source": {
