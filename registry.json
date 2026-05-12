@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-12T03:49:00+00:00",
+  "updated_at": "2026-05-12T03:49:07+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -236,8 +236,8 @@
       "kind": "skill",
       "id": "prompt_engineer_skill",
       "name": "prompt_engineer_skill",
-      "version": "0.6.0",
-      "updated_at": "2026-03-28T19:13:41+00:00",
+      "version": "0.6.1",
+      "updated_at": "2026-05-12T03:49:07+00:00",
       "path": "skills/prompt_engineer_skill",
       "manifest": "skills/prompt_engineer_skill/skill.yaml",
       "source": {
@@ -299,8 +299,8 @@
       "kind": "skill",
       "id": "subnet_env",
       "name": "subnet_env",
-      "version": "0.8.0",
-      "updated_at": "2026-05-11T08:39:59+00:00",
+      "version": "0.8.1",
+      "updated_at": "2026-05-12T03:49:07+00:00",
       "path": "skills/subnet_env",
       "manifest": "skills/subnet_env/skill.yaml",
       "source": {

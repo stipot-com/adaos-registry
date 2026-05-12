@@ -27,6 +27,7 @@
           "id": "subnet_env_modal",
           "layout": {
             "type": "single",
+            "pattern": "stack",
             "areas": [
               {
                 "id": "main",

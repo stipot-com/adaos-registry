@@ -18,6 +18,7 @@
 					"id": "prompt_ide_workspace",
 					"layout": {
 						"type": "single",
+						"pattern": "stack",
 						"areas": [
 							{
 								"id": "main",
