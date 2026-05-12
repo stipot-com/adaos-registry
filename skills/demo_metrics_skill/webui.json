@@ -195,6 +195,7 @@
           "id": "demo_metrics_modal",
           "layout": {
             "type": "split",
+            "pattern": "split",
             "areas": [
               { "id": "main", "role": "main" },
               { "id": "right", "role": "aux" },
@@ -454,6 +455,7 @@
           "id": "demo_metrics_operations_modal",
           "layout": {
             "type": "split",
+            "pattern": "split",
             "areas": [
               { "id": "main", "role": "main" },
               { "id": "right", "role": "aux" },

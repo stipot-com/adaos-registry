@@ -53,9 +53,10 @@
 				"title": "Infrastructure State",
 				"schema": {
 					"id": "infrastate_modal",
-					"layout": {
-						"type": "single",
-						"areas": [{ "id": "main", "role": "main" }]
+          "layout": {
+            "type": "single",
+            "pattern": "stack",
+            "areas": [{ "id": "main", "role": "main" }]
 					},
 					"widgets": [
 						{
@@ -519,9 +520,10 @@
 				"title": "Marketplace",
 				"schema": {
 					"id": "marketplace_modal",
-					"layout": {
-						"type": "single",
-						"areas": [{ "id": "main", "role": "main" }]
+          "layout": {
+            "type": "single",
+            "pattern": "stack",
+            "areas": [{ "id": "main", "role": "main" }]
 					},
 					"widgets": [
 						{
