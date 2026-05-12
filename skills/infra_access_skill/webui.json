@@ -27,6 +27,7 @@
           "id": "infra_access_modal",
           "layout": {
             "type": "single",
+            "pattern": "stack",
             "areas": [
               {
                 "id": "main",
