@@ -785,18 +785,19 @@ def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None
         min_interval_s = _stream_min_interval_s()
         if min_interval_s > 0 and last_at > 0 and now - last_at < min_interval_s:
             return
-    guardrail = _active_noncritical_stream_guardrail(
-        str(webspace_id or "").strip() or default_webspace_id(),
-        receiver,
-    )
-    if guardrail:
-        _record_noncritical_stream_guardrail_suppression(
-            webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
-            receiver=receiver,
-            payload=data,
-            guardrail=guardrail,
+    if not force:
+        guardrail = _active_noncritical_stream_guardrail(
+            str(webspace_id or "").strip() or default_webspace_id(),
+            receiver,
         )
-        return
+        if guardrail:
+            _record_noncritical_stream_guardrail_suppression(
+                webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
+                receiver=receiver,
+                payload=data,
+                guardrail=guardrail,
+            )
+            return
     _stream_fingerprints[key] = fingerprint
     _stream_last_published_at[key] = now
     stream_publish(
@@ -5678,20 +5679,6 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
     if not is_detail_receiver:
         _remember_stream_receiver(webspace_id, receiver)
     if not _consume_stream_snapshot_request(webspace_id=webspace_id, receiver=receiver):
-        return
-    guardrail = _active_noncritical_stream_guardrail(
-        str(webspace_id or "").strip() or default_webspace_id(),
-        receiver,
-    )
-    if guardrail:
-        _record_noncritical_stream_guardrail_suppression(
-            webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
-            receiver=receiver,
-            payload=[],
-            guardrail=guardrail,
-        )
-        if is_detail_receiver:
-            _forget_stream_receiver(webspace_id, receiver)
         return
     # Initial stream subscriptions arrive as a burst; share one fresh-enough
     # snapshot so each receiver does not rebuild the same heavy state.
