@@ -26,6 +26,7 @@
           "title": "Desktop",
           "layout": {
             "type": "single",
+            "pattern": "stack",
             "areas": [
               {
                 "id": "main",
@@ -76,6 +77,7 @@
             "id": "nlu_teacher_modal",
             "layout": {
               "type": "single",
+              "pattern": "stack",
               "areas": [
                 {
                   "id": "main",

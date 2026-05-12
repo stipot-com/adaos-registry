@@ -1,5 +1,5 @@
 id: web_desktop
-version: 0.3.0
+version: 0.3.1
 title: Web Desktop
 description: Desktop shell scenario that defines the main UI layout, registry and
   base catalog.
@@ -9,7 +9,7 @@ depends:
 - greet_on_boot_skill
 - pair_new_device_skill
 - voice_chat_skill
-updated_at: '2026-04-10T05:51:57+00:00'
+updated_at: '2026-05-12T03:49:31+00:00'
 data_projections:
 - scope: current_user
   slot: profile.settings
