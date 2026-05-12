@@ -4,22 +4,27 @@
     "receivers": {
       "infrascope.overview.*": {
         "mode": "replace",
+        "transport": "hub",
         "initialState": []
       },
       "infrascope.inventory.*": {
         "mode": "replace",
+        "transport": "hub",
         "initialState": []
       },
       "infrascope.operations.active": {
         "mode": "replace",
+        "transport": "hub",
         "initialState": []
       },
       "infrascope.inspector.*": {
         "mode": "replace",
+        "transport": "hub",
         "initialState": {}
       },
       "infrascope.inspector_field.*": {
         "mode": "replace",
+        "transport": "hub",
         "initialState": {}
       }
     }

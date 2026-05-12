@@ -2,20 +2,20 @@
 	"$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
   "webio": {
     "receivers": {
-      "infrastate.operations.active": { "mode": "replace", "initialState": [] },
-      "infrastate.logs.recent": { "mode": "replace", "initialState": [] },
-      "infrastate.events.recent": { "mode": "replace", "initialState": [] },
-      "infrastate.yjs.load_mark": { "mode": "replace", "initialState": [] },
-      "infrastate.build": { "mode": "replace", "initialState": [] },
-      "infrastate.steps": { "mode": "replace", "initialState": [] },
-      "infrastate.realtime": { "mode": "replace", "initialState": [] },
-      "infrastate.slots": { "mode": "replace", "initialState": [] },
-      "infrastate.skills": { "mode": "replace", "initialState": [] },
-      "infrastate.scenarios": { "mode": "replace", "initialState": [] },
-      "infrastate.marketplace.skills": { "mode": "replace", "initialState": [] },
-      "infrastate.marketplace.scenarios": { "mode": "replace", "initialState": [] },
-      "infrastate.core_update_diagnostics": { "mode": "replace", "initialState": [] },
-      "infrastate.details.*": { "mode": "replace", "initialState": null }
+      "infrastate.operations.active": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.logs.recent": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.events.recent": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.yjs.load_mark": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.build": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.steps": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.realtime": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.slots": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.skills": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.scenarios": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.marketplace.skills": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.marketplace.scenarios": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.core_update_diagnostics": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.details.*": { "mode": "replace", "transport": "hub", "initialState": null }
     }
   },
 	"apps": [

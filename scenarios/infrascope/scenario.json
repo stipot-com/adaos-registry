@@ -99,7 +99,7 @@
                   },
                   {
                     "id": "browsers",
-                    "label": "Browsers"
+                    "label": "Browser sessions"
                   },
                   {
                     "id": "devices",

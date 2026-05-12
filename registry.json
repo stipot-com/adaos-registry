@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-12T03:49:31+00:00",
+  "updated_at": "2026-05-12T05:02:28+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -125,8 +125,8 @@
       "kind": "skill",
       "id": "infrascope_skill",
       "name": "infrascope_skill",
-      "version": "0.28.0",
-      "updated_at": "2026-05-11T11:35:27+00:00",
+      "version": "0.28.1",
+      "updated_at": "2026-05-12T05:02:28+00:00",
       "path": "skills/infrascope_skill",
       "manifest": "skills/infrascope_skill/skill.yaml",
       "source": {
@@ -159,8 +159,8 @@
       "kind": "skill",
       "id": "infrastate_skill",
       "name": "infrastate_skill",
-      "version": "0.74.1",
-      "updated_at": "2026-05-12T03:48:57+00:00",
+      "version": "0.74.2",
+      "updated_at": "2026-05-12T05:02:28+00:00",
       "path": "skills/infrastate_skill",
       "manifest": "skills/infrastate_skill/skill.yaml",
       "source": {
@@ -399,8 +399,8 @@
       "kind": "scenario",
       "id": "infrascope",
       "name": "infrascope",
-      "version": "0.10.1",
-      "updated_at": "2026-05-12T03:49:28+00:00",
+      "version": "0.10.2",
+      "updated_at": "2026-05-12T05:02:28+00:00",
       "path": "scenarios/infrascope",
       "manifest": "scenarios/infrascope/scenario.yaml",
       "source": {
