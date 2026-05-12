@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-12T03:49:09+00:00",
+  "updated_at": "2026-05-12T03:49:11+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -375,8 +375,8 @@
       "kind": "skill",
       "id": "web_desktop_skill",
       "name": "web_desktop_skill",
-      "version": "0.2.0",
-      "updated_at": "2026-04-23T13:20:15+00:00",
+      "version": "0.2.1",
+      "updated_at": "2026-05-12T03:49:11+00:00",
       "path": "skills/web_desktop_skill",
       "manifest": "skills/web_desktop_skill/skill.yaml",
       "source": {

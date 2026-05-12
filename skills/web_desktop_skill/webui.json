@@ -15,9 +15,10 @@
         "title": "Available Apps",
         "schema": {
           "id": "apps_catalog",
-          "layout": {
-            "type": "single",
-            "areas": [
+					"layout": {
+						"type": "single",
+						"pattern": "stack",
+						"areas": [
               {
                 "id": "main",
                 "role": "main"
@@ -53,9 +54,10 @@
         "title": "Available Widgets",
         "schema": {
           "id": "widgets_catalog",
-          "layout": {
-            "type": "single",
-            "areas": [
+					"layout": {
+						"type": "single",
+						"pattern": "stack",
+						"areas": [
               {
                 "id": "main",
                 "role": "main"
@@ -92,9 +94,10 @@
         "schema": {
           "id": "nlu_teacher_modal",
           "title": "NLU Teacher",
-          "layout": {
-            "type": "single",
-            "areas": [
+					"layout": {
+						"type": "single",
+						"pattern": "stack",
+						"areas": [
               {
                 "id": "main",
                 "role": "main"
