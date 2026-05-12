@@ -60,9 +60,10 @@
         "title": "Browsers",
         "schema": {
           "id": "browsers_modal",
-          "layout": {
-            "type": "single",
-            "areas": [
+					"layout": {
+						"type": "single",
+						"pattern": "stack",
+						"areas": [
               {
                 "id": "main",
                 "role": "main"
@@ -193,9 +194,10 @@
         "title": "Browser settings",
         "schema": {
           "id": "browser_link_settings_modal",
-          "layout": {
-            "type": "single",
-            "areas": [
+					"layout": {
+						"type": "single",
+						"pattern": "stack",
+						"areas": [
               {
                 "id": "main",
                 "role": "main"

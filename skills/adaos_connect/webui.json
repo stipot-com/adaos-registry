@@ -17,9 +17,10 @@
           "initialState": {
             "adaosConnectMode": "browser"
           },
-          "layout": {
-            "type": "single",
-            "areas": [
+					"layout": {
+						"type": "single",
+						"pattern": "stack",
+						"areas": [
               {
                 "id": "main",
                 "role": "main"
