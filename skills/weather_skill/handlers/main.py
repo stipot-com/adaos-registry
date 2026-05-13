@@ -39,6 +39,7 @@ _PLACE_RE = re.compile(r"(?:\bв|\bпо)\s+([A-Za-zА-Яа-яЁё\-]+)")
 _CANON_RE = re.compile(r"^[A-Za-z][A-Za-z\-\s]+,\s*[A-Za-z]{2}$")
 _CITY_CACHE: Dict[str, Tuple[float, Dict]] = {}
 _CITY_CACHE_TTL = 300.0  # seconds
+_WEATHER_UNAVAILABLE_TEXT = "\u041d\u0435 \u0443\u0434\u0430\u0435\u0442\u0441\u044f \u043f\u043e\u043b\u0443\u0447\u0438\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435 \u043e \u043f\u043e\u0433\u043e\u0434\u0435."
 
 _RU_TRANSLIT = {
     ord("\u0430"): "a",
@@ -347,6 +348,18 @@ async def _fetch_weather_async(api_entry_point: str, city: str) -> Tuple[bool, D
     return await loop.run_in_executor(None, _run)
 
 
+async def _emit_weather_failure(text: str, meta: Dict[str, Any], extra: Dict[str, Any]) -> None:
+    await emit("ui.notify", {"text": text, "_meta": meta}, **extra)
+    route_id = meta.get("route_id") or meta.get("route")
+    if isinstance(route_id, str) and route_id.strip():
+        return
+    await emit(
+        "io.out.chat.append",
+        {"text": text, "from": "hub", "ts": time.time(), "_meta": meta},
+        **extra,
+    )
+
+
 def handle(topic: str, payload: dict) -> None:
     """Local development entrypoint for the skill."""
 
@@ -463,7 +476,7 @@ async def on_weather_intent(payload) -> None:
 
     city = _resolve_city(payload.get("city")) or default_city
     if not city:
-        await emit("ui.notify", {"text": _("prep.weather.api_error", city=""), "_meta": meta}, **extra)
+        await _emit_weather_failure(_WEATHER_UNAVAILABLE_TEXT, meta, extra)
         return
 
     ok, data = await _fetch_weather_async(api_entry_point, city)
@@ -471,8 +484,8 @@ async def on_weather_intent(payload) -> None:
         if data.get("error_code") == "missing_city":
             text_out = "Я не смог распознать город. " "Попробуй, например: «Погода в Москве» / «Weather in Paris». " "Пока поддерживаются: Moscow, Berlin, Paris, Tokyo, New York."
         else:
-            text_out = _("prep.weather.api_error", city=city)
-        await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
+            text_out = _WEATHER_UNAVAILABLE_TEXT
+        await _emit_weather_failure(text_out, meta, extra)
         return
 
     text_out = _(
