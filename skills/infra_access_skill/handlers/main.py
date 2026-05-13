@@ -69,6 +69,17 @@ def _target_id_from_payload(payload: Any) -> str | None:
     return None
 
 
+def _managed_target_id_for_root_mcp(target_id: str | None) -> str | None:
+    token = str(target_id or "").strip()
+    if not token:
+        return None
+    if token.startswith("hub:"):
+        return token
+    # UI node selectors are not Root MCP managed targets. Let the SDK infer the
+    # local hub target instead of forwarding a node UUID to the target registry.
+    return None
+
+
 def _format_when(value: Any) -> str:
     token = str(value or "").strip()
     return token or "unknown"
@@ -588,19 +599,20 @@ def _schedule_subscription_refresh(*, webspace_id: str | None = None, target_id:
 
 
 def _snapshot_or_cached(*, force: bool = False, target_id: str | None = None) -> dict[str, Any]:
+    managed_target_id = _managed_target_id_for_root_mcp(target_id)
     cached = _CACHE.get("snapshot")
     if not force and isinstance(cached, dict) and (time.time() - float(_CACHE.get("ts") or 0.0)) <= _CACHE_TTL_S:
         return _with_last_issued(dict(cached))
     context: dict[str, Any] | None = None
     try:
         try:
-            context = sdk_root_mcp.get_local_target_context(target_id=target_id)
+            context = sdk_root_mcp.get_local_target_context(target_id=managed_target_id)
         except Exception:
             context = None
-        snapshot = _build_snapshot(target_id=target_id)
+        snapshot = _build_snapshot(target_id=managed_target_id)
     except Exception as exc:
         _log.warning("infra_access snapshot failed; projecting fallback snapshot", exc_info=True)
-        snapshot = _fallback_snapshot(exc, target_id=target_id, context=context)
+        snapshot = _fallback_snapshot(exc, target_id=managed_target_id, context=context)
     _CACHE["ts"] = time.time()
     _CACHE["snapshot"] = dict(snapshot)
     return _with_last_issued(dict(snapshot))
@@ -639,13 +651,14 @@ def issue_codex_connection(
     ttl_seconds: int = 28_800,
     webspace_id: str | None = None,
 ) -> dict[str, Any]:
+    managed_target_id = _managed_target_id_for_root_mcp(target_id)
     issued = sdk_root_mcp.issue_local_codex_mcp_session(
-        target_id=target_id,
+        target_id=managed_target_id,
         capability_profile=capability_profile,
         ttl_seconds=int(ttl_seconds),
     )
     result = _result_block(issued)
-    context = sdk_root_mcp.get_local_target_context(target_id=target_id)
+    context = sdk_root_mcp.get_local_target_context(target_id=managed_target_id)
     payload = {
         "ok": True,
         "root_url": context.get("root_url"),
@@ -667,7 +680,7 @@ def issue_codex_connection(
     }
     _LAST_ISSUED["payload"] = dict(payload)
     try:
-        snapshot = _snapshot_or_cached(force=True, target_id=target_id)
+        snapshot = _snapshot_or_cached(force=True, target_id=managed_target_id)
         snapshot = _with_last_issued(snapshot)
         _project(snapshot, webspace_id=webspace_id)
     except Exception:
