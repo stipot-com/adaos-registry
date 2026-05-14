@@ -225,14 +225,17 @@
               "id": "browser-current-name",
               "type": "input.text",
               "area": "main",
-              "title": "Device name",
+              "title": "Browser name",
               "dataSource": {
                 "kind": "y",
                 "path": "data/browsers/current_name"
               },
               "inputs": {
                 "bindField": "value",
-                "placeholder": "Living room TV"
+                "placeholder": "Living room TV",
+                "commitMode": "manual",
+                "saveLabel": "Save name",
+                "helper": "Device ID is immutable. This name is stored in hub access policy and is not written back to the remote browser."
               },
               "actions": [
                 {

@@ -149,7 +149,9 @@ def _current_browser_payload(device_id: str | None) -> tuple[list[dict[str, Any]
             ],
             {"value": ""},
         )
+    device_id = str(entry.get("id") or "").strip()
     summary = [
+        {"title": "Device ID", "description": device_id or "-"},
         {"title": "Browser", "description": _browser_title(entry)},
         {"title": "Access", "description": str(entry.get("access_class") or "device").strip() or "device"},
         {"title": "Lifetime", "description": sdk_access_links.lifetime_label(entry)},
@@ -157,7 +159,7 @@ def _current_browser_payload(device_id: str | None) -> tuple[list[dict[str, Any]
         {"title": "Last seen", "description": _iso(entry.get("last_seen_at")) or "-"},
         {"title": "Status", "description": "online" if bool(entry.get("online")) else "offline"},
     ]
-    return summary, {"value": _browser_title(entry)}
+    return summary, {"value": _browser_title(entry), "device_id": device_id}
 
 
 def _resolve_current_browser_id(entries: list[Mapping[str, Any]], webspace_id: str) -> str | None:
