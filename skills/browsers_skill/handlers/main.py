@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
@@ -12,8 +13,15 @@ from adaos.sdk.data import ctx_subnet
 from adaos.sdk.io import stream_publish
 from adaos.services.yjs.webspace import default_webspace_id
 
+try:
+    from adaos.services.workspaces import index as workspace_index
+except Exception:  # pragma: no cover - workspace index is optional in tests/runtime slices.
+    workspace_index = None
+
+_LOG = logging.getLogger("adaos.skill.browsers")
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
 _PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browsers-projection")
+_PENDING_REFRESH_BY_WS: dict[str, Any] = {}
 REQUIRES_DATA_PROJECTIONS = [
     "browsers.summary",
     "browsers.devices",
@@ -64,18 +72,65 @@ def _iso(value: Any) -> str | None:
 
 
 def _target_webspaces(target_ws: str | None = None) -> list[str]:
-    token = str(target_ws or "").strip()
-    if token:
-        return [token]
-    return [default_webspace_id()]
+    seen: list[str] = []
+
+    def _add(value: Any) -> None:
+        token = str(value or "").strip()
+        if token and token not in seen:
+            seen.append(token)
+
+    _add(target_ws)
+    _add(default_webspace_id())
+    if workspace_index is not None:
+        try:
+            for entry in workspace_index.list_workspaces():
+                _add(getattr(entry, "workspace_id", None) or getattr(entry, "id", None))
+        except Exception:
+            pass
+    return seen or [default_webspace_id()]
 
 
-def _run_coro(coro: Any) -> Any:
+def _run_coro(coro: Any, *, wait: bool = True, key: str | None = None) -> Any:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    return _PROJECTION_EXECUTOR.submit(lambda: asyncio.run(coro)).result()
+    future = _PROJECTION_EXECUTOR.submit(lambda: asyncio.run(coro))
+    if not wait:
+        if key:
+            _PENDING_REFRESH_BY_WS[key] = future
+
+        def _done(done_future: Any) -> None:
+            if key:
+                _PENDING_REFRESH_BY_WS.pop(key, None)
+            try:
+                done_future.result()
+            except Exception:
+                _LOG.warning("browsers snapshot projection failed", exc_info=True)
+
+        future.add_done_callback(_done)
+        return future
+    return future.result()
+
+
+def _has_running_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _schedule_publish_snapshot(target_ws: str | None = None) -> Any:
+    key = str(target_ws or default_webspace_id()).strip() or default_webspace_id()
+    pending = _PENDING_REFRESH_BY_WS.get(key)
+    if pending is not None:
+        try:
+            if not pending.done():
+                return pending
+        except Exception:
+            pass
+    return _run_coro(_publish_snapshot(target_ws), wait=False, key=key)
 
 
 def _ensure_skill_data_projections() -> None:
@@ -260,7 +315,10 @@ def _publish_stream_snapshot(receiver: str, webspace_id: str | None = None) -> N
 
 def _refresh_snapshot_sync(target_ws: str | None = None) -> dict[str, Any]:
     payload, _ = _build_snapshot(target_ws)
-    _run_coro(_publish_snapshot(target_ws))
+    if _has_running_loop():
+        _schedule_publish_snapshot(target_ws)
+    else:
+        _run_coro(_publish_snapshot(target_ws))
     return payload
 
 
