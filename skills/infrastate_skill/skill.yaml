@@ -1,5 +1,5 @@
 name: infrastate_skill
-version: 0.74.3
+version: 0.75.0
 description: Локальный обзор состояния ядра, graceful update, A/B слотов и последнего
   результата обновления.
 runtime:
@@ -41,10 +41,75 @@ events:
   - operations.
 data_projections:
 - scope: subnet
-  slot: infrastate.snapshot
+  slot: infrastate.summary
   targets:
   - backend: yjs
-    path: data/infrastate
+    path: data/infrastate/summary
+- scope: subnet
+  slot: infrastate.actions
+  targets:
+  - backend: yjs
+    path: data/infrastate/actions
+- scope: subnet
+  slot: infrastate.core_actions
+  targets:
+  - backend: yjs
+    path: data/infrastate/core_actions
+- scope: subnet
+  slot: infrastate.yjs_actions
+  targets:
+  - backend: yjs
+    path: data/infrastate/yjs_actions
+- scope: subnet
+  slot: infrastate.update_actions
+  targets:
+  - backend: yjs
+    path: data/infrastate/update_actions
+- scope: subnet
+  slot: infrastate.core_update_diag_actions
+  targets:
+  - backend: yjs
+    path: data/infrastate/core_update_diag_actions
+- scope: subnet
+  slot: infrastate.nodes
+  targets:
+  - backend: yjs
+    path: data/infrastate/nodes
+- scope: subnet
+  slot: infrastate.yjs_webspaces
+  targets:
+  - backend: yjs
+    path: data/infrastate/yjs_webspaces
+- scope: subnet
+  slot: infrastate.node_editor
+  targets:
+  - backend: yjs
+    path: data/infrastate/node_editor
+- scope: subnet
+  slot: infrastate.operations.active
+  targets:
+  - backend: yjs
+    path: data/infrastate/operations/active
+- scope: subnet
+  slot: infrastate.ui_state
+  targets:
+  - backend: yjs
+    path: data/infrastate/ui_state
+- scope: subnet
+  slot: infrastate.fallback
+  targets:
+  - backend: yjs
+    path: data/infrastate/fallback
+- scope: subnet
+  slot: infrastate.errors
+  targets:
+  - backend: yjs
+    path: data/infrastate/errors
+- scope: subnet
+  slot: infrastate.projection_diag
+  targets:
+  - backend: yjs
+    path: data/infrastate/projection_diag
 default_tool: get_snapshot
 tools:
 - name: get_snapshot
@@ -87,5 +152,5 @@ tools:
   output_schema:
     type: object
     properties: {}
-updated_at: '2026-05-12T08:34:37+00:00'
+updated_at: '2026-05-15T18:20:00+00:00'
 

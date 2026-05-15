@@ -19,7 +19,16 @@ from adaos.build_info import BUILD_INFO
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.core.errors import SdkRuntimeNotInitialized
 from adaos.sdk.data.context import clear_current_skill, set_current_skill
-from adaos.sdk.data import ctx_subnet, skill_memory_get, skill_memory_set
+from adaos.sdk.data import (
+    ProjectionContext,
+    ProjectionRuntime,
+    ProjectionSlot,
+    StreamReceiver,
+    StreamRuntime,
+    ctx_subnet,
+    skill_memory_get,
+    skill_memory_set,
+)
 from adaos.sdk.io import stream_publish
 from adaos.services.agent_context import get_ctx
 from adaos.services.core_slots import active_slot_manifest, slot_status
@@ -51,18 +60,6 @@ _log = logging.getLogger("skills.infrastate_skill")
 _UI_STATE_KEY = "infrastate.ui_state"
 _EVENTS_STATE_KEY = "infrastate.events"
 _SUMMARY_RENDER_STATE_KEY = "infrastate.summary_render_state"
-_DATA_PROJECTION_ENTRIES = [
-    {
-        "scope": "subnet",
-        "slot": "infrastate.snapshot",
-        "targets": [
-            {
-                "backend": "yjs",
-                "path": "data/infrastate",
-            },
-        ],
-    },
-]
 _UI_STATE_FALLBACK: dict[str, Any] = {}
 _SUMMARY_RENDER_STATE_FALLBACK: dict[str, Any] = {}
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
@@ -90,6 +87,60 @@ _PRESSURE_SNAPSHOT_CACHE_TTL_S = max(
     float(os.getenv("ADAOS_INFRASTATE_PRESSURE_SNAPSHOT_CACHE_TTL_S") or "30.0"),
 )
 _SNAPSHOT_CONTENT_MAX_BYTES = max(0, int(os.getenv("ADAOS_INFRASTATE_SNAPSHOT_CONTENT_MAX_BYTES") or "4096"))
+_MIN_YJS_PROJECTION_INTERVAL_S = 1.0
+_THROTTLED_YJS_PROJECTION_INTERVAL_S = max(
+    _MIN_YJS_PROJECTION_INTERVAL_S,
+    float(os.getenv("ADAOS_INFRASTATE_THROTTLED_YJS_PROJECTION_INTERVAL_S") or "2.5"),
+)
+_PROJECTION_SLOT_PATHS: dict[str, str] = {
+    "infrastate.summary": "data/infrastate/summary",
+    "infrastate.actions": "data/infrastate/actions",
+    "infrastate.core_actions": "data/infrastate/core_actions",
+    "infrastate.yjs_actions": "data/infrastate/yjs_actions",
+    "infrastate.update_actions": "data/infrastate/update_actions",
+    "infrastate.core_update_diag_actions": "data/infrastate/core_update_diag_actions",
+    "infrastate.nodes": "data/infrastate/nodes",
+    "infrastate.yjs_webspaces": "data/infrastate/yjs_webspaces",
+    "infrastate.node_editor": "data/infrastate/node_editor",
+    "infrastate.operations.active": "data/infrastate/operations/active",
+    "infrastate.ui_state": "data/infrastate/ui_state",
+    "infrastate.fallback": "data/infrastate/fallback",
+    "infrastate.errors": "data/infrastate/errors",
+    "infrastate.projection_diag": "data/infrastate/projection_diag",
+}
+_DATA_PROJECTION_ENTRIES = [
+    {
+        "scope": "subnet",
+        "slot": slot,
+        "targets": [{"backend": "yjs", "path": path}],
+    }
+    for slot, path in _PROJECTION_SLOT_PATHS.items()
+]
+_PROJECTION_SLOTS = [
+    ProjectionSlot(slot, path)
+    for slot, path in _PROJECTION_SLOT_PATHS.items()
+]
+_PROJECTION_SLOT_BY_NAME = {slot.name: slot for slot in _PROJECTION_SLOTS}
+_PROJECTION_SECTION_TO_SLOT = {
+    "summary": "infrastate.summary",
+    "actions": "infrastate.actions",
+    "core_actions": "infrastate.core_actions",
+    "yjs_actions": "infrastate.yjs_actions",
+    "update_actions": "infrastate.update_actions",
+    "core_update_diag_actions": "infrastate.core_update_diag_actions",
+    "nodes": "infrastate.nodes",
+    "yjs_webspaces": "infrastate.yjs_webspaces",
+    "node_editor": "infrastate.node_editor",
+    "ui_state": "infrastate.ui_state",
+    "fallback": "infrastate.fallback",
+    "errors": "infrastate.errors",
+    "projection_diag": "infrastate.projection_diag",
+}
+_PROJECTION_RUNTIME = ProjectionRuntime(
+    "infrastate_skill",
+    ctx_subnet=ctx_subnet,
+    projections=_PROJECTION_SLOTS,
+)
 _background_refresh_task: asyncio.Task[Any] | None = None
 _background_refresh_thread: threading.Thread | None = None
 _background_refresh_pending = False
@@ -124,11 +175,6 @@ _projection_diag = {
     "snapshot_request_coalesced_total": 0,
 }
 _PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="infrastate-projection")
-_MIN_YJS_PROJECTION_INTERVAL_S = 1.0
-_THROTTLED_YJS_PROJECTION_INTERVAL_S = max(
-    _MIN_YJS_PROJECTION_INTERVAL_S,
-    float(os.getenv("ADAOS_INFRASTATE_THROTTLED_YJS_PROJECTION_INTERVAL_S") or "2.5"),
-)
 
 
 def _stream_min_interval_s() -> float:
@@ -301,6 +347,46 @@ def _details_receiver_prefix() -> str:
     return "infrastate.details."
 
 
+def _sdk_stream_publish(
+    receiver: str,
+    data: Any,
+    *,
+    ts: float | None = None,
+    _meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if ts is None:
+        return stream_publish(receiver, data, _meta=_meta)
+    return stream_publish(receiver, data, ts=ts, _meta=_meta)
+
+
+def _build_registered_stream_payload(context: ProjectionContext) -> Any:
+    return _build_stream_payload_for_receiver(
+        str(context.receiver or ""),
+        context.webspace_id,
+    )
+
+
+_STREAM_RUNTIME = StreamRuntime(
+    "infrastate_skill",
+    receivers=[
+        StreamReceiver(_operations_receiver(), build=_build_registered_stream_payload),
+        StreamReceiver(_logs_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_events_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_yjs_load_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_build_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_steps_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_realtime_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_slots_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_skills_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_scenarios_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_marketplace_skills_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_marketplace_scenarios_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+        StreamReceiver(_core_update_diagnostics_receiver(), build=_build_registered_stream_payload, min_interval_s=_stream_min_interval_s()),
+    ],
+    stream_publish=_sdk_stream_publish,
+)
+
+
 def _stable_json_bytes(value: Any) -> bytes:
     try:
         text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -362,7 +448,7 @@ def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
     compact: dict[str, Any] = {}
     if isinstance(snapshot.get("summary"), dict):
         compact["summary"] = _compact_summary_for_yjs(snapshot.get("summary"))
-    for key in ("actions", "core_actions", "yjs_actions", "update_actions"):
+    for key in ("actions", "core_actions", "yjs_actions", "update_actions", "core_update_diag_actions"):
         if key in snapshot:
             compact[key] = _compact_action_list_for_yjs(snapshot.get(key))
     if key := snapshot.get("nodes"):
@@ -743,6 +829,7 @@ def _remember_stream_receiver(webspace_id: str | None, receiver: str) -> None:
     token = str(receiver or "").strip()
     if not token.startswith("infrastate."):
         return
+    _STREAM_RUNTIME.remember_receiver(token, webspace_id=str(webspace_id or "").strip() or default_webspace_id())
     ws = str(webspace_id or "").strip() or default_webspace_id()
     _active_stream_receivers_by_webspace.setdefault(ws, set()).add(token)
 
@@ -752,6 +839,7 @@ def _forget_stream_receiver(webspace_id: str | None, receiver: str) -> None:
     if not token:
         return
     ws = str(webspace_id or "").strip() or default_webspace_id()
+    _STREAM_RUNTIME.forget_receiver(token, webspace_id=ws)
     receivers = _active_stream_receivers_by_webspace.get(ws)
     if receivers is not None:
         receivers.discard(token)
@@ -765,7 +853,13 @@ def _forget_stream_receiver(webspace_id: str | None, receiver: str) -> None:
 
 def _active_stream_receivers(webspace_id: str | None) -> list[str]:
     ws = str(webspace_id or "").strip() or default_webspace_id()
-    return sorted(_active_stream_receivers_by_webspace.get(ws) or set())
+    sdk_receivers = {
+        str(entry.get("receiver") or "")
+        for entry in _STREAM_RUNTIME.active_receivers_snapshot()
+        if str(entry.get("webspace_id") or "") == ws
+    }
+    local_receivers = set(_active_stream_receivers_by_webspace.get(ws) or set())
+    return sorted(local_receivers | sdk_receivers)
 
 
 def _stream_payload_fingerprint(data: Any) -> str:
@@ -775,16 +869,6 @@ def _stream_payload_fingerprint(data: Any) -> str:
 def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None, force: bool = False) -> None:
     if data is None:
         return
-    key = _stream_cache_key(webspace_id, receiver)
-    fingerprint = _stream_payload_fingerprint(data)
-    now = time.monotonic()
-    if not force:
-        if _stream_fingerprints.get(key) == fingerprint:
-            return
-        last_at = float(_stream_last_published_at.get(key) or 0.0)
-        min_interval_s = _stream_min_interval_s()
-        if min_interval_s > 0 and last_at > 0 and now - last_at < min_interval_s:
-            return
     if not force:
         guardrail = _active_noncritical_stream_guardrail(
             str(webspace_id or "").strip() or default_webspace_id(),
@@ -798,14 +882,11 @@ def _publish_stream_payload(*, receiver: str, data: Any, webspace_id: str | None
                 guardrail=guardrail,
             )
             return
-    _stream_fingerprints[key] = fingerprint
-    _stream_last_published_at[key] = now
-    stream_publish(
+    _STREAM_RUNTIME.publish_snapshot(
         receiver,
         data,
-        _meta={
-            "webspace_id": str(webspace_id or "").strip() or default_webspace_id(),
-        },
+        webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
+        force=force,
     )
 
 
@@ -873,6 +954,8 @@ def _invalidate_runtime_caches(*, webspace_id: str | None = None, marketplace: b
 def _invalidate_projection_state(*, webspace_id: str | None = None) -> None:
     ws = str(webspace_id or "").strip()
     if ws:
+        _PROJECTION_RUNTIME.reset(webspace_id=ws)
+        _STREAM_RUNTIME.reset(webspace_id=ws)
         _projection_fingerprints.pop(ws, None)
         _projection_last_applied_at.pop(ws, None)
         prefix = f"{ws}\0"
@@ -881,6 +964,8 @@ def _invalidate_projection_state(*, webspace_id: str | None = None) -> None:
             _stream_last_published_at.pop(key, None)
             _stream_request_seen_at.pop(key, None)
         return
+    _PROJECTION_RUNTIME.reset()
+    _STREAM_RUNTIME.reset()
     _projection_fingerprints.clear()
     _projection_last_applied_at.clear()
     _stream_fingerprints.clear()
@@ -922,7 +1007,7 @@ def _cached_snapshot_projection_fingerprint(cache_key: str, snapshot: dict[str, 
     fingerprint = _snapshot_cache_projection_fingerprints.get(cache_key)
     if fingerprint:
         return fingerprint
-    fingerprint = _snapshot_projection_fingerprint(_compact_snapshot_for_yjs(snapshot))
+    fingerprint = _snapshot_projection_fingerprint(_projection_sections_from_snapshot(snapshot))
     _snapshot_cache_projection_fingerprints[cache_key] = fingerprint
     return fingerprint
 
@@ -970,6 +1055,8 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "last_tool_project_suppressed_observed_state": str(_projection_diag.get("last_tool_project_suppressed_observed_state") or ""),
         "last_tool_project_suppressed_at": float(_projection_diag.get("last_tool_project_suppressed_at") or 0.0),
         "fingerprinted_webspaces": sorted(_projection_fingerprints),
+        "sdk_projection": _PROJECTION_RUNTIME.diagnostics_snapshot(),
+        "sdk_stream": _STREAM_RUNTIME.diagnostics_snapshot(),
     }
 
 
@@ -2179,7 +2266,7 @@ def _reliability_snapshot(conf, lifecycle: dict[str, Any]) -> dict[str, Any]:
 def _ensure_skill_data_projections() -> None:
     try:
         ctx = get_ctx()
-        existing = ctx.projections.resolve("subnet", "infrastate.snapshot")
+        existing = ctx.projections.resolve("subnet", "infrastate.summary")
         if existing:
             return
         manifest_path = _skill_manifest_path()
@@ -5565,7 +5652,7 @@ def _snapshot_or_fallback_cached(*, webspace_id: str | None = None, allow_cache:
             cached_snapshot = _cache_copy(snapshot)
             _snapshot_cache[cache_key] = (time.monotonic(), cached_snapshot)
             _snapshot_cache_projection_fingerprints[cache_key] = _snapshot_projection_fingerprint(
-                _compact_snapshot_for_yjs(cached_snapshot)
+                _projection_sections_from_snapshot(cached_snapshot)
             )
             return snapshot
     snapshot = _snapshot_or_fallback(webspace_id=webspace_id)
@@ -5573,9 +5660,50 @@ def _snapshot_or_fallback_cached(*, webspace_id: str | None = None, allow_cache:
         cached_snapshot = _cache_copy(snapshot)
         _snapshot_cache[cache_key] = (time.monotonic(), cached_snapshot)
         _snapshot_cache_projection_fingerprints[cache_key] = _snapshot_projection_fingerprint(
-            _compact_snapshot_for_yjs(cached_snapshot)
+            _projection_sections_from_snapshot(cached_snapshot)
         )
     return snapshot
+
+
+def _projection_sections_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    compact = _compact_snapshot_for_yjs(snapshot)
+    sections: dict[str, Any] = {}
+    for snapshot_key, slot_name in _PROJECTION_SECTION_TO_SLOT.items():
+        if snapshot_key in compact:
+            sections[slot_name] = _cache_copy(compact.get(snapshot_key))
+    operations = compact.get("operations") if isinstance(compact.get("operations"), dict) else {}
+    if "active" in operations:
+        sections["infrastate.operations.active"] = _cache_copy(operations.get("active") or [])
+    return sections
+
+
+def _build_stream_payload_for_receiver(receiver: str, webspace_id: str | None = None) -> Any:
+    token = str(receiver or "").strip()
+    if token == _operations_receiver():
+        operations = _operations_snapshot(webspace_id=webspace_id)
+        return list(operations.get("active_items") or operations.get("items") or [])
+    if token == _events_receiver():
+        return _compact_card_list(list(reversed(_event_state())), include_content=False)
+    if token == _skills_receiver():
+        return _skills_items()
+    if token == _scenarios_receiver():
+        return _scenario_items()
+    if token in {_marketplace_skills_receiver(), _marketplace_scenarios_receiver()}:
+        try:
+            conf = load_config()
+            ui_state = _ui_state()
+            selected_node_id = str(ui_state.get("selected_node_id") or getattr(conf, "node_id", "") or "").strip() or None
+            marketplace = _marketplace_items(
+                webspace_id=webspace_id,
+                selected_node_id=selected_node_id,
+                local_node_id=str(getattr(conf, "node_id", "") or "").strip() or None,
+            )
+            key = "skills" if token == _marketplace_skills_receiver() else "scenarios"
+            return list(marketplace.get(key) or [])
+        except Exception:
+            _log.debug("failed to build direct marketplace stream payload", exc_info=True)
+    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
+    return _stream_payload_for_receiver(snapshot, token)
 
 
 def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
@@ -5584,8 +5712,8 @@ def _projection_webspace_ids(webspace_id: str | None = None) -> list[str]:
 
 
 async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = None) -> None:
-    compact = _compact_snapshot_for_yjs(snapshot)
-    fingerprint = _snapshot_projection_fingerprint(compact)
+    sections = _projection_sections_from_snapshot(snapshot)
+    fingerprint = _snapshot_projection_fingerprint(sections)
     now = time.monotonic()
     pressure_policy = _projection_pressure_policy(webspace_id)
     if str(pressure_policy.get("policy_state") or "").strip().lower() == "block":
@@ -5603,16 +5731,35 @@ async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = Non
         if last_applied_at > 0 and now - last_applied_at < effective_min_interval_s:
             _projection_diag["rate_limited_total"] = int(_projection_diag.get("rate_limited_total") or 0) + 1
             continue
-        pushed = False
+        applied = False
+        errored = False
         try:
-            pushed = set_current_skill("infrastate_skill")
-            await ctx_subnet.set_async("infrastate.snapshot", compact, webspace_id=target_ws)
+            _PROJECTION_RUNTIME.bind_ctx_subnet(ctx_subnet)
+            for slot_name, value in sections.items():
+                pushed = False
+                try:
+                    pushed = set_current_skill("infrastate_skill")
+                    result = await _PROJECTION_RUNTIME.set_if_changed(
+                        _PROJECTION_SLOT_BY_NAME.get(slot_name) or slot_name,
+                        value,
+                        webspace_id=target_ws,
+                        reason="infrastate_snapshot_refresh",
+                    )
+                finally:
+                    if pushed:
+                        clear_current_skill()
+                applied = applied or bool(result.written)
+                errored = errored or bool(result.error)
         finally:
-            if pushed:
-                clear_current_skill()
-        _projection_fingerprints[target_ws] = fingerprint
-        _projection_last_applied_at[target_ws] = now
-        _projection_diag["apply_total"] = int(_projection_diag.get("apply_total") or 0) + 1
+            pass
+        if errored:
+            _projection_diag["error_total"] = int(_projection_diag.get("error_total") or 0) + 1
+        if applied:
+            _projection_fingerprints[target_ws] = fingerprint
+            _projection_last_applied_at[target_ws] = now
+            _projection_diag["apply_total"] = int(_projection_diag.get("apply_total") or 0) + 1
+        else:
+            _projection_diag["skip_total"] = int(_projection_diag.get("skip_total") or 0) + 1
     _publish_snapshot_streams(snapshot, webspace_id=webspace_id)
 
 
@@ -5680,15 +5827,28 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
         _remember_stream_receiver(webspace_id, receiver)
     if not _consume_stream_snapshot_request(webspace_id=webspace_id, receiver=receiver):
         return
-    # Initial stream subscriptions arrive as a burst; share one fresh-enough
-    # snapshot so each receiver does not rebuild the same heavy state.
-    snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
-    _publish_stream_payload(
-        receiver=receiver,
-        data=_stream_payload_for_receiver(snapshot, receiver),
-        webspace_id=webspace_id,
-        force=True,
-    )
+    if is_detail_receiver:
+        # Dynamic detail receivers are request-only; they are not registered as
+        # stable stream declarations because the item id is part of the receiver.
+        snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
+        _publish_stream_payload(
+            receiver=receiver,
+            data=_stream_payload_for_receiver(snapshot, receiver),
+            webspace_id=webspace_id,
+            force=True,
+        )
+    else:
+        _STREAM_RUNTIME.publish_receiver_snapshot(
+            receiver,
+            webspace_id=webspace_id,
+            force=True,
+            context=ProjectionContext(
+                skill_id="infrastate_skill",
+                webspace_id=str(webspace_id or "").strip() or default_webspace_id(),
+                receiver=receiver,
+                reason="snapshot_requested",
+            ),
+        )
     if is_detail_receiver:
         _forget_stream_receiver(webspace_id, receiver)
 
