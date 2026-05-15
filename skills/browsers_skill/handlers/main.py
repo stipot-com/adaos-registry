@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -22,6 +24,7 @@ _LOG = logging.getLogger("adaos.skill.browsers")
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
 _PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browsers-projection")
 _PENDING_REFRESH_BY_WS: dict[str, Any] = {}
+_LAST_YJS_FINGERPRINT_BY_WS_SLOT: dict[tuple[str, str], str] = {}
 REQUIRES_DATA_PROJECTIONS = [
     "browsers.summary",
     "browsers.devices",
@@ -90,6 +93,61 @@ def _target_webspaces(target_ws: str | None = None) -> list[str]:
     return seen or [default_webspace_id()]
 
 
+def _projection_webspaces(target_ws: str | None = None, *, fanout: bool = False) -> list[str]:
+    token = str(target_ws or "").strip()
+    if fanout:
+        return _target_webspaces(token or None)
+    return [token or default_webspace_id()]
+
+
+def _event_topic(evt: Any) -> str:
+    for attr in ("topic", "type", "name"):
+        token = str(getattr(evt, attr, "") or "").strip()
+        if token:
+            return token
+    payload = getattr(evt, "payload", evt)
+    if isinstance(payload, Mapping):
+        for key in ("topic", "type", "event_type"):
+            token = str(payload.get(key) or "").strip()
+            if token:
+                return token
+    return ""
+
+
+def _should_fanout_projection_refresh(topic: str, target_ws: str | None) -> bool:
+    if str(target_ws or "").strip():
+        return False
+    return str(topic or "").strip().lower() in {"sys.ready", "skills.activated"}
+
+
+def _should_force_projection_refresh(topic: str) -> bool:
+    return str(topic or "").strip().lower() in {
+        "sys.ready",
+        "skills.activated",
+        "desktop.webspace.refresh",
+        "desktop.webspace.reload",
+        "desktop.webspace.reloaded",
+    }
+
+
+def _payload_fingerprint(value: Any) -> str:
+    try:
+        raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    except Exception:
+        raw = repr(value)
+    return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
+
+
+async def _set_projection_if_changed(slot: str, value: Any, *, webspace_id: str, force: bool = False) -> bool:
+    key = (str(webspace_id or "default").strip() or "default", str(slot or "").strip())
+    fingerprint = _payload_fingerprint(value)
+    if not force and _LAST_YJS_FINGERPRINT_BY_WS_SLOT.get(key) == fingerprint:
+        return False
+    await ctx_subnet.set_async(slot, value, webspace_id=key[0])
+    _LAST_YJS_FINGERPRINT_BY_WS_SLOT[key] = fingerprint
+    return True
+
+
 def _run_coro(coro: Any, *, wait: bool = True, key: str | None = None) -> Any:
     try:
         asyncio.get_running_loop()
@@ -121,8 +179,8 @@ def _has_running_loop() -> bool:
     return True
 
 
-def _schedule_publish_snapshot(target_ws: str | None = None) -> Any:
-    key = str(target_ws or default_webspace_id()).strip() or default_webspace_id()
+def _schedule_publish_snapshot(target_ws: str | None = None, *, fanout: bool = False, force: bool = False) -> Any:
+    key = "*" if fanout else str(target_ws or default_webspace_id()).strip() or default_webspace_id()
     pending = _PENDING_REFRESH_BY_WS.get(key)
     if pending is not None:
         try:
@@ -130,7 +188,7 @@ def _schedule_publish_snapshot(target_ws: str | None = None) -> Any:
                 return pending
         except Exception:
             pass
-    return _run_coro(_publish_snapshot(target_ws), wait=False, key=key)
+    return _run_coro(_publish_snapshot(target_ws, fanout=fanout, force=force), wait=False, key=key)
 
 
 def _ensure_skill_data_projections() -> None:
@@ -192,6 +250,13 @@ def _browser_tiles(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _browser_sort_key(entry: Mapping[str, Any]) -> tuple[str, str]:
+    return (
+        _browser_title(entry).casefold(),
+        str(entry.get("id") or "").strip().casefold(),
+    )
+
+
 def _current_browser_payload(device_id: str | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     entry = sdk_access_links.get_browser_link(str(device_id or "").strip()) if device_id else None
     if not entry:
@@ -236,8 +301,14 @@ def _resolve_current_browser_id(entries: list[Mapping[str, Any]], webspace_id: s
 
 def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
     all_entries = sdk_access_links.list_browser_links()
-    devices = [entry for entry in all_entries if str(entry.get("access_class") or "device").strip() != "client"]
-    clients = [entry for entry in all_entries if str(entry.get("access_class") or "").strip() == "client"]
+    devices = sorted(
+        [entry for entry in all_entries if str(entry.get("access_class") or "device").strip() != "client"],
+        key=_browser_sort_key,
+    )
+    clients = sorted(
+        [entry for entry in all_entries if str(entry.get("access_class") or "").strip() == "client"],
+        key=_browser_sort_key,
+    )
     summary = {
         "title": "Browsers",
         "value": len(all_entries),
@@ -256,26 +327,18 @@ def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
     }, effective_ws)
 
 
-async def _publish_snapshot(target_ws: str | None = None) -> dict[str, Any]:
+async def _publish_snapshot(target_ws: str | None = None, *, fanout: bool = False, force: bool = False) -> dict[str, Any]:
     _ensure_skill_data_projections()
     payload, effective_ws = _build_snapshot(target_ws)
     available_entries = list(payload["devices"]) + list(payload["clients"])
-    for ws in _target_webspaces(effective_ws):
-        await ctx_subnet.set_async("browsers.summary", payload["summary"], webspace_id=ws)
-        await ctx_subnet.set_async("browsers.devices", payload["devices"], webspace_id=ws)
-        await ctx_subnet.set_async("browsers.clients", payload["clients"], webspace_id=ws)
+    for ws in _projection_webspaces(effective_ws, fanout=fanout):
         current_id = _resolve_current_browser_id(available_entries, ws)
         ws_current_summary, ws_current_name = _current_browser_payload(current_id)
-        await ctx_subnet.set_async("browsers.current_summary", ws_current_summary, webspace_id=ws)
-        await ctx_subnet.set_async("browsers.current_name", ws_current_name, webspace_id=ws)
-        _publish_streams(
-            {
-                **payload,
-                "current_summary": ws_current_summary,
-                "current_name": ws_current_name,
-            },
-            webspace_id=ws,
-        )
+        await _set_projection_if_changed("browsers.summary", payload["summary"], webspace_id=ws, force=force)
+        await _set_projection_if_changed("browsers.devices", payload["devices"], webspace_id=ws, force=force)
+        await _set_projection_if_changed("browsers.clients", payload["clients"], webspace_id=ws, force=force)
+        await _set_projection_if_changed("browsers.current_summary", ws_current_summary, webspace_id=ws, force=force)
+        await _set_projection_if_changed("browsers.current_name", ws_current_name, webspace_id=ws, force=force)
     return payload
 
 
@@ -287,14 +350,6 @@ def _publish_stream(receiver: str, data: Any, *, webspace_id: str | None = None)
             "webspace_id": str(webspace_id or "default").strip() or "default",
         },
     )
-
-
-def _publish_streams(payload: Mapping[str, Any], *, webspace_id: str | None = None) -> None:
-    _publish_stream("browsers.summary", payload.get("summary"), webspace_id=webspace_id)
-    _publish_stream("browsers.devices", payload.get("devices"), webspace_id=webspace_id)
-    _publish_stream("browsers.clients", payload.get("clients"), webspace_id=webspace_id)
-    _publish_stream("browsers.current_summary", payload.get("current_summary"), webspace_id=webspace_id)
-    _publish_stream("browsers.current_name", payload.get("current_name"), webspace_id=webspace_id)
 
 
 def _publish_stream_snapshot(receiver: str, webspace_id: str | None = None) -> None:
@@ -313,12 +368,13 @@ def _publish_stream_snapshot(receiver: str, webspace_id: str | None = None) -> N
         _publish_stream(receiver, data_by_receiver[receiver], webspace_id=effective_ws)
 
 
-def _refresh_snapshot_sync(target_ws: str | None = None) -> dict[str, Any]:
-    payload, _ = _build_snapshot(target_ws)
+def _refresh_snapshot_sync(target_ws: str | None = None, *, fanout: bool = False, force: bool = False) -> dict[str, Any]:
     if _has_running_loop():
-        _schedule_publish_snapshot(target_ws)
+        payload, _ = _build_snapshot(target_ws)
+        _schedule_publish_snapshot(target_ws, fanout=fanout, force=force)
+        return payload
     else:
-        _run_coro(_publish_snapshot(target_ws))
+        payload = _run_coro(_publish_snapshot(target_ws, fanout=fanout, force=force))
     return payload
 
 
@@ -353,8 +409,8 @@ def _coerce_device_ref(
 
 @tool
 def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
-    payload = _refresh_snapshot_sync(webspace_id)
-    return {"ok": True, "summary": payload.get("summary") or {}, "delivery": "stream"}
+    payload = _refresh_snapshot_sync(webspace_id, force=True)
+    return {"ok": True, "summary": payload.get("summary") or {}, "delivery": "projection"}
 
 
 @subscribe("webio.stream.snapshot.requested")
@@ -634,7 +690,13 @@ def adopt_link(name: str | None = None, preset: str = "permanent", node_id: str 
 @subscribe("subnet.member.link.down")
 def _on_refresh(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
-    _refresh_snapshot_sync(_webspace_id_from_payload(payload))
+    target_ws = _webspace_id_from_payload(payload)
+    topic = _event_topic(evt)
+    _refresh_snapshot_sync(
+        target_ws,
+        fanout=_should_fanout_projection_refresh(topic, target_ws),
+        force=_should_force_projection_refresh(topic),
+    )
 
 
 def handle(topic: str, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
