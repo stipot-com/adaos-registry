@@ -1,19 +1,29 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
 
 from adaos.sdk.core.decorators import subscribe, tool
+from adaos.sdk.data import (
+    ProjectionContext,
+    ProjectionRuntime,
+    ProjectionSlot,
+    StreamReceiver,
+    StreamRuntime,
+)
 from adaos.sdk.data import access_links as sdk_access_links
 from adaos.sdk.data import device_access as sdk_device_access
 from adaos.sdk.data import ctx_subnet
 from adaos.sdk.io import stream_publish
-from adaos.services.yjs.webspace import default_webspace_id
+
+try:
+    from adaos.services.yjs.webspace import default_webspace_id
+except Exception:  # pragma: no cover - tests may run without optional y_py runtime deps.
+    def default_webspace_id() -> str:
+        return "default"
 
 try:
     from adaos.services.workspaces import index as workspace_index
@@ -24,7 +34,6 @@ _LOG = logging.getLogger("adaos.skill.browsers")
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
 _PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browsers-projection")
 _PENDING_REFRESH_BY_WS: dict[str, Any] = {}
-_LAST_YJS_FINGERPRINT_BY_WS_SLOT: dict[tuple[str, str], str] = {}
 REQUIRES_DATA_PROJECTIONS = [
     "browsers.summary",
     "browsers.devices",
@@ -39,6 +48,48 @@ _DATA_PROJECTION_ENTRIES = [
     {"scope": "subnet", "slot": "browsers.current_summary", "targets": [{"backend": "yjs", "path": "data/browsers/current_summary"}]},
     {"scope": "subnet", "slot": "browsers.current_name", "targets": [{"backend": "yjs", "path": "data/browsers/current_name"}]},
 ]
+_PROJECTION_SLOTS = [
+    ProjectionSlot("browsers.summary", "data/browsers/summary"),
+    ProjectionSlot("browsers.devices", "data/browsers/devices"),
+    ProjectionSlot("browsers.clients", "data/browsers/clients"),
+    ProjectionSlot("browsers.current_summary", "data/browsers/current_summary"),
+    ProjectionSlot("browsers.current_name", "data/browsers/current_name"),
+]
+_PROJECTION_SLOT_BY_NAME = {slot.name: slot for slot in _PROJECTION_SLOTS}
+_PROJECTION_RUNTIME = ProjectionRuntime(
+    "browsers_skill",
+    ctx_subnet=ctx_subnet,
+    projections=_PROJECTION_SLOTS,
+)
+
+
+def _sdk_stream_publish(
+    receiver: str,
+    data: Any,
+    *,
+    ts: float | None = None,
+    _meta: Mapping[str, Any] | None = None,
+) -> Mapping[str, bool]:
+    if ts is None:
+        return stream_publish(receiver, data, _meta=_meta)
+    return stream_publish(receiver, data, ts=ts, _meta=_meta)
+
+
+def _build_registered_stream_payload(context: ProjectionContext) -> Any | None:
+    return _build_stream_payload(str(context.receiver or ""), context.webspace_id)
+
+
+_STREAM_RUNTIME = StreamRuntime(
+    "browsers_skill",
+    receivers=[
+        StreamReceiver("browsers.summary", build=_build_registered_stream_payload),
+        StreamReceiver("browsers.devices", build=_build_registered_stream_payload),
+        StreamReceiver("browsers.clients", build=_build_registered_stream_payload),
+        StreamReceiver("browsers.current_summary", build=_build_registered_stream_payload),
+        StreamReceiver("browsers.current_name", build=_build_registered_stream_payload),
+    ],
+    stream_publish=_sdk_stream_publish,
+)
 
 
 def lang_res() -> Dict[str, str]:
@@ -130,22 +181,15 @@ def _should_force_projection_refresh(topic: str) -> bool:
     }
 
 
-def _payload_fingerprint(value: Any) -> str:
-    try:
-        raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
-    except Exception:
-        raw = repr(value)
-    return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
-
-
 async def _set_projection_if_changed(slot: str, value: Any, *, webspace_id: str, force: bool = False) -> bool:
-    key = (str(webspace_id or "default").strip() or "default", str(slot or "").strip())
-    fingerprint = _payload_fingerprint(value)
-    if not force and _LAST_YJS_FINGERPRINT_BY_WS_SLOT.get(key) == fingerprint:
-        return False
-    await ctx_subnet.set_async(slot, value, webspace_id=key[0])
-    _LAST_YJS_FINGERPRINT_BY_WS_SLOT[key] = fingerprint
-    return True
+    result = await _PROJECTION_RUNTIME.set_if_changed(
+        _PROJECTION_SLOT_BY_NAME.get(str(slot or "").strip()) or slot,
+        value,
+        webspace_id=webspace_id,
+        force=force,
+        reason="browsers_snapshot_refresh",
+    )
+    return bool(result.written)
 
 
 def _run_coro(coro: Any, *, wait: bool = True, key: str | None = None) -> Any:
@@ -342,17 +386,7 @@ async def _publish_snapshot(target_ws: str | None = None, *, fanout: bool = Fals
     return payload
 
 
-def _publish_stream(receiver: str, data: Any, *, webspace_id: str | None = None) -> None:
-    stream_publish(
-        receiver,
-        data,
-        _meta={
-            "webspace_id": str(webspace_id or "default").strip() or "default",
-        },
-    )
-
-
-def _publish_stream_snapshot(receiver: str, webspace_id: str | None = None) -> None:
+def _build_stream_payload(receiver: str, webspace_id: str | None = None) -> Any | None:
     payload, effective_ws = _build_snapshot(webspace_id)
     available_entries = list(payload["devices"]) + list(payload["clients"])
     current_id = _resolve_current_browser_id(available_entries, effective_ws)
@@ -364,8 +398,24 @@ def _publish_stream_snapshot(receiver: str, webspace_id: str | None = None) -> N
         "browsers.current_summary": current_summary,
         "browsers.current_name": current_name,
     }
-    if receiver in data_by_receiver:
-        _publish_stream(receiver, data_by_receiver[receiver], webspace_id=effective_ws)
+    return data_by_receiver.get(receiver)
+
+
+def _publish_stream_snapshot(receiver: str, webspace_id: str | None = None) -> None:
+    effective_ws = str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
+    result = _STREAM_RUNTIME.publish_receiver_snapshot(
+        receiver,
+        webspace_id=effective_ws,
+        force=True,
+        context=ProjectionContext(
+            skill_id="browsers_skill",
+            webspace_id=effective_ws,
+            receiver=receiver,
+            reason="direct_stream_snapshot",
+        ),
+    )
+    if result is not None and result.error:
+        _LOG.debug("browsers stream snapshot failed receiver=%s error=%s", receiver, result.error)
 
 
 def _refresh_snapshot_sync(target_ws: str | None = None, *, fanout: bool = False, force: bool = False) -> dict[str, Any]:
@@ -415,24 +465,12 @@ def refresh_snapshot(webspace_id: str | None = None) -> dict[str, Any]:
 
 @subscribe("webio.stream.snapshot.requested")
 def on_webio_stream_snapshot_requested(evt: Any) -> None:
-    payload = getattr(evt, "payload", evt)
-    receiver = _receiver_from_payload(payload)
-    if not receiver.startswith("browsers."):
-        return
-    _publish_stream_snapshot(receiver, _webspace_id_from_payload(payload))
+    _STREAM_RUNTIME.handle_snapshot_requested(evt, receiver_prefix="browsers.")
 
 
 @subscribe("webio.stream.subscription.changed")
 def on_webio_stream_subscription_changed(evt: Any) -> None:
-    payload = getattr(evt, "payload", evt)
-    if not isinstance(payload, Mapping):
-        return
-    if str(payload.get("action") or "").strip().lower() == "unsubscribed":
-        return
-    receiver = _receiver_from_payload(payload)
-    if not receiver.startswith("browsers."):
-        return
-    _publish_stream_snapshot(receiver, _webspace_id_from_payload(payload))
+    _STREAM_RUNTIME.handle_subscription_changed(evt, receiver_prefix="browsers.")
 
 
 @tool
