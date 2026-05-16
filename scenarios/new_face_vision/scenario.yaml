@@ -1,0 +1,9 @@
+id: new_face_vision_scenario
+version: 1.1.0
+title: Анализ камней
+description: Инструмент анализа дефектов камней на видео с помощью нейросети
+type: desktop
+depends:
+- new_face_vision_skill
+updated_at: '2026-05-16T11:13:35+00:00'
+

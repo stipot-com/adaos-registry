@@ -1,0 +1,327 @@
+{
+  "id": "new_face_vision_scenario",
+  "version": "0.1.0",
+  "name": "stone_analysis",
+  "type": "desktop",
+  "title": "Анализ камней",
+  "description": "Инструмент анализа дефектов камней на видео с помощью нейросети",
+  "depends": [
+    "new_face_vision_skill"
+  ],
+  "workflow": {
+    "initial_state": "init",
+    "states": {
+      "init": {
+        "label": "Начало",
+        "context": {
+          "edit": [],
+          "readonly": []
+        },
+        "actions": [
+          {
+            "id": "load_model",
+            "label": "Загрузить модель",
+            "trigger": "button",
+            "tool": "new_face_vision_skill.new_face_vision_load_model",
+            "next_state": "ready"
+          }
+        ]
+      },
+      "ready": {
+        "label": "Готов к работе",
+        "context": {
+          "edit": [],
+          "readonly": ["model_loaded"]
+        },
+        "actions": [
+          {
+            "id": "load_frames",
+            "label": "Загрузить кадры",
+            "trigger": "button",
+            "tool": "new_face_vision_skill.new_face_vision_load_frames",
+            "next_state": "ready"
+          },
+          {
+            "id": "load_masks",
+            "label": "Загрузить маски",
+            "trigger": "button",
+            "tool": "new_face_vision_skill.new_face_vision_load_masks",
+            "next_state": "ready"
+          }
+        ]
+      },
+      "analyze": {
+        "label": "Анализ",
+        "context": {
+          "edit": [],
+          "readonly": ["current_frame", "preview"]
+        },
+        "actions": [
+          {
+            "id": "next_frame",
+            "label": "Следующий кадр",
+            "trigger": "button",
+            "tool": "new_face_vision_skill.new_face_vision_play_step",
+            "next_state": "analyze"
+          },
+          {
+            "id": "reset",
+            "label": "Сброс",
+            "trigger": "button",
+            "tool": "new_face_vision_skill.new_face_vision_reset",
+            "next_state": "ready"
+          },
+          {
+            "id": "clear",
+            "label": "Очистить",
+            "trigger": "button",
+            "tool": "new_face_vision_skill.new_face_vision_clear",
+            "next_state": "init"
+          }
+        ]
+      }
+    }
+  },
+  "ui": {
+    "application": {
+      "version": "0.1",
+      "desktop": {
+        "pageSchema": {
+          "id": "stone_analysis",
+          "title": "Анализ дефектов камней",
+          "layout": {
+            "type": "split",
+            "pattern": "split",
+            "areas": [
+              {
+                "id": "sidebar",
+                "role": "sidebar"
+              },
+              {
+                "id": "main",
+                "role": "main"
+              },
+              {
+                "id": "right",
+                "role": "aux"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "status-panel",
+              "type": "visual.metricTile",
+              "area": "sidebar",
+              "title": "Статус",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/stats"
+              }
+            },
+            {
+              "id": "preview-image",
+              "type": "visual.image",
+              "area": "main",
+              "title": "Превью",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/preview_base64"
+              }
+            },
+            {
+              "id": "metrics-panel",
+              "type": "visual.metricTile",
+              "area": "right",
+              "title": "Метрики",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/metrics"
+              }
+            },
+            {
+              "id": "status-indicator",
+              "type": "visual.metricTile",
+              "area": "right",
+              "title": "Статус",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/status"
+              }
+            },
+            {
+              "id": "controls",
+              "type": "input.commandBar",
+              "area": "sidebar",
+              "title": "Управление",
+              "inputs": {
+                "buttons": [
+                  {
+                    "id": "play",
+                    "label": "Следующий кадр",
+                    "icon": "play"
+                  },
+                  {
+                    "id": "reset",
+                    "label": "Сброс",
+                    "icon": "refresh"
+                  },
+                  {
+                    "id": "clear",
+                    "label": "Очистить",
+                    "icon": "trash"
+                  }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click:play",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_play_step"
+                },
+                {
+                  "on": "click:reset",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_reset"
+                },
+                {
+                  "on": "click:clear",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_clear"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "modals": {
+        "load_model": {
+          "title": "Загрузка модели",
+          "schema": {
+            "id": "load_model",
+            "layout": {
+              "type": "single",
+              "pattern": "stack",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "widgets": [
+              {
+                "id": "model-path",
+                "type": "input.text",
+                "area": "main",
+                "title": "Путь к файлу модели",
+                "inputs": {
+                  "placeholder": "C:\\path\\to\\model.pth"
+                },
+                "actions": [
+                  {
+                    "on": "change",
+                    "type": "updateState",
+                    "params": {
+                      "modelPath": "$event.value"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "load-button",
+                "type": "input.commandBar",
+                "area": "main",
+                "inputs": {
+                  "buttons": [
+                    {
+                      "id": "load",
+                      "label": "Загрузить"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "on": "click:load",
+                    "type": "callSkill",
+                    "target": "new_face_vision_skill.new_face_vision_load_model",
+                    "params": {
+                      "path": "$state.modelPath"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "load_frames": {
+          "title": "Загрузка кадров",
+          "schema": {
+            "id": "load_frames",
+            "layout": {
+              "type": "single",
+              "pattern": "stack",
+              "areas": [
+                {
+                  "id": "main",
+                  "role": "main"
+                }
+              ]
+            },
+            "widgets": [
+              {
+                "id": "frames-path",
+                "type": "input.text",
+                "area": "main",
+                "title": "Путь к ZIP с кадрами",
+                "inputs": {
+                  "placeholder": "C:\\path\\to\\frames.zip"
+                },
+                "actions": [
+                  {
+                    "on": "change",
+                    "type": "updateState",
+                    "params": {
+                      "framesPath": "$event.value"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "load-frames-button",
+                "type": "input.commandBar",
+                "area": "main",
+                "inputs": {
+                  "buttons": [
+                    {
+                      "id": "load",
+                      "label": "Загрузить"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "on": "click:load",
+                    "type": "callSkill",
+                    "target": "new_face_vision_skill.new_face_vision_load_frames",
+                    "params": {
+                      "path": "$state.framesPath"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "registry": {
+    "widgets": [],
+    "modals": []
+  },
+  "catalog": {
+    "apps": [],
+    "widgets": []
+  },
+  "data": {}
+}

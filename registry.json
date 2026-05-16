@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-16T11:13:08+00:00",
+  "updated_at": "2026-05-16T11:13:35+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -438,6 +438,31 @@
       "skills": {
         "required": [
           "infrascope_skill"
+        ]
+      }
+    },
+    {
+      "kind": "scenario",
+      "id": "new_face_vision_scenario",
+      "name": "new_face_vision",
+      "version": "1.1.0",
+      "updated_at": "2026-05-16T11:13:35+00:00",
+      "path": "scenarios/new_face_vision",
+      "manifest": "scenarios/new_face_vision/scenario.yaml",
+      "source": {
+        "path": "scenarios/new_face_vision",
+        "manifest": "scenarios/new_face_vision/scenario.yaml"
+      },
+      "install": {
+        "kind": "scenario",
+        "name": "new_face_vision",
+        "id": "new_face_vision_scenario"
+      },
+      "description": "Инструмент анализа дефектов камней на видео с помощью нейросети",
+      "manifest_id": "new_face_vision_scenario",
+      "skills": {
+        "required": [
+          "new_face_vision_skill"
         ]
       }
     },
