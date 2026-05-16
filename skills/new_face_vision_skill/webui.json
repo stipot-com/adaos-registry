@@ -1,0 +1,150 @@
+{
+  "$schema": "../../../src/adaos/abi/webui.v1.schema.json",
+  "apps": [
+    {
+      "id": "newface_vision_app",
+      "title": "Анализ камней",
+      "icon": "eye-outline",
+      "launchModal": "newface_vision_modal"
+    }
+  ],
+  "widgets": [
+    {
+      "id": "newface_vision_widget",
+      "title": "Анализ дефектов",
+      "type": "visual.metricTile",
+      "source": "y:data/new_face_vision/current"
+    }
+  ],
+  "registry": {
+    "modals": {
+      "newface_vision_modal": {
+        "title": "Анализ дефектов камней",
+        "schema": {
+          "id": "newface_vision_modal",
+          "layout": {
+            "type": "single",
+            "pattern": "stack",
+            "areas": [
+              {
+                "id": "main",
+                "role": "main"
+              },
+              {
+                "id": "preview",
+                "role": "detail"
+              },
+              {
+                "id": "controls",
+                "role": "footer"
+              }
+            ]
+          },
+          "widgets": [
+            {
+              "id": "newface_stats",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Статистика",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/stats"
+              }
+            },
+            {
+              "id": "newface_preview",
+              "type": "visual.image",
+              "area": "preview",
+              "title": "Превью",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/preview_base64"
+              }
+            },
+            {
+              "id": "newface_metrics",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Метрики",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/metrics"
+              }
+            },
+            {
+              "id": "newface_status",
+              "type": "visual.metricTile",
+              "area": "main",
+              "title": "Статус",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current"
+              }
+            },
+            {
+              "id": "newface_controls",
+              "type": "input.buttonGroup",
+              "area": "controls",
+              "title": "Управление",
+              "inputs": {
+                "buttons": [
+                  { "id": "play", "label": "Следующий кадр", "icon": "play" },
+                  { "id": "reset", "label": "Сброс", "icon": "refresh" },
+                  { "id": "clear", "label": "Очистить", "icon": "trash" }
+                ]
+              },
+              "actions": [
+                {
+                  "on": "click",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill",
+                  "tool": "new_face_vision_action"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "widgets": {}
+  },
+  "webio": {
+    "receivers": {
+      "newface_vision_frame": {
+        "mode": "replace",
+        "initialState": {}
+      }
+    }
+  },
+  "ydoc_defaults": {
+    "data/new_face_vision/current": {
+      "stats": {
+        "total_frames": 0,
+        "loaded_masks": 0,
+        "loaded_metadata": 0,
+        "current_frame": 0,
+        "model_loaded": false
+      },
+      "status": "init",
+      "preview_base64": "",
+      "metrics": {
+        "dice": 0,
+        "iou": 0
+      },
+      "pred_ratio": 0,
+      "thresholds": {
+        "warning": 0.05,
+        "alarm": 0.15
+      }
+    },
+    "data/new_face_vision/history": []
+  },
+  "contributions": [
+    {
+      "extensionPoint": "desktop.widgets",
+      "type": "widget",
+      "id": "newface_vision_widget",
+      "autoInstall": true
+    }
+  ]
+}

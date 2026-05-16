@@ -1,0 +1,157 @@
+name: new_face_vision_skill
+version: 0.2.0
+description: Анализ дефектов камней на видео с помощью нейросети (сегментация DeepLabV3)
+entry: handlers/main.py
+runtime:
+  python: '3.11'
+dependencies:
+- pillow>=10.0.0
+- numpy>=1.24.0
+tools:
+- name: new_face_vision_status
+  description: Получить текущий статус скилла и статистику
+  entry: handlers.main:new_face_vision_status
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+  output_schema:
+    type: object
+    required:
+    - ok
+    properties:
+      ok:
+        type: boolean
+      current:
+        type: object
+- name: new_face_vision_configure
+  description: Настроить параметры скилла (пороги, пути к файлам)
+  entry: handlers.main:new_face_vision_configure
+  input_schema:
+    type: object
+    properties:
+      model_path:
+        type: string
+      frames_path:
+        type: string
+      masks_path:
+        type: string
+      metadata_path:
+        type: string
+      threshold:
+        type: number
+      warning_threshold:
+        type: number
+      alarm_threshold:
+        type: number
+      webspace_id:
+        type: string
+- name: new_face_vision_load_model
+  description: Загрузить веса модели PyTorch
+  entry: handlers.main:new_face_vision_load_model
+  input_schema:
+    type: object
+    properties:
+      path:
+        type: string
+      webspace_id:
+        type: string
+- name: new_face_vision_load_frames
+  description: Загрузить кадры (ZIP с изображениями)
+  entry: handlers.main:new_face_vision_load_frames
+  input_schema:
+    type: object
+    properties:
+      path:
+        type: string
+      webspace_id:
+        type: string
+- name: new_face_vision_load_masks
+  description: Загрузить маски (ZIP с изображениями)
+  entry: handlers.main:new_face_vision_load_masks
+  input_schema:
+    type: object
+    properties:
+      path:
+        type: string
+      webspace_id:
+        type: string
+- name: new_face_vision_load_metadata
+  description: Загрузить метаданные (JSONL)
+  entry: handlers.main:new_face_vision_load_metadata
+  input_schema:
+    type: object
+    properties:
+      path:
+        type: string
+      webspace_id:
+        type: string
+- name: new_face_vision_process_frame
+  description: Обработать кадр и получить предсказание
+  entry: handlers.main:new_face_vision_process_frame
+  input_schema:
+    type: object
+    properties:
+      frame_idx:
+        type: integer
+      webspace_id:
+        type: string
+- name: new_face_vision_play_step
+  description: Обработать следующий кадр (play)
+  entry: handlers.main:new_face_vision_play_step
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+- name: new_face_vision_reset
+  description: Сбросить текущий кадр на первый
+  entry: handlers.main:new_face_vision_reset
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+- name: new_face_vision_clear
+  description: Очистить все данные (модель, кадры, маски)
+  entry: handlers.main:new_face_vision_clear
+  input_schema:
+    type: object
+    properties:
+      webspace_id:
+        type: string
+- name: new_face_vision_action
+  description: Выполнить действие (play, reset, clear, load_*)
+  entry: handlers.main:new_face_vision_action
+  input_schema:
+    type: object
+    properties:
+      id:
+        type: string
+      value:
+        type: string
+      webspace_id:
+        type: string
+events:
+  subscribe:
+  - new_face_vision.action
+  - new_face_vision.status.refresh
+  - sys.ready
+  publish:
+  - new_face_vision.ready
+  - new_face_vision.frame
+  - new_face_vision.error
+data_projections:
+- scope: subnet
+  slot: new_face_vision.current
+  targets:
+  - backend: yjs
+    path: data/new_face_vision/current
+- scope: subnet
+  slot: new_face_vision.history
+  targets:
+  - backend: yjs
+    path: data/new_face_vision/history
+updated_at: '2026-05-16T11:13:08+00:00'
+
