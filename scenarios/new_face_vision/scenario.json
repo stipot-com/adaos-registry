@@ -94,6 +94,7 @@
         "pageSchema": {
           "id": "new_face_vision",
           "title": "New Face Vision",
+          "surfaceClass": "operations",
           "layout": {
             "type": "split",
             "pattern": "split",
@@ -109,14 +110,172 @@
               {
                 "id": "right",
                 "role": "aux"
+              },
+              {
+                "id": "bottom",
+                "role": "footer"
               }
             ]
           },
           "widgets": [
             {
+              "id": "model-upload",
+              "type": "input.fileUpload",
+              "area": "right",
+              "title": "Model file",
+              "inputs": {
+                "skill": "new_face_vision_skill",
+                "purpose": "model",
+                "accept": ".pt,.pth,.onnx,application/octet-stream",
+                "label": "Upload model",
+                "maxBytes": 1073741824
+              },
+              "actions": [
+                {
+                  "on": "uploaded",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_load_model",
+                  "params": {
+                    "artifact_ref": "$event.artifact_ref"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "frames-upload",
+              "type": "input.fileUpload",
+              "area": "right",
+              "title": "Frames ZIP",
+              "inputs": {
+                "skill": "new_face_vision_skill",
+                "purpose": "frames",
+                "accept": ".zip,application/zip",
+                "label": "Upload frames",
+                "maxBytes": 1073741824
+              },
+              "actions": [
+                {
+                  "on": "uploaded",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_load_frames",
+                  "params": {
+                    "artifact_ref": "$event.artifact_ref"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "masks-upload",
+              "type": "input.fileUpload",
+              "area": "right",
+              "title": "Masks ZIP",
+              "inputs": {
+                "skill": "new_face_vision_skill",
+                "purpose": "masks",
+                "accept": ".zip,application/zip",
+                "label": "Upload masks",
+                "maxBytes": 1073741824
+              },
+              "actions": [
+                {
+                  "on": "uploaded",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_load_masks",
+                  "params": {
+                    "artifact_ref": "$event.artifact_ref"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "metadata-upload",
+              "type": "input.fileUpload",
+              "area": "right",
+              "title": "Metadata JSONL",
+              "inputs": {
+                "skill": "new_face_vision_skill",
+                "purpose": "metadata",
+                "accept": ".jsonl,.json,application/json,text/plain",
+                "label": "Upload metadata",
+                "maxBytes": 67108864
+              },
+              "actions": [
+                {
+                  "on": "uploaded",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_load_metadata",
+                  "params": {
+                    "artifact_ref": "$event.artifact_ref"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "bad-ratio",
+              "type": "visual.metricTile",
+              "area": "right",
+              "title": "Bad ratio",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/latest"
+              },
+              "inputs": {
+                "valuePath": "pred_ratio",
+                "format": "percent",
+                "emptyText": "--%",
+                "descriptionPath": "description"
+              }
+            },
+            {
+              "id": "pipeline-status",
+              "type": "visual.metricTile",
+              "area": "right",
+              "title": "Status",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current"
+              },
+              "inputs": {
+                "valuePath": "status",
+                "descriptionPath": "operation.label",
+                "emptyText": "init"
+              }
+            },
+            {
+              "id": "total-frames",
+              "type": "visual.metricTile",
+              "area": "right",
+              "title": "Frames",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/stats"
+              },
+              "inputs": {
+                "valuePath": "total_frames",
+                "format": "integer",
+                "descriptionPath": "next_frame"
+              }
+            },
+            {
+              "id": "model-state",
+              "type": "visual.metricTile",
+              "area": "right",
+              "title": "Model",
+              "dataSource": {
+                "kind": "y",
+                "path": "data/new_face_vision/current/model"
+              },
+              "inputs": {
+                "valuePath": "loaded",
+                "format": "boolean",
+                "trueText": "Loaded",
+                "falseText": "No model"
+              }
+            },
+            {
               "id": "compact-state",
               "type": "ui.jsonViewer",
-              "area": "sidebar",
+              "area": "bottom",
               "title": "Compact state",
               "dataSource": {
                 "kind": "y",
@@ -125,38 +284,86 @@
             },
             {
               "id": "frame-stream",
-              "type": "ui.jsonViewer",
+              "type": "visual.frameViewer",
               "area": "main",
-              "title": "Frame stream",
+              "title": "Preview",
               "dataSource": {
                 "kind": "stream",
                 "receiver": "newface_vision_frame"
+              },
+              "inputs": {
+                "imageField": "image.src",
+                "aspectRatio": "16 / 9",
+                "emptyText": "No frame yet",
+                "metrics": [
+                  {
+                    "label": "Pred",
+                    "path": "prediction.pred_ratio"
+                  },
+                  {
+                    "label": "True",
+                    "path": "prediction.true_ratio"
+                  },
+                  {
+                    "label": "Dice",
+                    "path": "metrics.dice"
+                  },
+                  {
+                    "label": "IoU",
+                    "path": "metrics.iou"
+                  }
+                ]
               }
             },
             {
               "id": "latest-result",
               "type": "visual.metricTile",
               "area": "right",
-              "title": "Latest result",
+              "title": "Latest frame",
               "dataSource": {
                 "kind": "y",
                 "path": "data/new_face_vision/current/latest"
+              },
+              "inputs": {
+                "valuePath": "label",
+                "descriptionPath": "description",
+                "emptyText": "--"
+              }
+            },
+            {
+              "id": "bad-ratio-stream",
+              "type": "visual.timeseriesChart",
+              "area": "right",
+              "title": "Bad ratio trend",
+              "dataSource": {
+                "kind": "stream",
+                "receiver": "newface_vision_metrics"
+              },
+              "inputs": {
+                "xKey": "frame_idx",
+                "yKey": "series.pred_ratio",
+                "emptyText": "No metric points"
               }
             },
             {
               "id": "metrics-stream",
-              "type": "ui.jsonViewer",
+              "type": "visual.timeseriesChart",
               "area": "right",
-              "title": "Metrics stream",
+              "title": "Dice trend",
               "dataSource": {
                 "kind": "stream",
                 "receiver": "newface_vision_metrics"
+              },
+              "inputs": {
+                "xKey": "frame_idx",
+                "yKey": "series.dice",
+                "emptyText": "No metric points"
               }
             },
             {
               "id": "controls",
               "type": "input.commandBar",
-              "area": "sidebar",
+              "area": "main",
               "title": "Controls",
               "inputs": {
                 "buttons": [
@@ -216,42 +423,24 @@
             },
             "widgets": [
               {
-                "id": "model-path",
-                "type": "input.text",
+                "id": "model-upload",
+                "type": "input.fileUpload",
                 "area": "main",
-                "title": "Model path",
+                "title": "Model file",
                 "inputs": {
-                  "placeholder": "C:\\path\\to\\model.pth"
+                  "skill": "new_face_vision_skill",
+                  "purpose": "model",
+                  "accept": ".pt,.pth,.onnx,application/octet-stream",
+                  "label": "Upload model",
+                  "maxBytes": 1073741824
                 },
                 "actions": [
                   {
-                    "on": "change",
-                    "type": "updateState",
-                    "params": {
-                      "modelPath": "$event.value"
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "load-button",
-                "type": "input.commandBar",
-                "area": "main",
-                "inputs": {
-                  "buttons": [
-                    {
-                      "id": "load",
-                      "label": "Load"
-                    }
-                  ]
-                },
-                "actions": [
-                  {
-                    "on": "click:load",
+                    "on": "uploaded",
                     "type": "callSkill",
                     "target": "new_face_vision_skill.new_face_vision_load_model",
                     "params": {
-                      "path": "$state.modelPath"
+                      "artifact_ref": "$event.artifact_ref"
                     }
                   }
                 ]
@@ -275,42 +464,24 @@
             },
             "widgets": [
               {
-                "id": "frames-path",
-                "type": "input.text",
+                "id": "frames-upload",
+                "type": "input.fileUpload",
                 "area": "main",
-                "title": "Frames ZIP path",
+                "title": "Frames ZIP",
                 "inputs": {
-                  "placeholder": "C:\\path\\to\\frames.zip"
+                  "skill": "new_face_vision_skill",
+                  "purpose": "frames",
+                  "accept": ".zip,application/zip",
+                  "label": "Upload frames",
+                  "maxBytes": 1073741824
                 },
                 "actions": [
                   {
-                    "on": "change",
-                    "type": "updateState",
-                    "params": {
-                      "framesPath": "$event.value"
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "load-frames-button",
-                "type": "input.commandBar",
-                "area": "main",
-                "inputs": {
-                  "buttons": [
-                    {
-                      "id": "load",
-                      "label": "Load"
-                    }
-                  ]
-                },
-                "actions": [
-                  {
-                    "on": "click:load",
+                    "on": "uploaded",
                     "type": "callSkill",
                     "target": "new_face_vision_skill.new_face_vision_load_frames",
                     "params": {
-                      "path": "$state.framesPath"
+                      "artifact_ref": "$event.artifact_ref"
                     }
                   }
                 ]

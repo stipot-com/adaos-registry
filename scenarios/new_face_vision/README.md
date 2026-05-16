@@ -36,14 +36,16 @@
 
 - `newface_vision_frame` - preview frame и результат анализа кадра;
 - `newface_vision_metrics` - точки временных рядов для графиков;
-- `newface_vision_progress` - progress events для долгих операций, если нужны.
+- `newface_vision_progress` - compact progress/error events для долгих операций
+  и command feedback.
 
-## Планируемые компоненты клиента
+## Компоненты клиента
 
-- `visual.image` или `visual.frameViewer` для preview кадров.
+- `visual.frameViewer` для stream-backed preview кадров.
+- `visual.image` как совместимый image-only alias поверх frame viewer.
 - `input.fileUpload` для загрузки модели, архива кадров, архива масок и JSONL.
-- `visual.timeseriesChart` для MVP-графиков.
-- `input.playbackControls` для play, pause, stop, step и replay.
+- `visual.timeseriesChart` для MVP-графиков поверх stream points.
+- существующий `input.commandBar` для play, reset, clear и step в MVP.
 - При необходимости компактный metrics view поверх существующих visual
   компонентов.
 
@@ -56,30 +58,53 @@ tool call передается artifact ref. Навык не должен тре
 
 Path-based загрузку можно временно оставить только для локальной разработки.
 
+Для локального MVP core принимает skill-owned upload до 1 GiB по умолчанию
+(`ADAOS_SKILL_UPLOAD_MAX_BYTES` можно переопределить окружением). Это покрывает
+`example/assets/frames.zip`, который весит около 778 MiB. В навыке список кадров
+хранится как refs на файлы, а изображения открываются лениво при обработке кадра,
+чтобы не держать весь архив в памяти после распаковки.
+
 ## Roadmap
 
-Подробный чеклист работ находится в [ROADMAP.md](./ROADMAP.md).
+Подробный чеклист работ находится в [ROADMAP.md](./ROADMAP.md), текущий контракт
+данных и UI - в [CONTRACT.md](./CONTRACT.md).
 
-Текущий прогресс: 72%.
+Текущий прогресс: 95%.
 
-Выполнено в первом пакете:
+Выполнено:
 
 - навык публикует preview frame через `newface_vision_frame`;
 - навык публикует точки метрик через `newface_vision_metrics`;
 - Yjs snapshot оставлен компактным и содержит `latest` без base64 preview;
 - handlers принимают как path-based параметры, так и artifact-like refs;
-- `scenario.json` и `webui.json` временно используют только поддерживаемые
-  клиентом widget-типы.
+- `scenario.json` и `webui.json` используют `visual.frameViewer`,
+  `visual.timeseriesChart` и `input.fileUpload` вместо временных JSON/path
+  панелей для основного UX;
+- upload widgets выведены в рабочую левую колонку первого экрана, а compact
+  state перенесен в нижнюю debug-зону;
+- первый экран перестроен по мотивам Flask-прототипа: большой preview, controls
+  под ним, upload/KPI/charts в правой рабочей колонке;
+- `visual.metricTile` получил декларативные `valuePath`, `descriptionPath` и
+  форматирование для переиспользуемых KPI;
+- core upload limit поднят до 1 GiB, а `new_face_vision_skill` хранит refs на
+  распакованные кадры и открывает изображения лениво при обработке;
+- `example/assets/frames.zip` проверен через полный flow: core upload,
+  `new_face_vision_load_frames` и `Next frame`;
 - ядро получило compatibility helpers для projection/stream runtimes, node metadata,
   runtime refresh и Yjs pressure policy;
+- ядро получило MVP endpoint загрузки skill-owned файлов с artifact refs;
+- ошибки навыка нормализованы в `{code, message, retryable, ts}` и попадают в
+  компактный `newface_vision_progress`;
+- добавлен focused contract test на компактный snapshot, stream payloads,
+  поддерживаемые widget types и нормализованные ошибки;
 - локально подняты клиент `http://127.0.0.1:4200/` и API `http://127.0.0.1:8777/`.
 
 Ближайшие этапы:
 
-- реализовать недостающие универсальные client widgets;
-- переиспользовать или обобщить artifact upload flow;
-- после появления новых widgets обновить `scenario.json` с JSON-viewer
-  временных панелей на целевые компоненты.
+- проверить model/masks/metadata upload на реальных файлах, когда они будут в
+  целевом наборе MVP;
+- после smoke решить, нужен ли отдельный `input.playbackControls` или достаточно
+  существующего `input.commandBar` для MVP.
 
 ## MVP
 
