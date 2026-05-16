@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import json
 import zipfile
@@ -10,8 +12,15 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-import numpy as np
-from PIL import Image
+try:
+    import numpy as np
+except Exception:
+    np = None
+
+try:
+    from PIL import Image
+except Exception:
+    Image = None
 
 try:
     import torch
@@ -151,6 +160,9 @@ class NewFaceVisionEngine:
             self._begin_operation("load_frames", "Load frames")
             _log.info(f"Loading frames from {path}")
 
+            if Image is None or np is None:
+                return self._fail_operation("Pillow/numpy are not installed")
+
             if not os.path.exists(path):
                 return self._fail_operation(f"Frames path not found: {path}")
 
@@ -183,6 +195,9 @@ class NewFaceVisionEngine:
         try:
             self._begin_operation("load_masks", "Load masks")
             _log.info(f"Loading masks from {path}")
+
+            if Image is None or np is None:
+                return self._fail_operation("Pillow/numpy are not installed")
 
             if not os.path.exists(path):
                 return self._fail_operation(f"Masks path not found: {path}")
@@ -237,6 +252,9 @@ class NewFaceVisionEngine:
 
     def process_frame(self, frame_idx: int | None = None) -> dict[str, Any]:
         try:
+            if Image is None or np is None:
+                return {"ok": False, "error": "Pillow/numpy are not installed"}
+
             if not self._frames:
                 return {"ok": False, "error": "No frames loaded"}
 
@@ -283,11 +301,11 @@ class NewFaceVisionEngine:
                 true_ratio = self._metadata[frame_idx].get('ratio_bad_true')
 
             if pred_ratio >= self._alarm_threshold:
-                status, status_color = "Тревога", "red"
+                status, status_color = "Alarm", "red"
             elif pred_ratio >= self._warning_threshold:
-                status, status_color = "Предупреждение", "yellow"
+                status, status_color = "Warning", "yellow"
             else:
-                status, status_color = "Норма", "green"
+                status, status_color = "OK", "green"
 
             metrics = {"dice": 0, "iou": 0}
             if gt_mask is not None:
@@ -511,6 +529,9 @@ class NewFaceVisionEngine:
     def _load_images_from_folder(self, folder_path: str) -> dict[str, Image.Image]:
         images = {}
         folder = Path(folder_path)
+
+        if Image is None:
+            return images
 
         if not folder.exists():
             return images

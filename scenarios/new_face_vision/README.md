@@ -60,7 +60,7 @@ Path-based загрузку можно временно оставить тол�
 
 Подробный чеклист работ находится в [ROADMAP.md](./ROADMAP.md).
 
-Текущий прогресс: 55%.
+Текущий прогресс: 72%.
 
 Выполнено в первом пакете:
 
@@ -70,6 +70,9 @@ Path-based загрузку можно временно оставить тол�
 - handlers принимают как path-based параметры, так и artifact-like refs;
 - `scenario.json` и `webui.json` временно используют только поддерживаемые
   клиентом widget-типы.
+- ядро получило compatibility helpers для projection/stream runtimes, node metadata,
+  runtime refresh и Yjs pressure policy;
+- локально подняты клиент `http://127.0.0.1:4200/` и API `http://127.0.0.1:8777/`.
 
 Ближайшие этапы:
 

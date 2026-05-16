@@ -2,11 +2,12 @@
 
 ## Текущий статус
 
-- Прогресс: 55%.
+- Прогресс: 72%.
 - Выполненный пакет: compact Yjs contract на уровне навыка, stream payloads для
   кадров и метрик, artifact-ref совместимые handlers, временный UI только на
   поддерживаемых клиентом widget-типах.
 - Клиент запущен локально: `http://127.0.0.1:4200/`.
+- API перезапущен локально: `http://127.0.0.1:8777/`.
 - Следующий пакет: универсальный `visual.frameViewer`/`visual.image`,
   `input.fileUpload` и первый MVP API для `visual.timeseriesChart`.
 
