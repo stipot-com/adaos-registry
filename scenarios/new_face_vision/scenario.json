@@ -1,10 +1,10 @@
 {
   "id": "new_face_vision_scenario",
-  "version": "0.1.0",
-  "name": "stone_analysis",
+  "version": "0.2.0",
+  "name": "new_face_vision",
   "type": "desktop",
-  "title": "Анализ камней",
-  "description": "Инструмент анализа дефектов камней на видео с помощью нейросети",
+  "title": "New Face Vision",
+  "description": "Desktop scenario for frame analysis through new_face_vision_skill.",
   "depends": [
     "new_face_vision_skill"
   ],
@@ -12,7 +12,7 @@
     "initial_state": "init",
     "states": {
       "init": {
-        "label": "Начало",
+        "label": "Init",
         "context": {
           "edit": [],
           "readonly": []
@@ -20,7 +20,7 @@
         "actions": [
           {
             "id": "load_model",
-            "label": "Загрузить модель",
+            "label": "Load model",
             "trigger": "button",
             "tool": "new_face_vision_skill.new_face_vision_load_model",
             "next_state": "ready"
@@ -28,22 +28,24 @@
         ]
       },
       "ready": {
-        "label": "Готов к работе",
+        "label": "Ready",
         "context": {
           "edit": [],
-          "readonly": ["model_loaded"]
+          "readonly": [
+            "model_loaded"
+          ]
         },
         "actions": [
           {
             "id": "load_frames",
-            "label": "Загрузить кадры",
+            "label": "Load frames",
             "trigger": "button",
             "tool": "new_face_vision_skill.new_face_vision_load_frames",
             "next_state": "ready"
           },
           {
             "id": "load_masks",
-            "label": "Загрузить маски",
+            "label": "Load masks",
             "trigger": "button",
             "tool": "new_face_vision_skill.new_face_vision_load_masks",
             "next_state": "ready"
@@ -51,29 +53,32 @@
         ]
       },
       "analyze": {
-        "label": "Анализ",
+        "label": "Analyze",
         "context": {
           "edit": [],
-          "readonly": ["current_frame", "preview"]
+          "readonly": [
+            "current_frame",
+            "preview"
+          ]
         },
         "actions": [
           {
             "id": "next_frame",
-            "label": "Следующий кадр",
+            "label": "Next frame",
             "trigger": "button",
             "tool": "new_face_vision_skill.new_face_vision_play_step",
             "next_state": "analyze"
           },
           {
             "id": "reset",
-            "label": "Сброс",
+            "label": "Reset",
             "trigger": "button",
             "tool": "new_face_vision_skill.new_face_vision_reset",
             "next_state": "ready"
           },
           {
             "id": "clear",
-            "label": "Очистить",
+            "label": "Clear",
             "trigger": "button",
             "tool": "new_face_vision_skill.new_face_vision_clear",
             "next_state": "init"
@@ -84,11 +89,11 @@
   },
   "ui": {
     "application": {
-      "version": "0.1",
+      "version": "0.2",
       "desktop": {
         "pageSchema": {
-          "id": "stone_analysis",
-          "title": "Анализ дефектов камней",
+          "id": "new_face_vision",
+          "title": "New Face Vision",
           "layout": {
             "type": "split",
             "pattern": "split",
@@ -109,66 +114,67 @@
           },
           "widgets": [
             {
-              "id": "status-panel",
-              "type": "visual.metricTile",
+              "id": "compact-state",
+              "type": "ui.jsonViewer",
               "area": "sidebar",
-              "title": "Статус",
+              "title": "Compact state",
               "dataSource": {
                 "kind": "y",
-                "path": "data/new_face_vision/current/stats"
+                "path": "data/new_face_vision/current"
               }
             },
             {
-              "id": "preview-image",
-              "type": "visual.image",
+              "id": "frame-stream",
+              "type": "ui.jsonViewer",
               "area": "main",
-              "title": "Превью",
+              "title": "Frame stream",
               "dataSource": {
-                "kind": "y",
-                "path": "data/new_face_vision/current/preview_base64"
+                "kind": "stream",
+                "receiver": "newface_vision_frame"
               }
             },
             {
-              "id": "metrics-panel",
+              "id": "latest-result",
               "type": "visual.metricTile",
               "area": "right",
-              "title": "Метрики",
+              "title": "Latest result",
               "dataSource": {
                 "kind": "y",
-                "path": "data/new_face_vision/current/metrics"
+                "path": "data/new_face_vision/current/latest"
               }
             },
             {
-              "id": "status-indicator",
-              "type": "visual.metricTile",
+              "id": "metrics-stream",
+              "type": "ui.jsonViewer",
               "area": "right",
-              "title": "Статус",
+              "title": "Metrics stream",
               "dataSource": {
-                "kind": "y",
-                "path": "data/new_face_vision/current/status"
+                "kind": "stream",
+                "receiver": "newface_vision_metrics"
               }
             },
             {
               "id": "controls",
               "type": "input.commandBar",
               "area": "sidebar",
-              "title": "Управление",
+              "title": "Controls",
               "inputs": {
                 "buttons": [
                   {
                     "id": "play",
-                    "label": "Следующий кадр",
+                    "label": "Next frame",
                     "icon": "play"
                   },
                   {
                     "id": "reset",
-                    "label": "Сброс",
+                    "label": "Reset",
                     "icon": "refresh"
                   },
                   {
                     "id": "clear",
-                    "label": "Очистить",
-                    "icon": "trash"
+                    "label": "Clear",
+                    "icon": "trash",
+                    "kind": "danger"
                   }
                 ]
               },
@@ -195,7 +201,7 @@
       },
       "modals": {
         "load_model": {
-          "title": "Загрузка модели",
+          "title": "Load model",
           "schema": {
             "id": "load_model",
             "layout": {
@@ -213,7 +219,7 @@
                 "id": "model-path",
                 "type": "input.text",
                 "area": "main",
-                "title": "Путь к файлу модели",
+                "title": "Model path",
                 "inputs": {
                   "placeholder": "C:\\path\\to\\model.pth"
                 },
@@ -235,7 +241,7 @@
                   "buttons": [
                     {
                       "id": "load",
-                      "label": "Загрузить"
+                      "label": "Load"
                     }
                   ]
                 },
@@ -254,7 +260,7 @@
           }
         },
         "load_frames": {
-          "title": "Загрузка кадров",
+          "title": "Load frames",
           "schema": {
             "id": "load_frames",
             "layout": {
@@ -272,7 +278,7 @@
                 "id": "frames-path",
                 "type": "input.text",
                 "area": "main",
-                "title": "Путь к ZIP с кадрами",
+                "title": "Frames ZIP path",
                 "inputs": {
                   "placeholder": "C:\\path\\to\\frames.zip"
                 },
@@ -294,7 +300,7 @@
                   "buttons": [
                     {
                       "id": "load",
-                      "label": "Загрузить"
+                      "label": "Load"
                     }
                   ]
                 },

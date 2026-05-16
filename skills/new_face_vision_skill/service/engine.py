@@ -6,8 +6,9 @@ import io
 import base64
 import tempfile
 import logging
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 from PIL import Image
@@ -47,6 +48,20 @@ class NewFaceVisionEngine:
         self._alarm_threshold = 0.15
         self._prediction_cache = {}
         self._model_path = None
+        self._files: dict[str, dict[str, Any] | None] = {
+            "model": None,
+            "frames": None,
+            "masks": None,
+            "metadata": None,
+        }
+        self._operation: dict[str, Any] = {
+            "id": None,
+            "label": "",
+            "progress": None,
+            "error": None,
+        }
+        self._latest: dict[str, Any] | None = None
+        self.last_error: str | None = None
 
         _log.info(f"NewFaceVisionEngine initialized. Device: {self._device}")
 
@@ -90,15 +105,16 @@ class NewFaceVisionEngine:
 
         return result
 
-    def load_model(self, path: str) -> dict[str, Any]:
+    def load_model(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
+            self._begin_operation("load_model", "Load model")
             _log.info(f"Loading model from {path}")
 
             if torch is None or nn is None or torchvision is None or TF is None:
-                return {"ok": False, "error": "torch/torchvision are not installed"}
+                return self._fail_operation("torch/torchvision are not installed")
 
             if not os.path.exists(path):
-                return {"ok": False, "error": f"Model file not found: {path}"}
+                return self._fail_operation(f"Model file not found: {path}")
 
             checkpoint = torch.load(path, map_location=self._device)
 
@@ -118,22 +134,25 @@ class NewFaceVisionEngine:
             model.eval()
             self._model = model
             self._model_path = path
+            self._files["model"] = self._file_ref(path, source_ref=source_ref)
 
             size_mb = os.path.getsize(path) / 1024 / 1024
             _log.info(f"Model loaded: {size_mb:.1f} MB on {self._device}")
 
+            self._end_operation()
             return {"ok": True, "model_loaded": True, "device": self._device, "size_mb": round(size_mb, 1)}
 
         except Exception as e:
             _log.error(f"Failed to load model: {e}")
-            return {"ok": False, "error": str(e)}
+            return self._fail_operation(str(e))
 
-    def load_frames(self, path: str) -> dict[str, Any]:
+    def load_frames(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
+            self._begin_operation("load_frames", "Load frames")
             _log.info(f"Loading frames from {path}")
 
             if not os.path.exists(path):
-                return {"ok": False, "error": f"Frames path not found: {path}"}
+                return self._fail_operation(f"Frames path not found: {path}")
 
             if os.path.isfile(path) and path.endswith('.zip'):
                 if self.frames_dir.exists():
@@ -144,23 +163,29 @@ class NewFaceVisionEngine:
                     zip_ref.extractall(self.frames_dir)
 
             self._frames = self._load_images_from_folder(str(self.frames_dir))
+            self._current_frame_idx = 0
+            self._prediction_cache = {}
+            self._latest = None
 
             if len(self._frames) == 0:
-                return {"ok": False, "error": "No images found"}
+                return self._fail_operation("No images found")
 
             _log.info(f"Loaded {len(self._frames)} frames")
+            self._files["frames"] = self._file_ref(path, source_ref=source_ref)
+            self._end_operation()
             return {"ok": True, "total_frames": len(self._frames)}
 
         except Exception as e:
             _log.error(f"Failed to load frames: {e}")
-            return {"ok": False, "error": str(e)}
+            return self._fail_operation(str(e))
 
-    def load_masks(self, path: str) -> dict[str, Any]:
+    def load_masks(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
+            self._begin_operation("load_masks", "Load masks")
             _log.info(f"Loading masks from {path}")
 
             if not os.path.exists(path):
-                return {"ok": False, "error": f"Masks path not found: {path}"}
+                return self._fail_operation(f"Masks path not found: {path}")
 
             if os.path.isfile(path) and path.endswith('.zip'):
                 if self.masks_dir.exists():
@@ -173,18 +198,21 @@ class NewFaceVisionEngine:
             self._masks = self._load_images_from_folder(str(self.masks_dir))
 
             _log.info(f"Loaded {len(self._masks)} masks")
+            self._files["masks"] = self._file_ref(path, source_ref=source_ref)
+            self._end_operation()
             return {"ok": True, "loaded_masks": len(self._masks)}
 
         except Exception as e:
             _log.error(f"Failed to load masks: {e}")
-            return {"ok": False, "error": str(e)}
+            return self._fail_operation(str(e))
 
-    def load_metadata(self, path: str) -> dict[str, Any]:
+    def load_metadata(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
+            self._begin_operation("load_metadata", "Load metadata")
             _log.info(f"Loading metadata from {path}")
 
             if not os.path.exists(path):
-                return {"ok": False, "error": f"Metadata file not found: {path}"}
+                return self._fail_operation(f"Metadata file not found: {path}")
 
             self._metadata = {}
             with open(path, 'r', encoding='utf-8') as f:
@@ -199,11 +227,13 @@ class NewFaceVisionEngine:
                             continue
 
             _log.info(f"Loaded {len(self._metadata)} metadata entries")
+            self._files["metadata"] = self._file_ref(path, source_ref=source_ref)
+            self._end_operation()
             return {"ok": True, "loaded_metadata": len(self._metadata)}
 
         except Exception as e:
             _log.error(f"Failed to load metadata: {e}")
-            return {"ok": False, "error": str(e)}
+            return self._fail_operation(str(e))
 
     def process_frame(self, frame_idx: int | None = None) -> dict[str, Any]:
         try:
@@ -218,13 +248,15 @@ class NewFaceVisionEngine:
             if frame_idx >= len(frame_keys):
                 frame_idx = 0
 
-            self._current_frame_idx = frame_idx
             frame_key = frame_keys[frame_idx]
-            frame = self._frames[frame_key]
 
             cache_key = str(frame_idx)
             if cache_key in self._prediction_cache:
-                return self._prediction_cache[cache_key]
+                result = self._prediction_cache[cache_key]
+                self._record_frame_result(result, total_frames=len(frame_keys))
+                return result
+
+            frame = self._frames[frame_key]
 
             gt_mask = None
             for key in self._masks:
@@ -265,9 +297,11 @@ class NewFaceVisionEngine:
             result = {
                 "ok": True,
                 "frame_idx": frame_idx,
+                "frame_key": frame_key,
+                "total_frames": len(frame_keys),
                 "preview_base64": preview_base64,
                 "pred_ratio": round(pred_ratio, 4),
-                "true_ratio": round(true_ratio, 4) if true_ratio else None,
+                "true_ratio": round(true_ratio, 4) if true_ratio is not None else None,
                 "status": status,
                 "status_color": status_color,
                 "metrics": metrics,
@@ -276,6 +310,7 @@ class NewFaceVisionEngine:
             if len(self._prediction_cache) > 100:
                 self._prediction_cache.pop(next(iter(self._prediction_cache)))
             self._prediction_cache[cache_key] = result
+            self._record_frame_result(result, total_frames=len(frame_keys))
 
             return result
 
@@ -286,6 +321,7 @@ class NewFaceVisionEngine:
     def reset(self) -> dict[str, Any]:
         self._current_frame_idx = 0
         self._prediction_cache = {}
+        self._latest = None
         return {"ok": True, "message": "Reset completed"}
 
     def clear(self) -> dict[str, Any]:
@@ -296,6 +332,20 @@ class NewFaceVisionEngine:
         self._metadata = {}
         self._current_frame_idx = 0
         self._prediction_cache = {}
+        self._latest = None
+        self._files = {
+            "model": None,
+            "frames": None,
+            "masks": None,
+            "metadata": None,
+        }
+        self._operation = {
+            "id": None,
+            "label": "",
+            "progress": None,
+            "error": None,
+        }
+        self.last_error = None
 
         for dir_path in [self.frames_dir, self.masks_dir]:
             if dir_path.exists():
@@ -306,23 +356,157 @@ class NewFaceVisionEngine:
         return {"ok": True, "message": "All data cleared"}
 
     def snapshot(self) -> dict[str, Any]:
+        status = "error" if self.last_error else ("ready" if self._frames else "init")
         return {
             "ok": True,
+            "status": status,
+            "operation": dict(self._operation),
+            "files": dict(self._files),
+            "model": {
+                "loaded": self._model is not None,
+                "path": self._model_path,
+                "device": self._device,
+            },
             "stats": {
                 "total_frames": len(self._frames),
                 "loaded_masks": len(self._masks),
                 "loaded_metadata": len(self._metadata),
                 "model_loaded": self._model is not None,
-                "current_frame": self._current_frame_idx,
+                "current_frame": self._latest.get("frame_idx") if self._latest else None,
+                "next_frame": self._current_frame_idx,
             },
-            "status": "ready" if self._frames else "init",
-            "model_path": self._model_path,
             "thresholds": {
                 "warning": self._warning_threshold,
                 "alarm": self._alarm_threshold,
                 "prediction": self._threshold,
             },
+            "latest": self._latest or self._empty_latest(),
+            "error": self.last_error,
+            "history": [],
         }
+
+    def frame_stream_payload(self, result: Mapping[str, Any]) -> dict[str, Any]:
+        preview = str(result.get("preview_base64") or "")
+        return {
+            "ok": bool(result.get("ok", True)),
+            "frame_idx": result.get("frame_idx"),
+            "frame_key": result.get("frame_key"),
+            "total_frames": result.get("total_frames") or len(self._frames),
+            "image": {
+                "mime": "image/jpeg",
+                "encoding": "base64",
+                "data": preview,
+                "src": f"data:image/jpeg;base64,{preview}" if preview else "",
+            },
+            "prediction": {
+                "pred_ratio": result.get("pred_ratio"),
+                "true_ratio": result.get("true_ratio"),
+            },
+            "status": {
+                "label": result.get("status"),
+                "color": result.get("status_color"),
+            },
+            "metrics": dict(result.get("metrics") or {}),
+            "ts": time.time(),
+        }
+
+    def metrics_stream_payload(self, result: Mapping[str, Any]) -> dict[str, Any]:
+        metrics = result.get("metrics") if isinstance(result.get("metrics"), Mapping) else {}
+        return {
+            "frame_idx": result.get("frame_idx"),
+            "ts": time.time(),
+            "series": {
+                "pred_ratio": result.get("pred_ratio"),
+                "true_ratio": result.get("true_ratio"),
+                "dice": metrics.get("dice"),
+                "iou": metrics.get("iou"),
+            },
+        }
+
+    def _record_frame_result(self, result: Mapping[str, Any], *, total_frames: int) -> None:
+        if not result.get("ok"):
+            return
+        frame_idx = int(result.get("frame_idx") or 0)
+        metrics = result.get("metrics") if isinstance(result.get("metrics"), Mapping) else {}
+        pred_ratio = result.get("pred_ratio")
+        true_ratio = result.get("true_ratio")
+        description_parts = []
+        if pred_ratio is not None:
+            description_parts.append(f"pred={pred_ratio}")
+        if true_ratio is not None:
+            description_parts.append(f"true={true_ratio}")
+        if metrics:
+            description_parts.append(f"dice={metrics.get('dice', 0)}")
+            description_parts.append(f"iou={metrics.get('iou', 0)}")
+        self._latest = {
+            "value": result.get("status") or "ok",
+            "label": f"frame {frame_idx + 1}/{total_frames}" if total_frames else f"frame {frame_idx}",
+            "description": " ".join(description_parts),
+            "frame_idx": frame_idx,
+            "frame_key": result.get("frame_key"),
+            "total_frames": total_frames,
+            "pred_ratio": pred_ratio,
+            "true_ratio": true_ratio,
+            "metrics": dict(metrics),
+            "status": {
+                "label": result.get("status"),
+                "color": result.get("status_color"),
+            },
+            "ts": time.time(),
+        }
+        self.last_error = None
+        self._current_frame_idx = (frame_idx + 1) % total_frames if total_frames > 0 else 0
+
+    def _empty_latest(self) -> dict[str, Any]:
+        return {
+            "value": "--",
+            "label": "",
+            "description": "",
+            "frame_idx": None,
+            "frame_key": None,
+            "total_frames": len(self._frames),
+            "pred_ratio": None,
+            "true_ratio": None,
+            "metrics": {"dice": 0, "iou": 0},
+            "status": {"label": "", "color": ""},
+            "ts": None,
+        }
+
+    def _begin_operation(self, operation_id: str, label: str) -> None:
+        self._operation = {
+            "id": operation_id,
+            "label": label,
+            "progress": None,
+            "error": None,
+        }
+
+    def _end_operation(self) -> None:
+        self._operation = {
+            **self._operation,
+            "progress": 1.0,
+            "error": None,
+        }
+        self.last_error = None
+
+    def _fail_operation(self, error: str) -> dict[str, Any]:
+        self.last_error = error
+        self._operation = {
+            **self._operation,
+            "error": error,
+        }
+        return {"ok": False, "error": error}
+
+    def _file_ref(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        file_path = Path(path)
+        out = {
+            "path": str(file_path),
+            "name": file_path.name,
+            "exists": file_path.exists(),
+            "size_bytes": file_path.stat().st_size if file_path.exists() and file_path.is_file() else None,
+        }
+        if source_ref:
+            out["source"] = dict(source_ref)
+        return out
 
     def _load_images_from_folder(self, folder_path: str) -> dict[str, Image.Image]:
         images = {}

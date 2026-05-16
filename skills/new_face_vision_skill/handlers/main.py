@@ -15,6 +15,7 @@ from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet
 from adaos.sdk.data.context import clear_current_skill, set_current_skill
 from adaos.sdk.data.events import publish
+from adaos.sdk.io import stream_publish
 from adaos.services.agent_context import get_ctx
 from adaos.services.yjs.webspace import default_webspace_id
 
@@ -24,6 +25,9 @@ def _get_engine_class():
 
 
 SKILL_NAME = "new_face_vision_skill"
+FRAME_RECEIVER = "newface_vision_frame"
+METRICS_RECEIVER = "newface_vision_metrics"
+PROGRESS_RECEIVER = "newface_vision_progress"
 REQUIRES_DATA_PROJECTIONS = ["new_face_vision.current", "new_face_vision.history"]
 _DATA_PROJECTION_ENTRIES = [
     {
@@ -118,6 +122,63 @@ def _publish_event(topic: str, payload: dict[str, Any]) -> None:
         _log.debug("failed to publish %s", topic, exc_info=True)
 
 
+def _publish_stream(receiver: str, data: Any, *, webspace_id: str | None = None) -> None:
+    selected_webspace = str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
+    try:
+        stream_publish(receiver, data, _meta={"webspace_id": selected_webspace})
+    except Exception:
+        _log.debug("failed to publish stream receiver=%s", receiver, exc_info=True)
+
+
+def _artifact_path(value: Any) -> str:
+    if isinstance(value, Mapping):
+        for key in (
+            "path",
+            "local_path",
+            "file_path",
+            "stored_path",
+            "abs_path",
+            "absolute_path",
+        ):
+            nested = value.get(key)
+            if nested:
+                return _artifact_path(nested)
+        nested_ref = value.get("artifact_ref") or value.get("file") or value.get("value")
+        if nested_ref:
+            return _artifact_path(nested_ref)
+        uri = str(value.get("uri") or value.get("url") or "").strip()
+        if uri.startswith("file://"):
+            return uri[len("file://") :]
+        return ""
+    text = str(value or "").strip()
+    if text.startswith("file://"):
+        return text[len("file://") :]
+    return text
+
+
+def _resolve_path(path: Any = None, artifact_ref: Any = None, file: Any = None, **payload: Any) -> str:
+    candidates = [
+        path,
+        artifact_ref,
+        file,
+        payload.get("artifact"),
+        payload.get("ref"),
+        payload.get("value"),
+    ]
+    for candidate in candidates:
+        resolved = _artifact_path(candidate)
+        if resolved:
+            return resolved
+    return ""
+
+
+def _source_ref(path: Any = None, artifact_ref: Any = None, file: Any = None, **payload: Any) -> dict[str, Any] | None:
+    for candidate in (artifact_ref, file, payload.get("artifact"), payload.get("ref"), payload.get("value"), path):
+        if isinstance(candidate, Mapping):
+            return dict(candidate)
+    return None
+
+
 def _result_with_snapshot(result: dict[str, Any], *, webspace_id: str | None = None) -> dict[str, Any]:
     _project(webspace_id=webspace_id)
     snapshot = _engine_instance().snapshot()
@@ -130,6 +191,7 @@ def _handle_error(exc: Exception, *, webspace_id: str | None = None) -> dict[str
     _project(webspace_id=webspace_id)
     payload = {"ok": False, "error": str(exc), "ts": time.time()}
     _publish_event("new_face_vision.error", payload)
+    _publish_stream(PROGRESS_RECEIVER, {"ok": False, "error": str(exc), "ts": payload["ts"]}, webspace_id=webspace_id)
     return payload
 
 
@@ -167,36 +229,64 @@ def new_face_vision_configure(
 
 
 @tool("new_face_vision_load_model")
-def new_face_vision_load_model(path: str, webspace_id: str | None = None, **_: Any) -> dict[str, Any]:
+def new_face_vision_load_model(
+    path: Any = None,
+    artifact_ref: Any = None,
+    file: Any = None,
+    webspace_id: str | None = None,
+    **payload: Any,
+) -> dict[str, Any]:
     try:
-        result = _engine_instance().load_model(path)
+        resolved_path = _resolve_path(path, artifact_ref, file, **payload)
+        result = _engine_instance().load_model(resolved_path, source_ref=_source_ref(path, artifact_ref, file, **payload))
         return _result_with_snapshot(result, webspace_id=webspace_id)
     except Exception as exc:
         return _handle_error(exc, webspace_id=webspace_id)
 
 
 @tool("new_face_vision_load_frames")
-def new_face_vision_load_frames(path: str, webspace_id: str | None = None, **_: Any) -> dict[str, Any]:
+def new_face_vision_load_frames(
+    path: Any = None,
+    artifact_ref: Any = None,
+    file: Any = None,
+    webspace_id: str | None = None,
+    **payload: Any,
+) -> dict[str, Any]:
     try:
-        result = _engine_instance().load_frames(path)
+        resolved_path = _resolve_path(path, artifact_ref, file, **payload)
+        result = _engine_instance().load_frames(resolved_path, source_ref=_source_ref(path, artifact_ref, file, **payload))
         return _result_with_snapshot(result, webspace_id=webspace_id)
     except Exception as exc:
         return _handle_error(exc, webspace_id=webspace_id)
 
 
 @tool("new_face_vision_load_masks")
-def new_face_vision_load_masks(path: str, webspace_id: str | None = None, **_: Any) -> dict[str, Any]:
+def new_face_vision_load_masks(
+    path: Any = None,
+    artifact_ref: Any = None,
+    file: Any = None,
+    webspace_id: str | None = None,
+    **payload: Any,
+) -> dict[str, Any]:
     try:
-        result = _engine_instance().load_masks(path)
+        resolved_path = _resolve_path(path, artifact_ref, file, **payload)
+        result = _engine_instance().load_masks(resolved_path, source_ref=_source_ref(path, artifact_ref, file, **payload))
         return _result_with_snapshot(result, webspace_id=webspace_id)
     except Exception as exc:
         return _handle_error(exc, webspace_id=webspace_id)
 
 
 @tool("new_face_vision_load_metadata")
-def new_face_vision_load_metadata(path: str, webspace_id: str | None = None, **_: Any) -> dict[str, Any]:
+def new_face_vision_load_metadata(
+    path: Any = None,
+    artifact_ref: Any = None,
+    file: Any = None,
+    webspace_id: str | None = None,
+    **payload: Any,
+) -> dict[str, Any]:
     try:
-        result = _engine_instance().load_metadata(path)
+        resolved_path = _resolve_path(path, artifact_ref, file, **payload)
+        result = _engine_instance().load_metadata(resolved_path, source_ref=_source_ref(path, artifact_ref, file, **payload))
         return _result_with_snapshot(result, webspace_id=webspace_id)
     except Exception as exc:
         return _handle_error(exc, webspace_id=webspace_id)
@@ -209,7 +299,11 @@ def new_face_vision_process_frame(
     **_: Any,
 ) -> dict[str, Any]:
     try:
-        result = _engine_instance().process_frame(frame_idx)
+        engine = _engine_instance()
+        result = engine.process_frame(frame_idx)
+        if result.get("ok"):
+            _publish_stream(FRAME_RECEIVER, engine.frame_stream_payload(result), webspace_id=webspace_id)
+            _publish_stream(METRICS_RECEIVER, engine.metrics_stream_payload(result), webspace_id=webspace_id)
         _publish_event("new_face_vision.frame", {k: v for k, v in result.items() if k != "preview_base64"})
         return _result_with_snapshot(result, webspace_id=webspace_id)
     except Exception as exc:
