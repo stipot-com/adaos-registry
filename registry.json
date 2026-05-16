@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-16T11:13:35+00:00",
+  "updated_at": "2026-05-16T14:31:59+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -214,8 +214,8 @@
       "kind": "skill",
       "id": "new_face_vision_skill",
       "name": "new_face_vision_skill",
-      "version": "0.2.0",
-      "updated_at": "2026-05-16T11:13:08+00:00",
+      "version": "0.2.1",
+      "updated_at": "2026-05-16T14:31:59+00:00",
       "path": "skills/new_face_vision_skill",
       "manifest": "skills/new_face_vision_skill/skill.yaml",
       "source": {
@@ -297,25 +297,23 @@
     },
     {
       "kind": "skill",
-      "id": "root_mgmnt",
-      "name": "root_mgmnt",
-      "version": "0.4.0",
-      "updated_at": "2026-03-29T08:02:49+00:00",
-      "path": "skills/root_mgmnt",
-      "manifest": "skills/root_mgmnt/skill.yaml",
+      "id": "service_doctor_skill",
+      "name": "service_doctor_skill",
+      "version": "0.0.1",
+      "updated_at": "2026-05-16T12:43:53+00:00",
+      "path": "skills/service_doctor_skill",
+      "manifest": "skills/service_doctor_skill/skill.yaml",
       "source": {
-        "path": "skills/root_mgmnt",
-        "manifest": "skills/root_mgmnt/skill.yaml"
+        "path": "skills/service_doctor_skill",
+        "manifest": "skills/service_doctor_skill/skill.yaml"
       },
       "install": {
         "kind": "skill",
-        "name": "root_mgmnt",
-        "id": "root_mgmnt"
+        "name": "service_doctor_skill",
+        "id": "service_doctor_skill"
       },
-      "description": "Private root operator skill for LLM policy, fleet activity, and subnet lifecycle hygiene.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 18
+      "description": "Consumes skill.service.doctor.request and emits a stub doctor report (no LLM yet).",
+      "runtime_python": "3.11"
     },
     {
       "kind": "skill",
@@ -445,8 +443,8 @@
       "kind": "scenario",
       "id": "new_face_vision_scenario",
       "name": "new_face_vision",
-      "version": "1.1.0",
-      "updated_at": "2026-05-16T11:13:35+00:00",
+      "version": "0.2.0",
+      "updated_at": "2026-05-16T14:55:00+03:00",
       "path": "scenarios/new_face_vision",
       "manifest": "scenarios/new_face_vision/scenario.yaml",
       "source": {
@@ -458,7 +456,7 @@
         "name": "new_face_vision",
         "id": "new_face_vision_scenario"
       },
-      "description": "Инструмент анализа дефектов камней на видео с помощью нейросети",
+      "description": "Desktop scenario for frame analysis through new_face_vision_skill.",
       "manifest_id": "new_face_vision_scenario",
       "skills": {
         "required": [

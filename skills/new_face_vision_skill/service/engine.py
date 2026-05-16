@@ -48,8 +48,8 @@ class NewFaceVisionEngine:
 
         self._device = "cuda" if (torch is not None and torch.cuda.is_available()) else "cpu"
         self._model = None
-        self._frames = {}
-        self._masks = {}
+        self._frames: dict[str, Path] = {}
+        self._masks: dict[str, Path] = {}
         self._metadata = {}
         self._current_frame_idx = 0
         self._threshold = 0.35
@@ -70,7 +70,7 @@ class NewFaceVisionEngine:
             "error": None,
         }
         self._latest: dict[str, Any] | None = None
-        self.last_error: str | None = None
+        self.last_error: dict[str, Any] | None = None
 
         _log.info(f"NewFaceVisionEngine initialized. Device: {self._device}")
 
@@ -99,18 +99,30 @@ class NewFaceVisionEngine:
         if model_path:
             load_result = self.load_model(model_path)
             result.update(load_result)
+            if not load_result.get("ok", True):
+                result["ok"] = False
+                return result
 
         if frames_path:
             load_result = self.load_frames(frames_path)
             result.update(load_result)
+            if not load_result.get("ok", True):
+                result["ok"] = False
+                return result
 
         if masks_path:
             load_result = self.load_masks(masks_path)
             result.update(load_result)
+            if not load_result.get("ok", True):
+                result["ok"] = False
+                return result
 
         if metadata_path:
             load_result = self.load_metadata(metadata_path)
             result.update(load_result)
+            if not load_result.get("ok", True):
+                result["ok"] = False
+                return result
 
         return result
 
@@ -120,10 +132,10 @@ class NewFaceVisionEngine:
             _log.info(f"Loading model from {path}")
 
             if torch is None or nn is None or torchvision is None or TF is None:
-                return self._fail_operation("torch/torchvision are not installed")
+                return self._fail_operation("torch/torchvision are not installed", code="dependency_missing")
 
             if not os.path.exists(path):
-                return self._fail_operation(f"Model file not found: {path}")
+                return self._fail_operation(f"Model file not found: {path}", code="file_not_found")
 
             checkpoint = torch.load(path, map_location=self._device)
 
@@ -153,7 +165,7 @@ class NewFaceVisionEngine:
 
         except Exception as e:
             _log.error(f"Failed to load model: {e}")
-            return self._fail_operation(str(e))
+            return self._fail_operation(str(e), code="load_model_failed")
 
     def load_frames(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
@@ -161,10 +173,10 @@ class NewFaceVisionEngine:
             _log.info(f"Loading frames from {path}")
 
             if Image is None or np is None:
-                return self._fail_operation("Pillow/numpy are not installed")
+                return self._fail_operation("Pillow/numpy are not installed", code="dependency_missing")
 
             if not os.path.exists(path):
-                return self._fail_operation(f"Frames path not found: {path}")
+                return self._fail_operation(f"Frames path not found: {path}", code="file_not_found")
 
             if os.path.isfile(path) and path.endswith('.zip'):
                 if self.frames_dir.exists():
@@ -180,7 +192,7 @@ class NewFaceVisionEngine:
             self._latest = None
 
             if len(self._frames) == 0:
-                return self._fail_operation("No images found")
+                return self._fail_operation("No images found", code="empty_dataset")
 
             _log.info(f"Loaded {len(self._frames)} frames")
             self._files["frames"] = self._file_ref(path, source_ref=source_ref)
@@ -189,7 +201,7 @@ class NewFaceVisionEngine:
 
         except Exception as e:
             _log.error(f"Failed to load frames: {e}")
-            return self._fail_operation(str(e))
+            return self._fail_operation(str(e), code="load_frames_failed")
 
     def load_masks(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
@@ -197,10 +209,10 @@ class NewFaceVisionEngine:
             _log.info(f"Loading masks from {path}")
 
             if Image is None or np is None:
-                return self._fail_operation("Pillow/numpy are not installed")
+                return self._fail_operation("Pillow/numpy are not installed", code="dependency_missing")
 
             if not os.path.exists(path):
-                return self._fail_operation(f"Masks path not found: {path}")
+                return self._fail_operation(f"Masks path not found: {path}", code="file_not_found")
 
             if os.path.isfile(path) and path.endswith('.zip'):
                 if self.masks_dir.exists():
@@ -219,7 +231,7 @@ class NewFaceVisionEngine:
 
         except Exception as e:
             _log.error(f"Failed to load masks: {e}")
-            return self._fail_operation(str(e))
+            return self._fail_operation(str(e), code="load_masks_failed")
 
     def load_metadata(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
@@ -227,7 +239,7 @@ class NewFaceVisionEngine:
             _log.info(f"Loading metadata from {path}")
 
             if not os.path.exists(path):
-                return self._fail_operation(f"Metadata file not found: {path}")
+                return self._fail_operation(f"Metadata file not found: {path}", code="file_not_found")
 
             self._metadata = {}
             with open(path, 'r', encoding='utf-8') as f:
@@ -248,15 +260,16 @@ class NewFaceVisionEngine:
 
         except Exception as e:
             _log.error(f"Failed to load metadata: {e}")
-            return self._fail_operation(str(e))
+            return self._fail_operation(str(e), code="load_metadata_failed")
 
     def process_frame(self, frame_idx: int | None = None) -> dict[str, Any]:
         try:
+            self._begin_operation("process_frame", "Process frame")
             if Image is None or np is None:
-                return {"ok": False, "error": "Pillow/numpy are not installed"}
+                return self._fail_operation("Pillow/numpy are not installed", code="dependency_missing")
 
             if not self._frames:
-                return {"ok": False, "error": "No frames loaded"}
+                return self._fail_operation("No frames loaded", code="frames_missing")
 
             frame_keys = sorted(self._frames.keys())
 
@@ -272,14 +285,15 @@ class NewFaceVisionEngine:
             if cache_key in self._prediction_cache:
                 result = self._prediction_cache[cache_key]
                 self._record_frame_result(result, total_frames=len(frame_keys))
+                self._end_operation()
                 return result
 
-            frame = self._frames[frame_key]
+            frame = self._load_image_ref(self._frames[frame_key])
 
             gt_mask = None
             for key in self._masks:
                 if frame_key in key or key in frame_key:
-                    gt_mask = self._masks[key]
+                    gt_mask = self._load_image_ref(self._masks[key])
                     break
 
             if self._model is not None:
@@ -329,17 +343,20 @@ class NewFaceVisionEngine:
                 self._prediction_cache.pop(next(iter(self._prediction_cache)))
             self._prediction_cache[cache_key] = result
             self._record_frame_result(result, total_frames=len(frame_keys))
+            self._end_operation()
 
             return result
 
         except Exception as e:
             _log.error(f"Failed to process frame: {e}")
-            return {"ok": False, "error": str(e)}
+            return self._fail_operation(str(e), code="frame_processing_failed")
 
     def reset(self) -> dict[str, Any]:
+        self._begin_operation("reset", "Reset")
         self._current_frame_idx = 0
         self._prediction_cache = {}
         self._latest = None
+        self._end_operation()
         return {"ok": True, "message": "Reset completed"}
 
     def clear(self) -> dict[str, Any]:
@@ -494,7 +511,7 @@ class NewFaceVisionEngine:
         self._operation = {
             "id": operation_id,
             "label": label,
-            "progress": None,
+            "progress": 0.0,
             "error": None,
         }
 
@@ -506,13 +523,45 @@ class NewFaceVisionEngine:
         }
         self.last_error = None
 
-    def _fail_operation(self, error: str) -> dict[str, Any]:
-        self.last_error = error
+    def _fail_operation(
+        self,
+        error: Any,
+        *,
+        code: str = "operation_failed",
+        retryable: bool = False,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_error(error, code=code, retryable=retryable)
+        self.last_error = normalized
         self._operation = {
             **self._operation,
-            "error": error,
+            "error": normalized,
         }
-        return {"ok": False, "error": error}
+        return {"ok": False, "error": normalized}
+
+    def _normalize_error(
+        self,
+        error: Any,
+        *,
+        code: str = "operation_failed",
+        retryable: bool = False,
+    ) -> dict[str, Any]:
+        if isinstance(error, Mapping):
+            message = str(error.get("message") or error.get("error") or error.get("code") or code)
+            out: dict[str, Any] = {
+                "code": str(error.get("code") or code),
+                "message": message,
+                "retryable": bool(error.get("retryable", retryable)),
+                "ts": float(error.get("ts")) if isinstance(error.get("ts"), (int, float)) else time.time(),
+            }
+            if "details" in error:
+                out["details"] = error.get("details")
+            return out
+        return {
+            "code": code,
+            "message": str(error or code),
+            "retryable": retryable,
+            "ts": time.time(),
+        }
 
     def _file_ref(self, path: str, *, source_ref: Mapping[str, Any] | None = None) -> dict[str, Any]:
         file_path = Path(path)
@@ -526,8 +575,8 @@ class NewFaceVisionEngine:
             out["source"] = dict(source_ref)
         return out
 
-    def _load_images_from_folder(self, folder_path: str) -> dict[str, Image.Image]:
-        images = {}
+    def _load_images_from_folder(self, folder_path: str) -> dict[str, Path]:
+        images: dict[str, Path] = {}
         folder = Path(folder_path)
 
         if Image is None:
@@ -540,13 +589,13 @@ class NewFaceVisionEngine:
 
         for img_path in sorted(folder.rglob('*')):
             if img_path.suffix.lower() in image_extensions:
-                try:
-                    with Image.open(img_path) as img:
-                        images[img_path.stem] = img.copy()
-                except Exception:
-                    continue
+                images[img_path.stem] = img_path
 
         return images
+
+    def _load_image_ref(self, img_path: Path) -> Image.Image:
+        with Image.open(img_path) as img:
+            return img.copy()
 
     def _create_dummy_prediction(self, frame: Image.Image) -> Image.Image:
         img_array = np.array(frame.convert('L'))

@@ -130,6 +130,56 @@ def _publish_stream(receiver: str, data: Any, *, webspace_id: str | None = None)
         _log.debug("failed to publish stream receiver=%s", receiver, exc_info=True)
 
 
+def _normalize_error_payload(
+    error: Any,
+    *,
+    code: str = "skill_error",
+    retryable: bool = False,
+) -> dict[str, Any]:
+    if isinstance(error, Mapping):
+        message = str(error.get("message") or error.get("error") or error.get("code") or code)
+        out: dict[str, Any] = {
+            "code": str(error.get("code") or code),
+            "message": message,
+            "retryable": bool(error.get("retryable", retryable)),
+            "ts": float(error.get("ts")) if isinstance(error.get("ts"), (int, float)) else time.time(),
+        }
+        if "details" in error:
+            out["details"] = error.get("details")
+        return out
+    return {
+        "code": code,
+        "message": str(error or code),
+        "retryable": retryable,
+        "ts": time.time(),
+    }
+
+
+def _set_engine_error(error: Mapping[str, Any]) -> None:
+    engine = _engine_instance()
+    normalized = dict(error)
+    engine.last_error = normalized
+    operation = getattr(engine, "_operation", None)
+    if isinstance(operation, dict):
+        engine._operation = {**operation, "error": normalized}
+
+
+def _progress_payload(
+    snapshot: Mapping[str, Any],
+    *,
+    ok: bool,
+    error: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    operation = snapshot.get("operation") if isinstance(snapshot.get("operation"), Mapping) else {}
+    return {
+        "ok": ok,
+        "status": snapshot.get("status"),
+        "operation": dict(operation),
+        "error": dict(error) if isinstance(error, Mapping) else snapshot.get("error"),
+        "ts": time.time(),
+    }
+
+
 def _artifact_path(value: Any) -> str:
     if isinstance(value, Mapping):
         for key in (
@@ -180,18 +230,38 @@ def _source_ref(path: Any = None, artifact_ref: Any = None, file: Any = None, **
 
 
 def _result_with_snapshot(result: dict[str, Any], *, webspace_id: str | None = None) -> dict[str, Any]:
+    ok = bool(result.get("ok", True))
+    if not ok:
+        result = {
+            **result,
+            "error": _normalize_error_payload(result.get("error"), code="operation_failed"),
+        }
+        _set_engine_error(result["error"])
     _project(webspace_id=webspace_id)
     snapshot = _engine_instance().snapshot()
-    return {"ok": bool(result.get("ok", True)), **result, "current": snapshot}
+    operation = snapshot.get("operation") if isinstance(snapshot.get("operation"), Mapping) else {}
+    if operation.get("id") or not ok:
+        _publish_stream(
+            PROGRESS_RECEIVER,
+            _progress_payload(snapshot, ok=ok, error=result.get("error") if not ok else None),
+            webspace_id=webspace_id,
+        )
+    if not ok:
+        _publish_event(
+            "new_face_vision.error",
+            {"ok": False, "error": result["error"], "ts": time.time()},
+        )
+    return {"ok": ok, **result, "current": snapshot}
 
 
 def _handle_error(exc: Exception, *, webspace_id: str | None = None) -> dict[str, Any]:
-    engine = _engine_instance()
-    engine.last_error = str(exc)
+    error = _normalize_error_payload(exc, code="handler_exception")
+    _set_engine_error(error)
     _project(webspace_id=webspace_id)
-    payload = {"ok": False, "error": str(exc), "ts": time.time()}
+    snapshot = _engine_instance().snapshot()
+    payload = {"ok": False, "error": error, "current": snapshot, "ts": time.time()}
     _publish_event("new_face_vision.error", payload)
-    _publish_stream(PROGRESS_RECEIVER, {"ok": False, "error": str(exc), "ts": payload["ts"]}, webspace_id=webspace_id)
+    _publish_stream(PROGRESS_RECEIVER, _progress_payload(snapshot, ok=False, error=error), webspace_id=webspace_id)
     return payload
 
 
@@ -378,7 +448,17 @@ def new_face_vision_action(id: str | None = None, value: Any = None, webspace_id
             return new_face_vision_load_metadata(_action_value(merged), webspace_id=selected_webspace)
         if action == "set_threshold":
             return new_face_vision_configure(threshold=float(_action_value(merged)), webspace_id=selected_webspace)
-        return {"ok": False, "error": f"unknown_action:{action}"}
+        return _result_with_snapshot(
+            {
+                "ok": False,
+                "error": {
+                    "code": "unknown_action",
+                    "message": f"Unknown action: {action}",
+                    "details": {"action": action},
+                },
+            },
+            webspace_id=selected_webspace,
+        )
     except Exception as exc:
         return _handle_error(exc, webspace_id=selected_webspace)
 

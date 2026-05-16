@@ -56,23 +56,131 @@
             },
             {
               "id": "newface_preview",
-              "type": "ui.jsonViewer",
+              "type": "visual.frameViewer",
               "area": "preview",
-              "title": "Frame stream",
+              "title": "Preview",
               "dataSource": {
                 "kind": "stream",
                 "receiver": "newface_vision_frame"
+              },
+              "inputs": {
+                "imageField": "image.src",
+                "aspectRatio": "16 / 9",
+                "emptyText": "No frame yet",
+                "metrics": [
+                  { "label": "Pred", "path": "prediction.pred_ratio" },
+                  { "label": "True", "path": "prediction.true_ratio" },
+                  { "label": "Dice", "path": "metrics.dice" },
+                  { "label": "IoU", "path": "metrics.iou" }
+                ]
               }
             },
             {
               "id": "newface_metrics",
-              "type": "ui.jsonViewer",
+              "type": "visual.timeseriesChart",
               "area": "main",
-              "title": "Metrics stream",
+              "title": "Dice trend",
               "dataSource": {
                 "kind": "stream",
                 "receiver": "newface_vision_metrics"
+              },
+              "inputs": {
+                "xKey": "frame_idx",
+                "yKey": "series.dice",
+                "emptyText": "No metric points"
               }
+            },
+            {
+              "id": "newface_upload_model",
+              "type": "input.fileUpload",
+              "area": "main",
+              "title": "Model file",
+              "inputs": {
+                "skill": "new_face_vision_skill",
+                "purpose": "model",
+                "accept": ".pt,.pth,.onnx,application/octet-stream",
+                "label": "Upload model",
+                "maxBytes": 1073741824
+              },
+              "actions": [
+                {
+                  "on": "uploaded",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_load_model",
+                  "params": {
+                    "artifact_ref": "$event.artifact_ref"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "newface_upload_frames",
+              "type": "input.fileUpload",
+              "area": "main",
+              "title": "Frames ZIP",
+              "inputs": {
+                "skill": "new_face_vision_skill",
+                "purpose": "frames",
+                "accept": ".zip,application/zip",
+                "label": "Upload frames",
+                "maxBytes": 1073741824
+              },
+              "actions": [
+                {
+                  "on": "uploaded",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_load_frames",
+                  "params": {
+                    "artifact_ref": "$event.artifact_ref"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "newface_upload_masks",
+              "type": "input.fileUpload",
+              "area": "main",
+              "title": "Masks ZIP",
+              "inputs": {
+                "skill": "new_face_vision_skill",
+                "purpose": "masks",
+                "accept": ".zip,application/zip",
+                "label": "Upload masks",
+                "maxBytes": 1073741824
+              },
+              "actions": [
+                {
+                  "on": "uploaded",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_load_masks",
+                  "params": {
+                    "artifact_ref": "$event.artifact_ref"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "newface_upload_metadata",
+              "type": "input.fileUpload",
+              "area": "main",
+              "title": "Metadata JSONL",
+              "inputs": {
+                "skill": "new_face_vision_skill",
+                "purpose": "metadata",
+                "accept": ".jsonl,.json,application/json,text/plain",
+                "label": "Upload metadata",
+                "maxBytes": 67108864
+              },
+              "actions": [
+                {
+                  "on": "uploaded",
+                  "type": "callSkill",
+                  "target": "new_face_vision_skill.new_face_vision_load_metadata",
+                  "params": {
+                    "artifact_ref": "$event.artifact_ref"
+                  }
+                }
+              ]
             },
             {
               "id": "newface_status",
