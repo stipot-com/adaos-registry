@@ -94,6 +94,22 @@
               ]
             },
             {
+              "id": "browsers-filters",
+              "type": "ui.form",
+              "area": "main",
+              "inputs": {
+                "autoCommit": true,
+                "fields": [
+                  {
+                    "id": "onlineOnly",
+                    "type": "toggle",
+                    "label": "Online only",
+                    "stateKey": "browsersOnlineOnly"
+                  }
+                ]
+              }
+            },
+            {
               "id": "browsers-summary",
               "type": "visual.metricTile",
               "area": "main",
@@ -118,6 +134,7 @@
                 "detailsPath": "content",
                 "showDetails": true,
                 "itemAccordion": true,
+                "onlineOnlyStateKey": "browsersOnlineOnly",
                 "emptyText": "No permanent browser devices",
                 "buttons": [
                   {
@@ -160,6 +177,7 @@
                 "detailsPath": "content",
                 "showDetails": true,
                 "itemAccordion": true,
+                "onlineOnlyStateKey": "browsersOnlineOnly",
                 "emptyText": "No temporary browser clients",
                 "buttons": [
                   {

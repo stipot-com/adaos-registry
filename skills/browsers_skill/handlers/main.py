@@ -287,6 +287,8 @@ def _browser_tiles(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "subtitle": _browser_subtitle(entry),
             "content": _browser_details(entry),
             "icon": "browsers-outline",
+            "online": bool(entry.get("online")),
+            "status": "online" if bool(entry.get("online")) else "offline",
             "uiSubtitle": _browser_subtitle(entry),
         }
         for entry in entries
