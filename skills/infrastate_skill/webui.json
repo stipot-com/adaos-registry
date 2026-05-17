@@ -154,29 +154,6 @@
 							]
 						},
 						{
-							"id": "infrastate-yjs-actions",
-							"type": "ui.actions",
-							"area": "main",
-							"title": "",
-							"dataSource": {
-								"kind": "y",
-								"path": "data/infrastate/yjs_actions"
-							},
-							"inputs": {
-								"size": "small"
-							},
-							"actions": [
-								{
-									"on": "click",
-									"type": "callHost",
-									"target": "infrastate.action",
-									"params": {
-										"id": "$event.id"
-									}
-								}
-							]
-						},
-						{
 							"id": "infrastate-build",
 							"type": "ui.list",
 							"area": "main",
@@ -364,6 +341,31 @@
       }
     },
     {
+      "id": "infrastate-event-history-action",
+      "type": "ui.actions",
+      "area": "main",
+      "title": "",
+      "inputs": {
+        "variant": "stack",
+        "size": "small",
+        "buttons": [
+          {
+            "id": "event_history",
+            "label": "Event history"
+          }
+        ]
+      },
+      "actions": [
+        {
+          "on": "click:event_history",
+          "type": "openModal",
+          "params": {
+            "modalId": "event_history_modal"
+          }
+        }
+      ]
+    },
+    {
 							"id": "infrastate-skills",
 							"type": "ui.table",
 							"area": "main",
@@ -466,30 +468,6 @@
 							}
 						},
 						{
-							"id": "infrastate-events",
-							"type": "ui.list",
-							"area": "main",
-							"title": "Event history",
-							"dataSource": {
-								"kind": "stream",
-								"receiver": "infrastate.events.recent"
-							},
-							"inputs": {
-								"titleKey": "type",
-								"subtitleKey": "preview",
-								"detailsPath": "payload",
-								"showDetails": false,
-								"itemAccordion": false,
-								"detailsModal": true,
-								"detailsModalTitleKey": "type",
-								"detailsDataSource": {
-									"kind": "stream",
-									"receiver": "infrastate.details.events.$event.id"
-								},
-								"emptyText": "No events yet"
-							}
-						},
-						{
 							"id": "infrastate-yjs-load-mark",
 							"type": "ui.table",
 							"area": "main",
@@ -511,6 +489,43 @@
 									{ "key": "recent_writes", "label": "Writes", "mono": true, "width": "90px" },
 									{ "key": "current_size_bytes", "label": "Size", "mono": true, "width": "110px" }
 								]
+							}
+						}
+					]
+				}
+			},
+			"event_history_modal": {
+				"title": "Event history",
+				"schema": {
+					"id": "event_history_modal",
+          "layout": {
+            "type": "single",
+            "pattern": "stack",
+            "areas": [{ "id": "main", "role": "main" }]
+					},
+					"widgets": [
+						{
+							"id": "infrastate-events",
+							"type": "ui.list",
+							"area": "main",
+							"title": "Event history",
+							"dataSource": {
+								"kind": "stream",
+								"receiver": "infrastate.events.recent"
+							},
+							"inputs": {
+								"titleKey": "type",
+								"subtitleKey": "preview",
+								"detailsPath": "payload",
+								"showDetails": false,
+								"itemAccordion": false,
+								"detailsModal": true,
+								"detailsModalTitleKey": "type",
+								"detailsDataSource": {
+									"kind": "stream",
+									"receiver": "infrastate.details.events.$event.id"
+								},
+								"emptyText": "No events yet"
 							}
 						}
 					]
@@ -691,33 +706,10 @@
 					"description": "Reject new tool calls and enter draining state"
 				}
 			],
-			"yjs_actions": [
-				{
-					"id": "yjs_backup",
-					"title": "Yjs backup",
-					"description": "Persist current in-memory Yjs state to disk snapshot"
-				},
-				{
-					"id": "yjs_reload",
-					"title": "Yjs reload",
-					"description": "Reseed the selected webspace from its scenario source"
-				},
-				{
-					"id": "yjs_reset",
-					"title": "Yjs reset",
-					"description": "Hard-reset the selected webspace from its scenario source"
-				}
-			],
 			"nodes": [
 				{
 					"id": "local",
 					"label": "hub"
-				}
-			],
-			"yjs_webspaces": [
-				{
-					"id": "default",
-					"label": "default *"
 				}
 			],
 			"node_editor": {

@@ -40,7 +40,7 @@ from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 from adaos.services.runtime_refresh import rebuild_webspace_projection_sync, refresh_skill_runtime
-from adaos.services.capacity import install_scenario_in_capacity
+from adaos.services.capacity import get_local_capacity, install_scenario_in_capacity
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.operations import get_operation_manager, submit_install_operation
 from adaos.services.skill.update import SkillUpdateService
@@ -63,7 +63,7 @@ _SUMMARY_RENDER_STATE_KEY = "infrastate.summary_render_state"
 _UI_STATE_FALLBACK: dict[str, Any] = {}
 _SUMMARY_RENDER_STATE_FALLBACK: dict[str, Any] = {}
 _BACKGROUND_REFRESH_DEBOUNCE_S = 0.35
-_REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}
+_REMOTE_VERSION_PROBE_ENABLED = str(os.getenv("ADAOS_INFRASTATE_REMOTE_VERSION_PROBE") or "1").strip().lower() in {"1", "true", "yes", "on"}
 _MARKETPLACE_CACHE_TTL_S = max(0.0, float(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_CACHE_TTL_S") or "30"))
 _MARKETPLACE_REMOTE_FETCH_ENABLED = str(os.getenv("ADAOS_INFRASTATE_MARKETPLACE_REMOTE_FETCH") or "").strip().lower() in {"1", "true", "yes", "on"}
 _MARKETPLACE_REMOTE_FETCH_TIMEOUT_S = max(
@@ -96,11 +96,9 @@ _PROJECTION_SLOT_PATHS: dict[str, str] = {
     "infrastate.summary": "data/infrastate/summary",
     "infrastate.actions": "data/infrastate/actions",
     "infrastate.core_actions": "data/infrastate/core_actions",
-    "infrastate.yjs_actions": "data/infrastate/yjs_actions",
     "infrastate.update_actions": "data/infrastate/update_actions",
     "infrastate.core_update_diag_actions": "data/infrastate/core_update_diag_actions",
     "infrastate.nodes": "data/infrastate/nodes",
-    "infrastate.yjs_webspaces": "data/infrastate/yjs_webspaces",
     "infrastate.node_editor": "data/infrastate/node_editor",
     "infrastate.operations.active": "data/infrastate/operations/active",
     "infrastate.ui_state": "data/infrastate/ui_state",
@@ -125,11 +123,9 @@ _PROJECTION_SECTION_TO_SLOT = {
     "summary": "infrastate.summary",
     "actions": "infrastate.actions",
     "core_actions": "infrastate.core_actions",
-    "yjs_actions": "infrastate.yjs_actions",
     "update_actions": "infrastate.update_actions",
     "core_update_diag_actions": "infrastate.core_update_diag_actions",
     "nodes": "infrastate.nodes",
-    "yjs_webspaces": "infrastate.yjs_webspaces",
     "node_editor": "infrastate.node_editor",
     "ui_state": "infrastate.ui_state",
     "fallback": "infrastate.fallback",
@@ -147,6 +143,7 @@ _background_refresh_pending = False
 _background_refresh_webspace_id: str | None = None
 _background_refresh_reason = ""
 _marketplace_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
+_registry_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 _snapshot_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _snapshot_cache_guard = threading.Lock()
 _snapshot_cache_locks: dict[str, threading.Lock] = {}
@@ -448,13 +445,11 @@ def _compact_snapshot_for_yjs(snapshot: dict[str, Any]) -> dict[str, Any]:
     compact: dict[str, Any] = {}
     if isinstance(snapshot.get("summary"), dict):
         compact["summary"] = _compact_summary_for_yjs(snapshot.get("summary"))
-    for key in ("actions", "core_actions", "yjs_actions", "update_actions", "core_update_diag_actions"):
+    for key in ("actions", "core_actions", "update_actions", "core_update_diag_actions"):
         if key in snapshot:
             compact[key] = _compact_action_list_for_yjs(snapshot.get(key))
     if key := snapshot.get("nodes"):
         compact["nodes"] = _compact_node_list_for_yjs(key)
-    if key := snapshot.get("yjs_webspaces"):
-        compact["yjs_webspaces"] = _compact_yjs_webspace_list_for_yjs(key)
     if isinstance(snapshot.get("node_editor"), dict):
         compact["node_editor"] = _compact_mapping(snapshot.get("node_editor"), max_keys=8)
     if isinstance(snapshot.get("ui_state"), dict):
@@ -485,7 +480,6 @@ def _compact_summary_for_yjs(value: Any) -> dict[str, Any]:
         "selected_node_id",
         "selected_node_label",
         "selected_node_kind",
-        "selected_yjs_webspace_id",
         "route_status",
         "root_control_status",
         "route_stability",
@@ -534,6 +528,7 @@ def _compact_node_list_for_yjs(value: Any) -> list[dict[str, Any]]:
         "state",
         "selected",
         "connected",
+        "node_status",
         "node_index",
         "node_compact_label",
         "node_color",
@@ -574,11 +569,7 @@ def _compact_ui_state_for_yjs(value: Any) -> dict[str, Any]:
 
 
 def _truncate_text(text: str, limit: int | None = None) -> str:
-    limit = _SNAPSHOT_CONTENT_MAX_BYTES if limit is None else max(0, int(limit))
-    if limit <= 0 or len(text.encode("utf-8", errors="ignore")) <= limit:
-        return text
-    head = text.encode("utf-8", errors="ignore")[:limit].decode("utf-8", errors="ignore")
-    return f"{head}\n... truncated; full diagnostics available through dedicated runtime endpoints ..."
+    return text
 
 
 def _compact_card_item(item: Any, *, include_content: bool = True) -> Any:
@@ -634,10 +625,8 @@ def _compact_snapshot_for_client(snapshot: dict[str, Any]) -> dict[str, Any]:
         "summary",
         "actions",
         "core_actions",
-        "yjs_actions",
         "update_actions",
         "nodes",
-        "yjs_webspaces",
         "node_editor",
         "operations",
         "marketplace",
@@ -949,6 +938,7 @@ def _invalidate_runtime_caches(*, webspace_id: str | None = None, marketplace: b
         _snapshot_cache_projection_fingerprints.pop(cache_key, None)
     if marketplace:
         _marketplace_catalog_cache.clear()
+        _registry_catalog_cache.clear()
 
 
 def _invalidate_projection_state(*, webspace_id: str | None = None) -> None:
@@ -1263,10 +1253,38 @@ def _safe_version(v: Any) -> Version | None:
         return None
 
 
+def _registry_json_catalog_entries(kind_plural: str, workspace_root: Path) -> list[dict[str, Any]]:
+    cache_key = (str(Path(workspace_root)), str(kind_plural or "").strip())
+    cache_now = time.monotonic()
+    cached = _registry_catalog_cache.get(cache_key)
+    if cached is not None and _MARKETPLACE_CACHE_TTL_S > 0:
+        cached_at, cached_items = cached
+        if cache_now - cached_at <= _MARKETPLACE_CACHE_TTL_S:
+            return [dict(item) for item in cached_items]
+
+    payload = _registry_payload_from_url() if _allow_marketplace_remote_fetch() else None
+    if not isinstance(payload, dict) and _allow_marketplace_git_ref_lookup():
+        payload = _registry_payload_from_git_ref(workspace_root)
+
+    raw_entries = payload.get(kind_plural) if isinstance(payload, dict) else []
+    result = [dict(item) for item in list(raw_entries or []) if isinstance(item, dict)]
+    _registry_catalog_cache[cache_key] = (cache_now, [dict(item) for item in result])
+    return result
+
+
 def _read_registry_catalog_version(*, skill_id: str) -> str | None:
     if not _REMOTE_VERSION_PROBE_ENABLED:
         return None
-    for entry in _marketplace_catalog_entries("skills"):
+    entries: list[dict[str, Any]] = []
+    try:
+        ctx = get_ctx()
+        workspace_root = Path(ctx.paths.workspace_dir())
+        entries = _registry_json_catalog_entries("skills", workspace_root)
+    except Exception:
+        entries = []
+    if not entries:
+        entries = _marketplace_catalog_entries("skills")
+    for entry in entries:
         if not isinstance(entry, dict):
             continue
         entry_id = str(entry.get("id") or entry.get("name") or "").strip()
@@ -1293,6 +1311,26 @@ def _workspace_registry_entry_map(workspace_root: Path, kind_plural: str) -> dic
     mapped: dict[str, dict[str, Any]] = {}
     for entry in entries:
         if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or entry.get("id") or "").strip()
+        if name:
+            mapped[name] = dict(entry)
+    return mapped
+
+
+def _capacity_scenario_entry_map() -> dict[str, dict[str, Any]]:
+    try:
+        payload = get_local_capacity()
+    except Exception:
+        payload = {}
+    raw_entries = []
+    if isinstance(payload, dict):
+        raw_entries = list(payload.get("scenarios") or [])
+    mapped: dict[str, dict[str, Any]] = {}
+    for entry in raw_entries:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("active", True) is False:
             continue
         name = str(entry.get("name") or entry.get("id") or "").strip()
         if name:
@@ -1479,15 +1517,18 @@ def _skills_items() -> list[dict[str, Any]]:
         rv = _safe_version(remote_version)
         if lv is not None and rv is not None and rv > lv:
             update_available = True
-        display_name = f"{name} *" if update_available else name
-        version_display = local_version
-        if update_available and remote_version:
-            version_display = f"{local_version} ({remote_version})"
+        registry_mismatch = bool(remote_version and local_version and remote_version != local_version)
+        version_label = local_version or "unknown"
+        if registry_mismatch:
+            version_label = f"{version_label}*"
+        version_display = version_label
+        if registry_mismatch and remote_version:
+            version_display = f"{version_label} ({remote_version})"
 
         out.append(
             {
                 "name": name,
-                "display_name": display_name,
+                "display_name": name,
                 "version": local_version,
                 "version_display": version_display,
                 "slot": slot,
@@ -1498,6 +1539,7 @@ def _skills_items() -> list[dict[str, Any]]:
                 "uninstall_disabled": bool(skill_usage.get(name, [])),
                 "remote_version": remote_version,
                 "update_available": update_available,
+                "registry_mismatch": registry_mismatch,
             }
         )
 
@@ -1527,6 +1569,8 @@ def _scenario_items() -> list[dict[str, Any]]:
         for row in registry_rows
         if str(getattr(row, "name", "") or "").strip()
     }
+    capacity_by_name = _capacity_scenario_entry_map()
+    installed_scenario_names = sorted(set(installed_scenario_names) | set(capacity_by_name))
     workspace_registry_by_name = _workspace_registry_entry_map(workspace_root, "scenarios")
 
     out: list[dict[str, Any]] = []
@@ -1534,17 +1578,20 @@ def _scenario_items() -> list[dict[str, Any]]:
         if not name:
             continue
         row = registry_rows_by_name.get(name)
+        capacity_entry = capacity_by_name.get(name) or {}
         version = (
             _read_local_artifact_version(workspace_root, "scenarios", name)
             or _clean_version_text((workspace_registry_by_name.get(name) or {}).get("version"))
             or _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
+            or _clean_version_text(capacity_entry.get("version"))
             or ""
         )
+        updated_at = getattr(row, "last_updated", None) if row is not None else capacity_entry.get("updated_at")
         out.append(
             {
                 "name": name,
                 "version": version,
-                "updated_at": getattr(row, "last_updated", None) if row is not None else None,
+                "updated_at": updated_at,
                 "uninstall_disabled": False,
             }
         )
@@ -2711,6 +2758,9 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
             "node_id": local_node_id,
             "node_names": local_names,
             "kind": "local",
+            "state": "online",
+            "connected": True,
+            "node_status": "online",
             "node_compact_label": local_display.get("node_compact_label"),
             "node_color": local_display.get("node_color"),
             "node_index": local_display.get("node_index"),
@@ -2730,6 +2780,8 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
             member_names = member.get("node_names") if isinstance(member.get("node_names"), list) else []
             connected = bool(member.get("connected"))
             observed_via = str(member.get("observed_via") or "").strip()
+            member_state = str(member.get("state") or ("connected" if connected else "offline")).strip().lower()
+            node_status = "online" if connected or member_state in {"online", "connected", "ready"} else "offline"
             member_label = str(member.get("node_label") or member.get("label") or "").strip() or _node_label(
                 member_names,
                 fallback=f"Node {index}",
@@ -2743,8 +2795,9 @@ def _node_tabs(conf, ui_state: dict[str, Any], reliability: dict[str, Any]) -> t
                     "node_id": node_id,
                     "node_names": member_names,
                     "kind": "member",
-                    "state": str(member.get("state") or "connected"),
+                    "state": member_state,
                     "connected": connected,
+                    "node_status": node_status,
                     "observed_via": observed_via,
                     "node_compact_label": member.get("node_compact_label"),
                     "node_color": member.get("node_color"),
@@ -4332,36 +4385,7 @@ def _summary(
     summary_label = "Core update"
     summary_value = state
     summary_subtitle = f"slot {active} | {build.get('runtime_git_short_commit') or build.get('git_short_sha') or build.get('version') or 'unknown'}"
-    sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
-    sync_webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
-    recovery_guidance = sync_runtime.get("recovery_guidance") if isinstance(sync_runtime.get("recovery_guidance"), dict) else {}
-    webspace_guidance = sync_runtime.get("webspace_guidance") if isinstance(sync_runtime.get("webspace_guidance"), dict) else {}
-    selected_webspace_meta = sync_runtime.get("selected_webspace") if isinstance(sync_runtime.get("selected_webspace"), dict) else {}
-    selected_yjs_webspace_id = _selected_yjs_webspace_id(ui_state, reliability)
-    selected_sync_webspace = sync_webspaces.get(selected_yjs_webspace_id) if isinstance(sync_webspaces.get(selected_yjs_webspace_id), dict) else {}
     selected_member = selected_member if isinstance(selected_member, dict) else {}
-    if selected_kind == "local" and selected_yjs_webspace_id:
-        recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
-        recommended_webspace_action = str(webspace_guidance.get("recommended_action") or "").strip()
-        message += (
-            f" | yjs_ws={selected_yjs_webspace_id}"
-            f" {selected_sync_webspace.get('log_mode') or '-'}"
-            f" replay={selected_sync_webspace.get('replay_window_entries') or 0}/"
-            f"{selected_sync_webspace.get('replay_window_limit') or 0}"
-        )
-        if selected_sync_webspace:
-            message += f" snapshot={'yes' if selected_sync_webspace.get('snapshot_file_exists') else 'no'}"
-        if selected_webspace_meta:
-            message += (
-                f" home={selected_webspace_meta.get('home_scenario') or '-'}"
-                f" proj_scenario={selected_webspace_meta.get('projection_active_scenario') or '-'}"
-                f" mode={selected_webspace_meta.get('source_mode') or '-'}"
-                f" rebuild={(selected_webspace_meta.get('rebuild') if isinstance(selected_webspace_meta.get('rebuild'), dict) else {}).get('status') or '-'}"
-            )
-        if recommended_action:
-            message += f" next={recommended_action}"
-        if recommended_webspace_action:
-            message += f" ws_next={recommended_webspace_action}"
     if selected_kind != "local":
         remote_control = _remote_control_payload(
             selected_member.get("node_snapshot") if isinstance(selected_member.get("node_snapshot"), dict) else {},
@@ -4399,7 +4423,6 @@ def _summary(
             message += f" runtime={build_ref}"
         if selected_member.get("last_snapshot_ago_s") is not None:
             message += f" snapshot_ago={selected_member.get('last_snapshot_ago_s')}"
-        message += " yjs=hub-local-only"
     summary_payload = {
         "label": summary_label,
         "value": summary_value,
@@ -4413,14 +4436,6 @@ def _summary(
         "selected_node_label": selected_label,
         "selected_node_names": selected_node.get("node_names") if isinstance(selected_node.get("node_names"), list) else [],
         "node_tab_total": len(node_tabs),
-        "selected_yjs_webspace_id": selected_yjs_webspace_id,
-        "selected_yjs_log_mode": str(selected_sync_webspace.get("log_mode") or ""),
-        "selected_yjs_replay_window_entries": int(selected_sync_webspace.get("replay_window_entries") or 0),
-        "selected_yjs_replay_window_limit": int(selected_sync_webspace.get("replay_window_limit") or 0),
-        "selected_yjs_backup_total": int(selected_sync_webspace.get("backup_total") or 0),
-        "selected_yjs_snapshot_exists": bool(selected_sync_webspace.get("snapshot_file_exists")),
-        "selected_yjs_home_scenario": str(selected_webspace_meta.get("home_scenario") or ""),
-        "selected_yjs_source_mode": str(selected_webspace_meta.get("source_mode") or ""),
         "subnet_id": str(getattr(conf, "subnet_id", "") or ""),
         "root_url": str(getattr(getattr(conf, "root_settings", None), "base_url", "") or ""),
         "updated_at": float(status.get("updated_at") or time.time()),
@@ -4492,7 +4507,7 @@ def _summary(
     }
     return _highlight_summary_changes(
         summary_payload,
-        context_key=_summary_render_context_key(selected_kind, selected_node_id, selected_yjs_webspace_id),
+        context_key=_summary_render_context_key(selected_kind, selected_node_id, ""),
     )
 
 
@@ -4501,25 +4516,7 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
     last_action = str(ui_state.get("last_action") or "").strip()
     state = str(status.get("state") or "idle")
     selected_node_id = str(ui_state.get("selected_node_id") or "").strip()
-    selected_yjs_webspace_id = _selected_yjs_webspace_id(ui_state, reliability)
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
-    sync_runtime = runtime.get("sync_runtime") if isinstance(runtime.get("sync_runtime"), dict) else {}
-    action_overrides = sync_runtime.get("action_overrides") if isinstance(sync_runtime.get("action_overrides"), dict) else {}
-    recovery_guidance = sync_runtime.get("recovery_guidance") if isinstance(sync_runtime.get("recovery_guidance"), dict) else {}
-    webspace_guidance = sync_runtime.get("webspace_guidance") if isinstance(sync_runtime.get("webspace_guidance"), dict) else {}
-    backup_override = action_overrides.get("backup") if isinstance(action_overrides.get("backup"), dict) else {}
-    reload_override = action_overrides.get("reload") if isinstance(action_overrides.get("reload"), dict) else {}
-    restore_override = action_overrides.get("restore") if isinstance(action_overrides.get("restore"), dict) else {}
-    reset_override = action_overrides.get("reset") if isinstance(action_overrides.get("reset"), dict) else {}
-    go_home_override = action_overrides.get("go_home") if isinstance(action_overrides.get("go_home"), dict) else {}
-    set_home_current_override = (
-        action_overrides.get("set_home_current") if isinstance(action_overrides.get("set_home_current"), dict) else {}
-    )
-    sync_webspaces = sync_runtime.get("webspaces") if isinstance(sync_runtime.get("webspaces"), dict) else {}
-    selected_sync_webspace = sync_webspaces.get(selected_yjs_webspace_id) if isinstance(sync_webspaces.get(selected_yjs_webspace_id), dict) else {}
-    recommended_action = str(recovery_guidance.get("recommended_action") or "").strip()
-    recommended_webspace_action = str(webspace_guidance.get("recommended_action") or "").strip()
-    alternate_webspace_action = str(webspace_guidance.get("alternate_action") or "").strip()
     sidecar_runtime = runtime.get("sidecar_runtime") if isinstance(runtime.get("sidecar_runtime"), dict) else {}
     local_node_id = str(load_config().node_id or "")
     if selected_node_id and selected_node_id != local_node_id:
@@ -4642,73 +4639,6 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
         items.extend(
             [
                 {
-                    "id": "yjs_backup",
-                    "title": "Yjs backup",
-                    "status": "ok" if bool(backup_override.get("enabled", True)) else "idle",
-                    "description": (
-                        "Recommended first step. " if recommended_action == "backup" else ""
-                    ) + str(backup_override.get("reason") or f"Persist Yjs snapshot for webspace {selected_yjs_webspace_id}"),
-                    "subtitle": last_action if last_action == "yjs_backup" else "",
-                },
-                {
-                    "id": "yjs_reload",
-                    "title": "Yjs reload",
-                    "status": "ok" if bool(reload_override.get("enabled", True)) else "idle",
-                    "description": (
-                        "Recommended first step. " if recommended_action == "reload" else ""
-                    ) + str(reload_override.get("reason") or f"Reseed webspace {selected_yjs_webspace_id} from its current scenario"),
-                    "subtitle": last_action if last_action == "yjs_reload" else "",
-                },
-                {
-                    "id": "yjs_restore",
-                    "title": "Yjs restore",
-                    "status": "ok" if bool(restore_override.get("enabled")) else "idle",
-                    "description": (
-                        ("Recommended first step. " if recommended_action == "restore" else "")
-                        + str(restore_override.get("reason") or f"Restore webspace {selected_yjs_webspace_id} from its latest disk snapshot")
-                        if bool(restore_override.get("enabled"))
-                        else str(restore_override.get("reason") or f"No disk snapshot available for webspace {selected_yjs_webspace_id}")
-                    ),
-                    "subtitle": last_action if last_action == "yjs_restore" else "",
-                },
-                {
-                    "id": "yjs_reset",
-                    "title": "Yjs reset",
-                    "status": "warn" if bool(reset_override.get("enabled", True)) else "idle",
-                    "description": (
-                        "Recommended first step. " if recommended_action == "reset" else ""
-                    ) + str(reset_override.get("reason") or f"Hard-reset webspace {selected_yjs_webspace_id} from its current scenario"),
-                    "subtitle": last_action if last_action == "yjs_reset" else "",
-                },
-                {
-                    "id": "yjs_go_home",
-                    "title": "Yjs go home",
-                    "status": "ok" if bool(go_home_override.get("enabled")) else "idle",
-                    "description": (
-                        "Recommended first step. " if recommended_webspace_action == "go_home" else ""
-                    ) + str(go_home_override.get("reason") or f"Return webspace {selected_yjs_webspace_id} to its manifest home scenario"),
-                    "subtitle": last_action if last_action == "yjs_go_home" else "",
-                },
-                {
-                    "id": "yjs_set_home_current",
-                    "title": "Yjs set current as home",
-                    "status": "ok" if bool(set_home_current_override.get("enabled")) else "idle",
-                    "description": (
-                        ("Recommended first step. " if recommended_webspace_action == "set_home_current" else "")
-                        + ("Alternative to go home. " if alternate_webspace_action == "set_home_current" else "")
-                        + str(
-                            set_home_current_override.get("reason")
-                            or f"Persist the current projected scenario as home for webspace {selected_yjs_webspace_id}"
-                        )
-                        if bool(set_home_current_override.get("enabled"))
-                        else str(
-                            set_home_current_override.get("reason")
-                            or f"Current projected scenario is unavailable for webspace {selected_yjs_webspace_id}"
-                        )
-                    ),
-                    "subtitle": last_action if last_action == "yjs_set_home_current" else "",
-                },
-                {
                     "id": "forget_subnet",
                     "title": "Forget subnet",
                     "status": "warn",
@@ -4750,21 +4680,7 @@ def _core_action_items(status: dict[str, Any], ui_state: dict[str, Any], reliabi
 
 
 def _yjs_action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability: dict[str, Any]) -> list[dict[str, Any]]:
-    selected_node_id = str(ui_state.get("selected_node_id") or "").strip()
-    local_node_id = str(load_config().node_id or "")
-    if selected_node_id and selected_node_id != local_node_id:
-        selected_node = _selected_node_entry(reliability, selected_node_id)
-        return [
-            {
-                "id": "yjs_scope",
-                "title": "Yjs scope",
-                "status": "idle",
-                "description": "Yjs recovery and webspace controls run on the hub only; remote member tabs are read-only for sync control.",
-                "subtitle": str(selected_node.get("label") or selected_node_id or "remote member"),
-            }
-        ]
-    items = list(_action_items(status, ui_state, reliability))
-    return [item for item in items if str(item.get("id") or "").startswith("yjs_")]
+    return []
 
 
 def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[str, Any]:
@@ -4779,12 +4695,6 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             "rollback",
             "drain",
             "restart_sidecar",
-            "yjs_backup",
-            "yjs_reload",
-            "yjs_restore",
-            "yjs_reset",
-            "yjs_go_home",
-            "yjs_set_home_current",
             "skill_activate",
             "skill_test",
             "skill_update",
@@ -5017,16 +4927,6 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             last_error="",
         )
         return {"ok": True, "selected_node_id": node_id}
-    if action_id == "select_yjs_webspace":
-        selected = str(_extract_param(payload, "webspace_id") or "").strip()
-        _write_ui_state(
-            selected_yjs_webspace_id=selected or default_webspace_id(),
-            last_action="select_yjs_webspace",
-            last_action_ts=time.time(),
-            last_refresh_ts=time.time(),
-            last_error="",
-        )
-        return {"ok": True, "selected_yjs_webspace_id": selected or default_webspace_id()}
     if action_id == "marketplace":
         _write_ui_state(
             selected_node_id=selected_node_id or local_node_id,
@@ -5291,48 +5191,6 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             "/api/node/sidecar/restart",
             {"reconnect_hub_root": True},
         )
-    elif action_id == "yjs_backup":
-        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
-        result = _post_local_admin(
-            conf,
-            f"/api/node/yjs/webspaces/{selected_webspace}/backup",
-            {},
-        )
-    elif action_id == "yjs_reload":
-        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
-        result = _post_local_admin(
-            conf,
-            f"/api/node/yjs/webspaces/{selected_webspace}/reload",
-            {},
-        )
-    elif action_id == "yjs_restore":
-        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
-        result = _post_local_admin(
-            conf,
-            f"/api/node/yjs/webspaces/{selected_webspace}/restore",
-            {},
-        )
-    elif action_id == "yjs_reset":
-        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
-        result = _post_local_admin(
-            conf,
-            f"/api/node/yjs/webspaces/{selected_webspace}/reset",
-            {},
-        )
-    elif action_id == "yjs_go_home":
-        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
-        result = _post_local_admin(
-            conf,
-            f"/api/node/yjs/webspaces/{selected_webspace}/go-home",
-            {},
-        )
-    elif action_id == "yjs_set_home_current":
-        selected_webspace = _selected_yjs_webspace_id(_ui_state(), _reliability_snapshot(conf, runtime_lifecycle_snapshot()))
-        result = _post_local_admin(
-            conf,
-            f"/api/node/yjs/webspaces/{selected_webspace}/set-home-current",
-            {},
-        )
     else:
         raise ValueError(f"unsupported infrastate action: {action_id}")
     _write_ui_state(
@@ -5390,11 +5248,6 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
                 "kind": "local",
             },
         ),
-    )
-    yjs_webspace_tabs = _safe_snapshot_step(
-        "yjs_webspace_tabs",
-        lambda: _yjs_webspace_tabs(conf, ui_state, reliability, selected_node),
-        [],
     )
     node_editor = _safe_snapshot_step(
         "selected_node_editor",
@@ -5501,10 +5354,8 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
         ),
         "actions": _safe_snapshot_step("action_items", lambda: _action_items(display_status, ui_state, reliability), []),
         "core_actions": _safe_snapshot_step("core_action_items", lambda: _core_action_items(display_status, ui_state, reliability), []),
-        "yjs_actions": _safe_snapshot_step("yjs_action_items", lambda: _yjs_action_items(display_status, ui_state, reliability), []),
         "update_actions": _safe_snapshot_step("update_actions", lambda: _update_actions(conf, ui_state, reliability), []),
         "nodes": node_tabs,
-        "yjs_webspaces": yjs_webspace_tabs,
         "node_editor": node_editor,
         "build": build_items,
         "steps": step_items,
@@ -5566,10 +5417,8 @@ def _fallback_snapshot(exc: Exception, *, webspace_id: str | None = None) -> dic
         },
         "actions": [],
         "core_actions": [],
-        "yjs_actions": [],
         "update_actions": [],
         "nodes": [],
-        "yjs_webspaces": [],
         "node_editor": {
             "names_csv": "",
             "editable": False,
