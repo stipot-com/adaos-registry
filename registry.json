@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-17T09:21:16+00:00",
+  "updated_at": "2026-05-17T09:21:21+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -294,6 +294,28 @@
         "id": "rasa_nlu_service_skill"
       },
       "description": "Local Rasa NLU-only service for AdaOS intent detection"
+    },
+    {
+      "kind": "skill",
+      "id": "root_mgmnt",
+      "name": "root_mgmnt",
+      "version": "0.4.1",
+      "updated_at": "2026-05-17T09:21:21+00:00",
+      "path": "skills/root_mgmnt",
+      "manifest": "skills/root_mgmnt/skill.yaml",
+      "source": {
+        "path": "skills/root_mgmnt",
+        "manifest": "skills/root_mgmnt/skill.yaml"
+      },
+      "install": {
+        "kind": "skill",
+        "name": "root_mgmnt",
+        "id": "root_mgmnt"
+      },
+      "description": "Private root operator skill for LLM policy, fleet activity, and subnet lifecycle hygiene.",
+      "entry": "handlers/main.py",
+      "runtime_python": "3.11",
+      "tools_count": 18
     },
     {
       "kind": "skill",
