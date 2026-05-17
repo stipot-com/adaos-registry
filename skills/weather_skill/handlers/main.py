@@ -495,6 +495,14 @@ async def on_weather_intent(payload) -> None:
         description=data["description"],
     )
     await emit("ui.notify", {"text": text_out, "_meta": meta}, **extra)
+    route_id = meta.get("route_id") or meta.get("route")
+    if isinstance(route_id, str) and route_id.strip():
+        return
+    await emit(
+        "io.out.chat.append",
+        {"text": text_out, "from": "hub", "ts": time.time(), "_meta": meta},
+        **extra,
+    )
 
 
 def resolve_location(*, text: str, lang: str = "ru", slots: Dict[str, Any] | None = None, resources: Dict[str, Any] | None = None) -> Optional[Tuple[str, float]]:
@@ -551,6 +559,19 @@ def _weather_current_payload(city: str, live: Dict[str, Any] | None = None, *, o
     if error:
         data["error"] = error
     return data
+
+
+def _weather_pending_payload(city: str) -> Dict[str, Any]:
+    canonical = _canonical_city_key(city)
+    return {
+        "city": canonical or city,
+        "temp_c": None,
+        "condition": "",
+        "wind_ms": None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "source": "pending",
+        "pending": True,
+    }
 
 
 def _weather_projection_payload(data: Dict[str, Any], *, status: str = "") -> Dict[str, Any]:
@@ -661,12 +682,11 @@ async def on_weather_city_changed(evt) -> None:
         _log.info("weather_city_changed ignored: missing city payload_keys=%s", sorted(payload.keys()))
         return
     api_entry_point, _ = _load_config()
-    data = _weather_current_payload(city)
+    data = _weather_pending_payload(city)
     _log.info(
-        "weather_city_changed accepted webspace=%s city=%s temp_c=%s source=snapshot",
+        "weather_city_changed accepted webspace=%s city=%s source=pending",
         webspace_id or "default",
         data.get("city"),
-        data.get("temp_c"),
     )
     await _project_weather_current_async(data, webspace_id=webspace_id, status="refreshing")
     task_key = str(webspace_id or "default").strip() or "default"
