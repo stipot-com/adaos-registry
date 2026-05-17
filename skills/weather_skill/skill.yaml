@@ -1,7 +1,7 @@
 name: weather_skill
-version: 2.5.3
-description: Simple weather demo skill that shows current conditions on the desktop
-  and reacts to city changes.
+version: 2.6.1
+description: Weather skill with Open-Meteo current conditions, forecast, browser location
+  support and declarative UI actions.
 runtime:
   python: '3.11'
 dependencies:
@@ -11,9 +11,11 @@ llm_policy:
 events:
   subscribe:
   - nlp.intent.weather.get
+  - weather.location.requested
   - weather.city_changed
   publish:
   - ui.notify
+  - io.out.chat.append
 data_projections:
 - scope: subnet
   slot: weather.snapshot
@@ -23,8 +25,8 @@ data_projections:
 default_tool: get_weather
 tools:
 - name: get_weather
-  description: Resolve current weather for the requested city and return a basic summary
-    for the UI.
+  description: Resolve current weather and forecast for a city or browser-provided
+    coordinates.
   entry: handlers.main:get_weather
   input_schema:
     type: object
@@ -32,6 +34,12 @@ tools:
       city:
         type: string
         minLength: 1
+      latitude:
+        type: number
+      longitude:
+        type: number
+      location:
+        type: object
   output_schema:
     type: object
     required:
@@ -45,6 +53,12 @@ tools:
         type: number
       description:
         type: string
+      current:
+        type: object
+      hourly_chart:
+        type: object
+      daily:
+        type: array
       error:
         type: string
 - name: get_snapshot
@@ -106,5 +120,5 @@ nlu:
     enabled: true
     source: teacher
     candidate_id: cand.1768330399036
-updated_at: '2026-05-17T09:21:25+00:00'
+updated_at: '2026-05-17T11:50:06+00:00'
 
