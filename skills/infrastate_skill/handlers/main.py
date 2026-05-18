@@ -144,6 +144,7 @@ _background_refresh_webspace_id: str | None = None
 _background_refresh_reason = ""
 _marketplace_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 _registry_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
+_registry_catalog_meta_cache: dict[tuple[str, str], tuple[float, dict[str, str]]] = {}
 _snapshot_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _snapshot_cache_guard = threading.Lock()
 _snapshot_cache_locks: dict[str, threading.Lock] = {}
@@ -1581,6 +1582,29 @@ def _safe_version(v: Any) -> Version | None:
         return None
 
 
+def _registry_ref_config() -> tuple[str, str]:
+    remote = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_REMOTE") or "origin").strip() or "origin"
+    branch = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_BRANCH") or "main").strip() or "main"
+    return remote, branch
+
+
+def _registry_git_ref_commit(workspace_root: Path, *, remote: str, branch: str) -> str | None:
+    ref = f"{remote}/{branch}"
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(workspace_root), "rev-parse", "--verify", ref],
+            text=True,
+            capture_output=True,
+            timeout=_MARKETPLACE_GIT_REF_TIMEOUT_S,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    token = str(proc.stdout or "").strip()
+    return token or None
+
+
 def _registry_json_catalog_entries(kind_plural: str, workspace_root: Path) -> list[dict[str, Any]]:
     cache_key = (str(Path(workspace_root)), str(kind_plural or "").strip())
     cache_now = time.monotonic()
@@ -1590,36 +1614,67 @@ def _registry_json_catalog_entries(kind_plural: str, workspace_root: Path) -> li
         if cache_now - cached_at <= _MARKETPLACE_CACHE_TTL_S:
             return [dict(item) for item in cached_items]
 
+    catalog_source = "unavailable"
+    catalog_commit = ""
     payload = _registry_payload_from_url() if _allow_marketplace_remote_fetch() else None
+    if isinstance(payload, dict):
+        catalog_source = "remote_url"
     if not isinstance(payload, dict) and _allow_marketplace_git_ref_lookup():
         payload = _registry_payload_from_git_ref(workspace_root)
+        if isinstance(payload, dict):
+            remote, branch = _registry_ref_config()
+            catalog_source = f"git_ref:{remote}/{branch}"
+            catalog_commit = _registry_git_ref_commit(workspace_root, remote=remote, branch=branch) or ""
 
     raw_entries = payload.get(kind_plural) if isinstance(payload, dict) else []
     result = [dict(item) for item in list(raw_entries or []) if isinstance(item, dict)]
     _registry_catalog_cache[cache_key] = (cache_now, [dict(item) for item in result])
+    _registry_catalog_meta_cache[cache_key] = (
+        cache_now,
+        {"catalog_source": catalog_source, "catalog_commit": catalog_commit},
+    )
     return result
 
 
 def _read_registry_catalog_version(*, skill_id: str) -> str | None:
-    return _read_catalog_version(kind_plural="skills", artifact_id=skill_id)
+    return _read_catalog_record(kind_plural="skills", artifact_id=skill_id).get("version") or None
 
 
 def _read_catalog_version(*, kind_plural: str, artifact_id: str) -> str | None:
+    return _read_catalog_record(kind_plural=kind_plural, artifact_id=artifact_id).get("version") or None
+
+
+def _registry_catalog_meta(kind_plural: str, workspace_root: Path) -> dict[str, str]:
+    cache_key = (str(Path(workspace_root)), str(kind_plural or "").strip())
+    cached = _registry_catalog_meta_cache.get(cache_key)
+    if cached is None:
+        return {}
+    cached_at, meta = cached
+    if _MARKETPLACE_CACHE_TTL_S > 0 and time.monotonic() - cached_at > _MARKETPLACE_CACHE_TTL_S:
+        return {}
+    return dict(meta)
+
+
+def _read_catalog_record(*, kind_plural: str, artifact_id: str) -> dict[str, str]:
     if not _REMOTE_VERSION_PROBE_ENABLED:
-        return None
+        return {}
     kind = str(kind_plural or "").strip() or "skills"
     target = str(artifact_id or "").strip()
     if not target:
-        return None
+        return {}
     entries: list[dict[str, Any]] = []
+    meta: dict[str, str] = {}
     try:
         ctx = get_ctx()
         workspace_root = Path(ctx.paths.workspace_dir())
         entries = _registry_json_catalog_entries(kind, workspace_root)
+        meta = _registry_catalog_meta(kind, workspace_root)
     except Exception:
         entries = []
     if not entries:
         entries = _marketplace_catalog_entries(kind)
+        if entries:
+            meta = {"catalog_source": "marketplace", "catalog_commit": ""}
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -1628,10 +1683,16 @@ def _read_catalog_version(*, kind_plural: str, artifact_id: str) -> str | None:
             continue
         version = entry.get("version")
         if version is None:
-            return None
+            return {}
         token = str(version).strip()
-        return token or None
-    return None
+        if not token:
+            return {}
+        return {
+            "version": token,
+            "catalog_source": str(meta.get("catalog_source") or "registry_json").strip() or "registry_json",
+            "catalog_commit": str(meta.get("catalog_commit") or "").strip(),
+        }
+    return {}
 
 
 def _clean_version_text(value: Any) -> str | None:
@@ -1840,8 +1901,7 @@ def _runtime_rollout_quarantine_status(runtime_status: dict[str, Any]) -> dict[s
 
 
 def _registry_payload_from_git_ref(workspace_root: Path) -> dict[str, Any] | None:
-    remote = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_REMOTE") or "origin").strip() or "origin"
-    branch = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_BRANCH") or "main").strip() or "main"
+    remote, branch = _registry_ref_config()
     ref = f"{remote}/{branch}:registry.json"
     try:
         proc = subprocess.run(
@@ -2011,7 +2071,11 @@ def _skills_items(*, include_all: bool = True) -> list[dict[str, Any]]:
         )
         local_version = active_version or workspace_source_version
 
-        catalog_version = str(_read_registry_catalog_version(skill_id=name) or "").strip()
+        catalog_record = _read_catalog_record(kind_plural="skills", artifact_id=name)
+        catalog_version = str(catalog_record.get("version") or "").strip()
+        catalog_source = str(catalog_record.get("catalog_source") or "").strip()
+        catalog_commit = str(catalog_record.get("catalog_commit") or "").strip()
+        runtime_bucket = str(runtime_status_payload.get("runtime_bucket") or "").strip()
         version_status = _version_status(
             artifact_kind="skill",
             catalog_version=catalog_version,
@@ -2065,9 +2129,12 @@ def _skills_items(*, include_all: bool = True) -> list[dict[str, Any]]:
             "active_version": active_version,
             "workspace_source_version": workspace_source_version,
             "catalog_version": catalog_version,
+            "catalog_source": catalog_source,
+            "catalog_commit": catalog_commit,
             "catalog_display": catalog_version or "unknown",
             "workspace_display": workspace_source_version or "unknown",
             "runtime_display": runtime_display or "none",
+            "runtime_bucket": runtime_bucket,
             "version_display": version_display,
             "slot": slot,
             "active": bool(slot),
@@ -2136,7 +2203,10 @@ def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
             or ""
         )
         version = active_version or workspace_source_version
-        catalog_version = str(_read_catalog_version(kind_plural="scenarios", artifact_id=name) or "").strip()
+        catalog_record = _read_catalog_record(kind_plural="scenarios", artifact_id=name)
+        catalog_version = str(catalog_record.get("version") or "").strip()
+        catalog_source = str(catalog_record.get("catalog_source") or "").strip()
+        catalog_commit = str(catalog_record.get("catalog_commit") or "").strip()
         version_status = _version_status(
             artifact_kind="scenario",
             catalog_version=catalog_version,
@@ -2168,9 +2238,12 @@ def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
             "active_version": active_version,
             "workspace_source_version": workspace_source_version,
             "catalog_version": catalog_version,
+            "catalog_source": catalog_source,
+            "catalog_commit": catalog_commit,
             "catalog_display": catalog_version or "unknown",
             "workspace_display": workspace_source_version or "unknown",
             "runtime_display": active_version or "none",
+            "runtime_bucket": "",
             "remote_version": catalog_version,
             "version_display": f"{version or 'unknown'}*" if registry_mismatch else (version or "unknown"),
             "updated_at": updated_at,
