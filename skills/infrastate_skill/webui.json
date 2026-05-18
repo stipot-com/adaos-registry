@@ -369,16 +369,19 @@
 							"id": "infrastate-skills",
 							"type": "ui.table",
 							"area": "main",
-							"title": "Installed skills",
+							"title": "Skill drift",
 							"dataSource": {
 								"kind": "stream",
 								"receiver": "infrastate.skills"
 							},
 							"inputs": {
-								"emptyText": "No installed skills",
+								"emptyText": "No skill drift",
 								"columns": [
+									{ "key": "status_icon", "label": "", "kind": "icon", "tooltipKey": "status_tooltip", "width": "44px" },
 									{ "key": "display_name", "label": "Name" },
 									{ "key": "version_display", "label": "Version", "mono": true, "width": "160px" },
+									{ "key": "workspace_source_version", "label": "Workspace", "mono": true, "width": "120px" },
+									{ "key": "catalog_version", "label": "Catalog", "mono": true, "width": "120px" },
 									{ "key": "slot", "label": "Slot", "mono": true, "width": "90px" }
 								],
 								"buttons": [
@@ -419,16 +422,19 @@
 							"id": "infrastate-scenarios",
 							"type": "ui.table",
 							"area": "main",
-							"title": "Installed scenarios",
+							"title": "Scenario drift",
 							"dataSource": {
 								"kind": "stream",
 								"receiver": "infrastate.scenarios"
 							},
 							"inputs": {
-								"emptyText": "No installed scenarios",
+								"emptyText": "No scenario drift",
 								"columns": [
+									{ "key": "status_icon", "label": "", "kind": "icon", "tooltipKey": "status_tooltip", "width": "44px" },
 									{ "key": "name", "label": "Name" },
-									{ "key": "version", "label": "Version", "mono": true, "width": "160px" }
+									{ "key": "version_display", "label": "Version", "mono": true, "width": "160px" },
+									{ "key": "workspace_source_version", "label": "Workspace", "mono": true, "width": "120px" },
+									{ "key": "catalog_version", "label": "Catalog", "mono": true, "width": "120px" }
 								],
 								"buttons": [
 									{ "id": "uninstall", "label": "Uninstall", "disabledKey": "uninstall_disabled" }

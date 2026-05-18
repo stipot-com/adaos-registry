@@ -1601,22 +1601,30 @@ def _registry_json_catalog_entries(kind_plural: str, workspace_root: Path) -> li
 
 
 def _read_registry_catalog_version(*, skill_id: str) -> str | None:
+    return _read_catalog_version(kind_plural="skills", artifact_id=skill_id)
+
+
+def _read_catalog_version(*, kind_plural: str, artifact_id: str) -> str | None:
     if not _REMOTE_VERSION_PROBE_ENABLED:
+        return None
+    kind = str(kind_plural or "").strip() or "skills"
+    target = str(artifact_id or "").strip()
+    if not target:
         return None
     entries: list[dict[str, Any]] = []
     try:
         ctx = get_ctx()
         workspace_root = Path(ctx.paths.workspace_dir())
-        entries = _registry_json_catalog_entries("skills", workspace_root)
+        entries = _registry_json_catalog_entries(kind, workspace_root)
     except Exception:
         entries = []
     if not entries:
-        entries = _marketplace_catalog_entries("skills")
+        entries = _marketplace_catalog_entries(kind)
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         entry_id = str(entry.get("id") or entry.get("name") or "").strip()
-        if entry_id != skill_id:
+        if entry_id != target:
             continue
         version = entry.get("version")
         if version is None:
@@ -1675,6 +1683,110 @@ def _read_local_artifact_version(workspace_root: Path, kind_plural: str, name: s
     if not isinstance(entry, dict):
         return None
     return _clean_version_text(entry.get("version"))
+
+
+def _version_relation(left: str | None, right: str | None) -> str:
+    left_s = str(left or "").strip()
+    right_s = str(right or "").strip()
+    if not left_s or not right_s:
+        return "unknown"
+    left_v = _safe_version(left_s)
+    right_v = _safe_version(right_s)
+    if left_v is not None and right_v is not None:
+        if left_v > right_v:
+            return "newer"
+        if left_v < right_v:
+            return "older"
+        return "equal"
+    return "equal" if left_s == right_s else "differs"
+
+
+def _version_status(
+    *,
+    artifact_kind: str,
+    catalog_version: str,
+    workspace_source_version: str,
+    active_version: str,
+    active: bool,
+) -> dict[str, Any]:
+    statuses: list[dict[str, str]] = []
+    kind_label = str(artifact_kind or "artifact").strip() or "artifact"
+
+    if not active:
+        statuses.append(
+            {
+                "code": "runtime_inactive",
+                "icon": "alert-circle-outline",
+                "tooltip": f"{kind_label} has no active runtime slot.",
+            }
+        )
+
+    catalog_active = _version_relation(catalog_version, active_version)
+    if catalog_active == "newer":
+        statuses.append(
+            {
+                "code": "behind_catalog",
+                "icon": "cloud-download-outline",
+                "tooltip": f"Active runtime {active_version or 'unknown'} is behind catalog {catalog_version}.",
+            }
+        )
+    elif catalog_active == "older":
+        statuses.append(
+            {
+                "code": "ahead_of_catalog",
+                "icon": "cloud-upload-outline",
+                "tooltip": f"Active runtime {active_version or 'unknown'} is ahead of catalog {catalog_version}.",
+            }
+        )
+    elif catalog_active == "differs":
+        statuses.append(
+            {
+                "code": "active_catalog_differs",
+                "icon": "git-compare-outline",
+                "tooltip": f"Active runtime {active_version or 'unknown'} differs from catalog {catalog_version}.",
+            }
+        )
+
+    workspace_catalog = _version_relation(workspace_source_version, catalog_version)
+    if catalog_version and workspace_source_version and workspace_catalog in {"newer", "older", "differs"}:
+        statuses.append(
+            {
+                "code": "workspace_catalog_differs",
+                "icon": "git-compare-outline",
+                "tooltip": f"Workspace source {workspace_source_version} differs from catalog {catalog_version}.",
+            }
+        )
+
+    workspace_active = _version_relation(workspace_source_version, active_version)
+    if workspace_source_version and active_version and workspace_active in {"newer", "older", "differs"}:
+        statuses.append(
+            {
+                "code": "workspace_runtime_differs",
+                "icon": "layers-outline",
+                "tooltip": f"Workspace source {workspace_source_version} differs from active runtime {active_version}.",
+            }
+        )
+
+    seen: set[str] = set()
+    unique: list[dict[str, str]] = []
+    for item in statuses:
+        code = item.get("code") or ""
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        unique.append(item)
+
+    primary = unique[0] if unique else {}
+    tooltip = " ".join(str(item.get("tooltip") or "").strip() for item in unique if str(item.get("tooltip") or "").strip())
+    catalog_active_relation = _version_relation(catalog_version, active_version)
+    return {
+        "has_drift": bool(unique),
+        "status": str(primary.get("code") or "ok"),
+        "status_icon": str(primary.get("icon") or "checkmark-circle-outline"),
+        "status_tooltip": tooltip or "Versions are aligned.",
+        "drift_statuses": unique,
+        "update_available": catalog_active_relation == "newer",
+    }
 
 
 def _registry_payload_from_git_ref(workspace_root: Path) -> dict[str, Any] | None:
@@ -1783,7 +1895,7 @@ def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
     return result
 
 
-def _skills_items() -> list[dict[str, Any]]:
+def _skills_items(*, include_all: bool = False) -> list[dict[str, Any]]:
     try:
         ctx = get_ctx()
     except Exception:
@@ -1835,51 +1947,66 @@ def _skills_items() -> list[dict[str, Any]]:
             slot = ""
             runtime_version = ""
 
-        local_version = (
-            runtime_version
-            or _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
-            or _clean_version_text((workspace_registry_by_name.get(name) or {}).get("version"))
+        workspace_source_version = (
+            _clean_version_text((workspace_registry_by_name.get(name) or {}).get("version"))
             or _read_local_artifact_version(workspace_root, "skills", name)
             or ""
         )
+        active_version = (
+            runtime_version
+            or _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
+            or ""
+        )
+        local_version = active_version or workspace_source_version
 
-        remote_version = str(_read_registry_catalog_version(skill_id=name) or "").strip()
-        update_available = False
-        lv = _safe_version(local_version)
-        rv = _safe_version(remote_version)
-        if lv is not None and rv is not None and rv > lv:
-            update_available = True
-        registry_mismatch = bool(remote_version and local_version and remote_version != local_version)
+        catalog_version = str(_read_registry_catalog_version(skill_id=name) or "").strip()
+        version_status = _version_status(
+            artifact_kind="skill",
+            catalog_version=catalog_version,
+            workspace_source_version=workspace_source_version,
+            active_version=active_version,
+            active=bool(slot),
+        )
+        update_available = bool(version_status.get("update_available"))
+        registry_mismatch = bool(
+            catalog_version
+            and active_version
+            and _version_relation(catalog_version, active_version) in {"newer", "older", "differs"}
+        )
         version_label = local_version or "unknown"
         if registry_mismatch:
             version_label = f"{version_label}*"
         version_display = version_label
-        if registry_mismatch and remote_version:
-            version_display = f"{version_label} ({remote_version})"
+        if registry_mismatch and catalog_version:
+            version_display = f"{version_label} ({catalog_version})"
 
-        out.append(
-            {
-                "name": name,
-                "display_name": name,
-                "version": local_version,
-                "version_display": version_display,
-                "slot": slot,
-                "active": bool(slot),
-                "can_activate": True,
-                "can_test": True,
-                "used_by_scenarios": skill_usage.get(name, []),
-                "uninstall_disabled": bool(skill_usage.get(name, [])),
-                "remote_version": remote_version,
-                "update_available": update_available,
-                "registry_mismatch": registry_mismatch,
-            }
-        )
+        item = {
+            "name": name,
+            "display_name": name,
+            "version": local_version,
+            "active_version": active_version,
+            "workspace_source_version": workspace_source_version,
+            "catalog_version": catalog_version,
+            "version_display": version_display,
+            "slot": slot,
+            "active": bool(slot),
+            "can_activate": True,
+            "can_test": True,
+            "used_by_scenarios": skill_usage.get(name, []),
+            "uninstall_disabled": bool(skill_usage.get(name, [])),
+            "remote_version": catalog_version,
+            "update_available": update_available,
+            "registry_mismatch": registry_mismatch,
+            **version_status,
+        }
+        if include_all or bool(item.get("has_drift")):
+            out.append(item)
 
     out.sort(key=lambda x: x.get("name") or "")
     return out
 
 
-def _scenario_items() -> list[dict[str, Any]]:
+def _scenario_items(*, include_all: bool = False) -> list[dict[str, Any]]:
     try:
         ctx = get_ctx()
     except Exception:
@@ -1911,22 +2038,46 @@ def _scenario_items() -> list[dict[str, Any]]:
             continue
         row = registry_rows_by_name.get(name)
         capacity_entry = capacity_by_name.get(name) or {}
-        version = (
+        workspace_source_version = (
             _read_local_artifact_version(workspace_root, "scenarios", name)
             or _clean_version_text((workspace_registry_by_name.get(name) or {}).get("version"))
-            or _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
+            or ""
+        )
+        active_version = (
+            _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
             or _clean_version_text(capacity_entry.get("version"))
             or ""
         )
-        updated_at = getattr(row, "last_updated", None) if row is not None else capacity_entry.get("updated_at")
-        out.append(
-            {
-                "name": name,
-                "version": version,
-                "updated_at": updated_at,
-                "uninstall_disabled": False,
-            }
+        version = active_version or workspace_source_version
+        catalog_version = str(_read_catalog_version(kind_plural="scenarios", artifact_id=name) or "").strip()
+        version_status = _version_status(
+            artifact_kind="scenario",
+            catalog_version=catalog_version,
+            workspace_source_version=workspace_source_version,
+            active_version=active_version,
+            active=bool(active_version or row is not None or capacity_entry),
         )
+        registry_mismatch = bool(
+            catalog_version
+            and active_version
+            and _version_relation(catalog_version, active_version) in {"newer", "older", "differs"}
+        )
+        updated_at = getattr(row, "last_updated", None) if row is not None else capacity_entry.get("updated_at")
+        item = {
+            "name": name,
+            "version": version,
+            "active_version": active_version,
+            "workspace_source_version": workspace_source_version,
+            "catalog_version": catalog_version,
+            "remote_version": catalog_version,
+            "version_display": f"{version or 'unknown'}*" if registry_mismatch else (version or "unknown"),
+            "updated_at": updated_at,
+            "uninstall_disabled": False,
+            "registry_mismatch": registry_mismatch,
+            **version_status,
+        }
+        if include_all or bool(item.get("has_drift")):
+            out.append(item)
 
     out.sort(key=lambda x: x.get("name") or "")
     return out
@@ -1993,8 +2144,16 @@ def _marketplace_items(
         key = (str(item.get("target_kind") or ""), str(item.get("target_id") or ""))
         active_by_target[key] = item
 
-    installed_skills = {str(item.get("name") or "").strip() for item in _skills_items() if str(item.get("name") or "").strip()}
-    installed_scenarios = {str(item.get("name") or "").strip() for item in _scenario_items() if str(item.get("name") or "").strip()}
+    installed_skills = {
+        str(item.get("name") or "").strip()
+        for item in _skills_items(include_all=True)
+        if str(item.get("name") or "").strip()
+    }
+    installed_scenarios = {
+        str(item.get("name") or "").strip()
+        for item in _scenario_items(include_all=True)
+        if str(item.get("name") or "").strip()
+    }
 
     selected_node_token = str(selected_node_id or "").strip()
     local_node_token = str(local_node_id or "").strip()
