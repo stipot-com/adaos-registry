@@ -718,6 +718,18 @@ def _detail_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
         "events": "events",
         "core_update_diagnostics": "core_update_diagnostics",
     }.get(section)
+    if section == "operations":
+        operations = snapshot.get("operations") if isinstance(snapshot.get("operations"), dict) else {}
+        for item in _iter_operation_items(operations):
+            op_id = str(item.get("operation_id") or item.get("id") or "").strip()
+            if op_id and op_id == item_id:
+                return _operation_detail_payload(item)
+        return {
+            "id": item_id,
+            "title": "Details unavailable",
+            "status": "warn",
+            "content": f"Details item not found: operations/{item_id}",
+        }
     if not snapshot_key:
         return {
             "id": item_id,
@@ -1935,6 +1947,131 @@ def _prepend_drift_status(version_status: dict[str, Any], status: dict[str, str]
     return out
 
 
+def _iter_operation_items(operations: Any) -> list[dict[str, Any]]:
+    if not isinstance(operations, dict):
+        return []
+    sources: list[Any] = []
+    by_id = operations.get("by_id")
+    if isinstance(by_id, dict):
+        sources.extend(by_id.values())
+    for key in ("items", "active_items"):
+        raw = operations.get(key)
+        if isinstance(raw, list):
+            sources.extend(raw)
+
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in sources:
+        if not isinstance(item, dict):
+            continue
+        op_id = str(item.get("operation_id") or item.get("id") or "").strip()
+        marker = op_id or str(id(item))
+        if marker in seen:
+            continue
+        seen.add(marker)
+        out.append(item)
+    return out
+
+
+def _operation_dependency_bootstrap(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    for key in ("error", "result"):
+        section = item.get(key)
+        if not isinstance(section, dict):
+            continue
+        payload = section.get("dependency_bootstrap")
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _dependency_failure_names(payload: dict[str, Any] | None) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    names = [str(item or "").strip() for item in list(payload.get("failed") or []) if str(item or "").strip()]
+    if names:
+        return names
+    for item in list(payload.get("items") or []):
+        if not isinstance(item, dict) or bool(item.get("ok", True)):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _dependency_failure_summary(item: dict[str, Any], payload: dict[str, Any]) -> str:
+    names = _dependency_failure_names(payload)
+    failed_label = ", ".join(names) if names else "required dependencies"
+    error = str(
+        payload.get("error")
+        or ((item.get("error") or {}) if isinstance(item.get("error"), dict) else {}).get("message")
+        or item.get("message")
+        or ""
+    ).strip()
+    summary = f"Dependency lifecycle failed: {failed_label}"
+    if error and failed_label not in error:
+        summary = f"{summary} ({error})"
+    return summary
+
+
+def _scenario_dependency_failures_by_name(operations: Any) -> dict[str, dict[str, Any]]:
+    failures: dict[str, dict[str, Any]] = {}
+    for item in _iter_operation_items(operations):
+        target_kind = str(item.get("target_kind") or "").strip()
+        if target_kind != "scenario":
+            continue
+        scenario_id = str(item.get("target_id") or "").strip()
+        if not scenario_id:
+            continue
+        payload = _operation_dependency_bootstrap(item)
+        if not isinstance(payload, dict):
+            continue
+        failed_names = _dependency_failure_names(payload)
+        if bool(payload.get("ok", True)) and not failed_names:
+            continue
+        failures[scenario_id] = {
+            "operation_id": str(item.get("operation_id") or item.get("id") or "").strip(),
+            "operation_status": str(item.get("status") or "").strip(),
+            "operation_kind": str(item.get("kind") or "").strip(),
+            "updated_at": str(item.get("updated_at") or "").strip(),
+            "failed": failed_names,
+            "summary": _dependency_failure_summary(item, payload),
+            "dependency_bootstrap": _cache_copy(payload),
+        }
+    return failures
+
+
+def _operation_detail_payload(item: dict[str, Any]) -> dict[str, Any]:
+    op_id = str(item.get("operation_id") or item.get("id") or "").strip()
+    target = str(item.get("target_id") or "").strip()
+    kind = str(item.get("kind") or item.get("target_kind") or "operation").strip()
+    status = str(item.get("status") or "").strip() or "unknown"
+    payload = _operation_dependency_bootstrap(item)
+    lines = [
+        f"operation_id: {op_id or 'unknown'}",
+        f"kind: {kind or 'operation'}",
+        f"target: {target or 'unknown'}",
+        f"status: {status}",
+    ]
+    message = str(item.get("message") or "").strip()
+    if message:
+        lines.append(f"message: {message}")
+    if isinstance(payload, dict):
+        lines.extend(["", "dependency_bootstrap:", _safe_json_text(payload)])
+    else:
+        lines.extend(["", "operation:", _safe_json_text(item)])
+    return {
+        "id": op_id or target or kind,
+        "title": f"{kind or 'operation'} {target or op_id or ''}".strip(),
+        "status": status,
+        "preview": message or status,
+        "content": "\n".join(lines).strip(),
+        "operation": _cache_copy(item),
+    }
+
+
 def _runtime_rollout_quarantine_status(runtime_status: dict[str, Any]) -> dict[str, str] | None:
     if not isinstance(runtime_status, dict):
         return None
@@ -2229,7 +2366,7 @@ def _skills_items(*, include_all: bool = True) -> list[dict[str, Any]]:
     return out
 
 
-def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
+def _scenario_items(*, include_all: bool = True, operations: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     try:
         ctx = get_ctx()
     except Exception:
@@ -2254,6 +2391,9 @@ def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
     capacity_by_name = _capacity_scenario_entry_map()
     installed_scenario_names = sorted(set(installed_scenario_names) | set(capacity_by_name))
     workspace_registry_by_name = _workspace_registry_entry_map(workspace_root, "scenarios")
+    dependency_failures = _scenario_dependency_failures_by_name(
+        operations if isinstance(operations, dict) else _operations_snapshot()
+    )
 
     out: list[dict[str, Any]] = []
     for name in sorted(installed_scenario_names):
@@ -2286,6 +2426,19 @@ def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
             active_version=active_version,
             active=bool(active_version or row is not None or capacity_entry),
         )
+        active_dependency_failure = dependency_failures.get(name) if active_version else None
+        if active_dependency_failure:
+            version_status = _prepend_drift_status(
+                version_status,
+                {
+                    "code": "dependency_lifecycle_failed",
+                    "icon": "warning-outline",
+                    "tooltip": str(
+                        active_dependency_failure.get("summary")
+                        or "Required scenario dependency lifecycle failed."
+                    ),
+                },
+            )
         registry_mismatch = bool(
             catalog_version
             and active_version
@@ -2334,6 +2487,10 @@ def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
             "can_logs": True,
             "uninstall_disabled": False,
             "registry_mismatch": registry_mismatch,
+            "dependency_lifecycle_failed": bool(active_dependency_failure),
+            "dependency_failure_summary": str((active_dependency_failure or {}).get("summary") or ""),
+            "dependency_failure_operation_id": str((active_dependency_failure or {}).get("operation_id") or ""),
+            "dependency_failure_failed": list((active_dependency_failure or {}).get("failed") or []),
             **version_status,
         }
         if include_all or bool(item.get("has_drift")):
@@ -6165,7 +6322,7 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
         skills_items = []
     try:
         scenario_items = _filter_inventory_drift(
-            _inventory_items_from(_scenario_items),
+            _inventory_items_from(lambda include_all=True: _scenario_items(include_all=include_all, operations=operations)),
             drift_only=_inventory_drift_only_enabled(ui_state),
         )
     except Exception:

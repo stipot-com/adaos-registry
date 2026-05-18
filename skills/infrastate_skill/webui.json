@@ -344,6 +344,12 @@
         "subtitleKey": "message",
         "detailsPath": "",
         "showDetails": false,
+        "detailsModal": true,
+        "detailsModalTitleKey": "target_id",
+        "detailsDataSource": {
+          "kind": "stream",
+          "receiver": "infrastate.details.operations.$event.operation_id"
+        },
         "itemAccordion": false,
         "emptyText": "No active operations"
       }
@@ -690,6 +696,12 @@
 								"subtitleKey": "message",
 								"detailsPath": "",
 								"showDetails": false,
+								"detailsModal": true,
+								"detailsModalTitleKey": "target_id",
+								"detailsDataSource": {
+									"kind": "stream",
+									"receiver": "infrastate.details.operations.$event.operation_id"
+								},
 								"itemAccordion": false,
 								"emptyText": "No active operations"
 							}
