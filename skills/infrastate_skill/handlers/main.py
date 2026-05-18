@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -1605,6 +1606,13 @@ def _registry_git_ref_commit(workspace_root: Path, *, remote: str, branch: str) 
     return token or None
 
 
+def _registry_git_available() -> bool:
+    try:
+        return shutil.which("git") is not None
+    except Exception:
+        return False
+
+
 def _registry_json_catalog_entries(kind_plural: str, workspace_root: Path) -> list[dict[str, Any]]:
     cache_key = (str(Path(workspace_root)), str(kind_plural or "").strip())
     cache_now = time.monotonic()
@@ -1616,22 +1624,34 @@ def _registry_json_catalog_entries(kind_plural: str, workspace_root: Path) -> li
 
     catalog_source = "unavailable"
     catalog_commit = ""
+    catalog_state = "unavailable"
     payload = _registry_payload_from_url() if _allow_marketplace_remote_fetch() else None
     if isinstance(payload, dict):
         catalog_source = "remote_url"
+        catalog_state = "available"
+    elif _allow_marketplace_remote_fetch():
+        catalog_source = "remote_url_unavailable"
     if not isinstance(payload, dict) and _allow_marketplace_git_ref_lookup():
-        payload = _registry_payload_from_git_ref(workspace_root)
+        remote, branch = _registry_ref_config()
+        if not _registry_git_available():
+            catalog_source = "no_git"
+            catalog_state = "no_git"
+        else:
+            payload = _registry_payload_from_git_ref(workspace_root)
         if isinstance(payload, dict):
-            remote, branch = _registry_ref_config()
             catalog_source = f"git_ref:{remote}/{branch}"
             catalog_commit = _registry_git_ref_commit(workspace_root, remote=remote, branch=branch) or ""
+            catalog_state = "available"
+        elif catalog_source in {"unavailable", "remote_url_unavailable"}:
+            catalog_source = f"git_ref_unavailable:{remote}/{branch}"
+            catalog_state = "unavailable"
 
     raw_entries = payload.get(kind_plural) if isinstance(payload, dict) else []
     result = [dict(item) for item in list(raw_entries or []) if isinstance(item, dict)]
     _registry_catalog_cache[cache_key] = (cache_now, [dict(item) for item in result])
     _registry_catalog_meta_cache[cache_key] = (
         cache_now,
-        {"catalog_source": catalog_source, "catalog_commit": catalog_commit},
+        {"catalog_source": catalog_source, "catalog_commit": catalog_commit, "catalog_state": catalog_state},
     )
     return result
 
@@ -1657,7 +1677,7 @@ def _registry_catalog_meta(kind_plural: str, workspace_root: Path) -> dict[str, 
 
 def _read_catalog_record(*, kind_plural: str, artifact_id: str) -> dict[str, str]:
     if not _REMOTE_VERSION_PROBE_ENABLED:
-        return {}
+        return {"version": "", "catalog_source": "probe_disabled", "catalog_commit": "", "catalog_state": "disabled"}
     kind = str(kind_plural or "").strip() or "skills"
     target = str(artifact_id or "").strip()
     if not target:
@@ -1674,7 +1694,14 @@ def _read_catalog_record(*, kind_plural: str, artifact_id: str) -> dict[str, str
     if not entries:
         entries = _marketplace_catalog_entries(kind)
         if entries:
-            meta = {"catalog_source": "marketplace", "catalog_commit": ""}
+            meta = {"catalog_source": "marketplace", "catalog_commit": "", "catalog_state": "available"}
+    if not entries:
+        return {
+            "version": "",
+            "catalog_source": str(meta.get("catalog_source") or "unavailable").strip() or "unavailable",
+            "catalog_commit": str(meta.get("catalog_commit") or "").strip(),
+            "catalog_state": str(meta.get("catalog_state") or "unavailable").strip() or "unavailable",
+        }
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -1683,16 +1710,22 @@ def _read_catalog_record(*, kind_plural: str, artifact_id: str) -> dict[str, str
             continue
         version = entry.get("version")
         if version is None:
-            return {}
+            break
         token = str(version).strip()
         if not token:
-            return {}
+            break
         return {
             "version": token,
             "catalog_source": str(meta.get("catalog_source") or "registry_json").strip() or "registry_json",
             "catalog_commit": str(meta.get("catalog_commit") or "").strip(),
+            "catalog_state": "available",
         }
-    return {}
+    return {
+        "version": "",
+        "catalog_source": str(meta.get("catalog_source") or "registry_json").strip() or "registry_json",
+        "catalog_commit": str(meta.get("catalog_commit") or "").strip(),
+        "catalog_state": "unknown",
+    }
 
 
 def _clean_version_text(value: Any) -> str | None:
@@ -1766,12 +1799,16 @@ def _version_status(
     *,
     artifact_kind: str,
     catalog_version: str,
+    catalog_source: str = "",
+    catalog_state: str = "",
     workspace_source_version: str,
     active_version: str,
     active: bool,
 ) -> dict[str, Any]:
     statuses: list[dict[str, str]] = []
     kind_label = str(artifact_kind or "artifact").strip() or "artifact"
+    catalog_source = str(catalog_source or "").strip()
+    catalog_state = str(catalog_state or "").strip()
 
     if not active:
         statuses.append(
@@ -1781,6 +1818,34 @@ def _version_status(
                 "tooltip": f"{kind_label} has no active runtime slot.",
             }
         )
+
+    if not catalog_version and (active_version or workspace_source_version):
+        if catalog_state == "no_git":
+            statuses.append(
+                {
+                    "code": "git_unavailable",
+                    "icon": "git-network-outline",
+                    "tooltip": f"Catalog drift for {kind_label} cannot be checked because git is unavailable.",
+                }
+            )
+        elif catalog_state == "unavailable":
+            source_label = catalog_source or "catalog"
+            statuses.append(
+                {
+                    "code": "catalog_unavailable",
+                    "icon": "cloud-offline-outline",
+                    "tooltip": f"Catalog drift for {kind_label} cannot be checked: {source_label} is unavailable.",
+                }
+            )
+        elif catalog_state == "unknown":
+            source_label = catalog_source or "catalog"
+            statuses.append(
+                {
+                    "code": "catalog_unknown",
+                    "icon": "help-circle-outline",
+                    "tooltip": f"{kind_label} is installed but is not present in the current catalog snapshot ({source_label}).",
+                }
+            )
 
     catalog_active = _version_relation(catalog_version, active_version)
     if catalog_active == "newer":
@@ -2075,10 +2140,13 @@ def _skills_items(*, include_all: bool = True) -> list[dict[str, Any]]:
         catalog_version = str(catalog_record.get("version") or "").strip()
         catalog_source = str(catalog_record.get("catalog_source") or "").strip()
         catalog_commit = str(catalog_record.get("catalog_commit") or "").strip()
+        catalog_state = str(catalog_record.get("catalog_state") or "").strip()
         runtime_bucket = str(runtime_status_payload.get("runtime_bucket") or "").strip()
         version_status = _version_status(
             artifact_kind="skill",
             catalog_version=catalog_version,
+            catalog_source=catalog_source,
+            catalog_state=catalog_state,
             workspace_source_version=workspace_source_version,
             active_version=active_version,
             active=bool(slot),
@@ -2131,6 +2199,7 @@ def _skills_items(*, include_all: bool = True) -> list[dict[str, Any]]:
             "catalog_version": catalog_version,
             "catalog_source": catalog_source,
             "catalog_commit": catalog_commit,
+            "catalog_state": catalog_state,
             "catalog_display": catalog_version or "unknown",
             "workspace_display": workspace_source_version or "unknown",
             "runtime_display": runtime_display or "none",
@@ -2207,9 +2276,12 @@ def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
         catalog_version = str(catalog_record.get("version") or "").strip()
         catalog_source = str(catalog_record.get("catalog_source") or "").strip()
         catalog_commit = str(catalog_record.get("catalog_commit") or "").strip()
+        catalog_state = str(catalog_record.get("catalog_state") or "").strip()
         version_status = _version_status(
             artifact_kind="scenario",
             catalog_version=catalog_version,
+            catalog_source=catalog_source,
+            catalog_state=catalog_state,
             workspace_source_version=workspace_source_version,
             active_version=active_version,
             active=bool(active_version or row is not None or capacity_entry),
@@ -2240,6 +2312,7 @@ def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
             "catalog_version": catalog_version,
             "catalog_source": catalog_source,
             "catalog_commit": catalog_commit,
+            "catalog_state": catalog_state,
             "catalog_display": catalog_version or "unknown",
             "workspace_display": workspace_source_version or "unknown",
             "runtime_display": active_version or "none",
