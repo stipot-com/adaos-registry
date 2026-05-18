@@ -1825,19 +1825,23 @@ def _skills_items() -> list[dict[str, Any]]:
         row = registry_rows_by_name.get(name)
         if not name:
             continue
-        local_version = (
-            _read_local_artifact_version(workspace_root, "skills", name)
-            or _clean_version_text((workspace_registry_by_name.get(name) or {}).get("version"))
-            or _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
-            or ""
-        )
-
         slot = ""
+        runtime_version = ""
         try:
             st = mgr.runtime_status(name)
             slot = str(st.get("active_slot") or "").strip()
+            runtime_version = _clean_version_text(st.get("version")) or ""
         except Exception:
             slot = ""
+            runtime_version = ""
+
+        local_version = (
+            runtime_version
+            or _clean_version_text(getattr(row, "active_version", None) if row is not None else None)
+            or _clean_version_text((workspace_registry_by_name.get(name) or {}).get("version"))
+            or _read_local_artifact_version(workspace_root, "skills", name)
+            or ""
+        )
 
         remote_version = str(_read_registry_catalog_version(skill_id=name) or "").strip()
         update_available = False
