@@ -1,5 +1,5 @@
 name: infrastate_skill
-version: 0.75.2
+version: 0.75.3
 description: Локальный обзор состояния ядра, graceful update, A/B слотов и последнего
   результата обновления.
 runtime:
@@ -115,6 +115,11 @@ tools:
 - name: get_snapshot
   description: Return current local infrastructure/update snapshot for the node.
   entry: handlers.main:get_snapshot
+  side_effects: read
+  yjs_governance:
+    read_only: true
+    mutating_payload_keys:
+    - project
   input_schema:
     type: object
     properties:
@@ -152,5 +157,5 @@ tools:
   output_schema:
     type: object
     properties: {}
-updated_at: '2026-05-17T05:56:48+00:00'
+updated_at: '2026-05-18T02:33:44+00:00'
 

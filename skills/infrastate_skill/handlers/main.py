@@ -1015,6 +1015,334 @@ def _cache_copy(value: Any) -> Any:
     return _clone_json_like_for_cache(value)
 
 
+def _compact_rebuild_state(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    out = {
+        key: _cache_copy(value.get(key))
+        for key in (
+            "status",
+            "action",
+            "source_of_truth",
+            "scenario_id",
+            "scenario_resolution",
+            "switch_mode",
+            "pending",
+            "background",
+            "started_at",
+            "finished_at",
+            "updated_at",
+            "error",
+        )
+        if key in value
+    }
+    materialization = value.get("materialization") if isinstance(value.get("materialization"), dict) else {}
+    if materialization:
+        out["materialization"] = {
+            key: _cache_copy(materialization.get(key))
+            for key in (
+                "ready",
+                "readiness_state",
+                "webspace_id",
+                "current_scenario",
+                "has_ui_application",
+                "has_desktop_config",
+                "has_desktop_page_schema",
+                "has_catalog_apps",
+                "has_catalog_widgets",
+                "catalog_counts",
+                "topbar_count",
+                "page_widget_count",
+                "snapshot_source",
+                "observed_at",
+                "stale",
+                "missing_branches",
+            )
+            if key in materialization
+        }
+    return out
+
+
+def _compact_yjs_webspace_entry(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: _cache_copy(value.get(key))
+        for key in (
+            "webspace_id",
+            "running",
+            "loaded_from_disk",
+            "log_mode",
+            "snapshot_file_exists",
+            "snapshot_file_size",
+            "persisted_snapshot_bytes",
+            "update_log_entries",
+            "update_log_bytes",
+            "replay_window_entries",
+            "replay_window_limit",
+            "replay_window_bytes",
+            "backup_total",
+            "backup_fast_path_total",
+            "backup_skipped_total",
+            "last_backup_ago_s",
+            "last_apply_ago_s",
+            "last_write_ago_s",
+            "runtime_compaction_eligible",
+            "compact_total",
+        )
+        if key in value
+    }
+
+
+def _compact_sync_runtime_for_infrastate(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    selected_webspace_id = str(value.get("selected_webspace_id") or "").strip()
+    webspaces = value.get("webspaces") if isinstance(value.get("webspaces"), dict) else {}
+    selected_entry = webspaces.get(selected_webspace_id) if selected_webspace_id else {}
+    load_mark = value.get("load_mark") if isinstance(value.get("load_mark"), dict) else {}
+    selected_load_mark = (
+        load_mark.get("selected_webspace")
+        if isinstance(load_mark.get("selected_webspace"), dict)
+        else {}
+    )
+    selected_webspace = (
+        value.get("selected_webspace")
+        if isinstance(value.get("selected_webspace"), dict)
+        else {}
+    )
+    selected_compact = {
+        key: _cache_copy(selected_webspace.get(key))
+        for key in (
+            "webspace_id",
+            "title",
+            "kind",
+            "source_mode",
+            "is_dev",
+            "home_scenario",
+            "projection_target_space",
+            "projection_active_scenario",
+            "projection_active_space",
+            "projection_matches_home",
+            "webspace_guidance",
+            "gateway_room",
+            "weather_observer",
+            "command_trace",
+        )
+        if key in selected_webspace
+    }
+    if isinstance(selected_webspace.get("rebuild"), dict):
+        selected_compact["rebuild"] = _compact_rebuild_state(selected_webspace.get("rebuild"))
+    if selected_load_mark:
+        selected_compact["load_mark"] = _cache_copy(selected_load_mark)
+    out = {
+        key: _cache_copy(value.get(key))
+        for key in (
+            "available",
+            "scope",
+            "selected_webspace_id",
+            "assessment",
+            "channel_contract",
+            "transport",
+            "ownership_boundaries",
+            "action_overrides",
+            "recovery_playbook",
+            "recovery_guidance",
+            "webspace_guidance",
+            "webspace_total",
+            "active_webspace_total",
+            "compacted_webspace_total",
+            "compaction_eligible_webspace_total",
+            "update_log_total",
+            "replay_window_total",
+            "replay_window_byte_total",
+            "backup_fast_path_total",
+            "backup_skipped_total",
+            "state_vector_fast_path_total",
+            "state_vector_compute_total",
+            "replay_pressure_compaction_requested",
+        )
+        if key in value
+    }
+    out["selected_webspace"] = selected_compact
+    out["webspaces"] = (
+        {selected_webspace_id: _compact_yjs_webspace_entry(selected_entry)}
+        if selected_webspace_id and isinstance(selected_entry, dict)
+        else {}
+    )
+    if load_mark:
+        out["load_mark"] = {
+            key: _cache_copy(load_mark.get(key))
+            for key in (
+                "window_sec",
+                "bucket_sec",
+                "thresholds",
+                "assessment",
+                "selected_webspace_id",
+                "active_root_total",
+                "active_owner_total",
+                "webspace_total",
+                "updated_at",
+            )
+            if key in load_mark
+        }
+        if selected_load_mark:
+            out["load_mark"]["selected_webspace"] = _cache_copy(selected_load_mark)
+    return out
+
+
+def _compact_remote_node_snapshot(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    out = {
+        key: _cache_copy(value.get(key))
+        for key in (
+            "captured_at",
+            "connected_to_hub",
+            "connected_to_subnet",
+            "node_state",
+            "reason",
+            "draining",
+            "build",
+            "update_status",
+            "last_result",
+            "slots",
+            "hub_control_request",
+        )
+        if key in value
+    }
+    capacity = value.get("capacity") if isinstance(value.get("capacity"), dict) else {}
+    if capacity:
+        out["capacity"] = {
+            "io_total": len(capacity.get("io") or []) if isinstance(capacity.get("io"), list) else 0,
+            "skills_total": len(capacity.get("skills") or []) if isinstance(capacity.get("skills"), list) else 0,
+            "scenarios_total": len(capacity.get("scenarios") or []) if isinstance(capacity.get("scenarios"), list) else 0,
+        }
+    desktop_catalog = value.get("desktop_catalog") if isinstance(value.get("desktop_catalog"), dict) else {}
+    if desktop_catalog:
+        apps = desktop_catalog.get("apps") if isinstance(desktop_catalog.get("apps"), list) else []
+        registry = desktop_catalog.get("registry") if isinstance(desktop_catalog.get("registry"), dict) else {}
+        modals = registry.get("modals") if isinstance(registry.get("modals"), dict) else {}
+        out["desktop_catalog"] = {
+            "apps_total": len(apps),
+            "modal_total": len(modals),
+            "captured_at": desktop_catalog.get("captured_at"),
+        }
+    return out
+
+
+def _compact_member_connection_item(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    out = {
+        key: _cache_copy(value.get(key))
+        for key in (
+            "node_id",
+            "label",
+            "node_label",
+            "display_name",
+            "effective_name",
+            "node_names",
+            "node_index",
+            "node_compact_label",
+            "node_color",
+            "role",
+            "state",
+            "connected",
+            "connected_to_subnet",
+            "connected_to_hub",
+            "managed_state",
+            "lifetime_mode",
+            "observed_via",
+            "last_seen_ago_s",
+            "last_message_ago_s",
+            "last_snapshot_ago_s",
+            "snapshot_state",
+            "snapshot_update_state",
+            "snapshot_update_phase",
+            "last_hub_core_update_state",
+            "last_hub_core_update_action",
+            "last_control_action",
+            "last_control_reason",
+            "last_control_request_id",
+            "last_control_request_ago_s",
+            "last_control_result_ago_s",
+            "media_capable",
+            "media_capability",
+        )
+        if key in value
+    }
+    if isinstance(value.get("last_control_result"), dict):
+        out["last_control_result"] = _cache_copy(value.get("last_control_result"))
+    if isinstance(value.get("node_snapshot"), dict):
+        out["node_snapshot"] = _compact_remote_node_snapshot(value.get("node_snapshot"))
+    return out
+
+
+def _compact_hub_member_connection_state(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    out = {
+        key: _cache_copy(value.get(key))
+        for key in (
+            "ok",
+            "role",
+            "state",
+            "route_mode",
+            "connected_to_hub",
+            "connected_to_subnet",
+            "assessment",
+            "member_total",
+            "connected_total",
+            "hub_core_update_broadcast_total",
+            "hub_event_total",
+            "updated_at",
+            "local_node",
+            "update_rollout",
+        )
+        if key in value
+    }
+    for key in ("known_members", "members"):
+        members = value.get(key)
+        if isinstance(members, list):
+            out[key] = [_compact_member_connection_item(item) for item in members if isinstance(item, dict)]
+    hub = value.get("hub") if isinstance(value.get("hub"), dict) else {}
+    if hub:
+        out["hub"] = {
+            key: _cache_copy(hub.get(key))
+            for key in (
+                "connected",
+                "hub_node_id",
+                "last_message_ago_s",
+                "last_pong_ago_s",
+                "last_hub_event_ago_s",
+                "last_hub_event_type",
+                "last_hub_core_update",
+                "last_follow_error",
+                "last_follow_result",
+            )
+            if key in hub
+        }
+    return out
+
+
+def _compact_reliability_for_infrastate(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    out = _cache_copy(value)
+    runtime = out.get("runtime") if isinstance(out.get("runtime"), dict) else {}
+    if not runtime:
+        return out
+    if isinstance(runtime.get("sync_runtime"), dict):
+        runtime["sync_runtime"] = _compact_sync_runtime_for_infrastate(runtime.get("sync_runtime"))
+    if isinstance(runtime.get("hub_member_connection_state"), dict):
+        runtime["hub_member_connection_state"] = _compact_hub_member_connection_state(
+            runtime.get("hub_member_connection_state")
+        )
+    out["runtime"] = runtime
+    return out
+
+
 def _projection_diag_snapshot() -> dict[str, Any]:
     return {
         "marketplace_cache_ttl_s": _MARKETPLACE_CACHE_TTL_S,
@@ -2297,16 +2625,18 @@ def _hub_root_strategy(reliability: dict[str, Any], transport_diag: dict[str, An
 
 def _reliability_snapshot(conf, lifecycle: dict[str, Any]) -> dict[str, Any]:
     route_mode, connected_to_hub = _route_info(conf)
-    return reliability_snapshot(
-        node_id=str(getattr(conf, "node_id", "") or ""),
-        subnet_id=str(getattr(conf, "subnet_id", "") or ""),
-        role=str(getattr(conf, "role", "") or ""),
-        node_names=list(getattr(conf, "node_names", []) or []),
-        local_ready=_local_ready(),
-        node_state=str(lifecycle.get("node_state") or "ready"),
-        draining=bool(lifecycle.get("draining")),
-        route_mode=route_mode,
-        connected_to_hub=connected_to_hub,
+    return _compact_reliability_for_infrastate(
+        reliability_snapshot(
+            node_id=str(getattr(conf, "node_id", "") or ""),
+            subnet_id=str(getattr(conf, "subnet_id", "") or ""),
+            role=str(getattr(conf, "role", "") or ""),
+            node_names=list(getattr(conf, "node_names", []) or []),
+            local_ready=_local_ready(),
+            node_state=str(lifecycle.get("node_state") or "ready"),
+            draining=bool(lifecycle.get("draining")),
+            route_mode=route_mode,
+            connected_to_hub=connected_to_hub,
+        )
     )
 
 
@@ -5565,13 +5895,12 @@ async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = Non
     fingerprint = _snapshot_projection_fingerprint(sections)
     now = time.monotonic()
     pressure_policy = _projection_pressure_policy(webspace_id)
-    if str(pressure_policy.get("policy_state") or "").strip().lower() == "block":
+    pressure_state = str(pressure_policy.get("policy_state") or "").strip().lower()
+    if pressure_state in {"block", "throttle"}:
         _projection_diag["blocked_total"] = int(_projection_diag.get("blocked_total") or 0) + 1
         _publish_snapshot_streams(snapshot, webspace_id=webspace_id)
         return
     effective_min_interval_s = _MIN_YJS_PROJECTION_INTERVAL_S
-    if str(pressure_policy.get("policy_state") or "").strip().lower() == "throttle":
-        effective_min_interval_s = max(effective_min_interval_s, _THROTTLED_YJS_PROJECTION_INTERVAL_S)
     for target_ws in _projection_webspace_ids(webspace_id):
         if _projection_fingerprints.get(target_ws) == fingerprint:
             _projection_diag["skip_total"] = int(_projection_diag.get("skip_total") or 0) + 1
@@ -5585,6 +5914,12 @@ async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = Non
         try:
             _PROJECTION_RUNTIME.bind_ctx_subnet(ctx_subnet)
             for slot_name, value in sections.items():
+                slot_pressure_policy = _projection_pressure_policy(target_ws)
+                slot_pressure_state = str(slot_pressure_policy.get("policy_state") or "").strip().lower()
+                if slot_pressure_state in {"block", "throttle"}:
+                    _projection_diag["blocked_total"] = int(_projection_diag.get("blocked_total") or 0) + 1
+                    _publish_snapshot_streams(snapshot, webspace_id=webspace_id)
+                    return
                 pushed = False
                 try:
                     pushed = set_current_skill("infrastate_skill")
@@ -5730,7 +6065,7 @@ def get_snapshot(
     **_: Any,
 ) -> dict[str, Any]:
     snapshot = _snapshot_or_fallback_cached(webspace_id=webspace_id, allow_cache=True)
-    projection_required = project or bool(snapshot.get("fallback"))
+    projection_required = bool(project)
     if projection_required and _snapshot_projection_is_current(webspace_id, snapshot):
         projection_required = False
         _projection_diag["tool_project_current_skip_total"] = int(_projection_diag.get("tool_project_current_skip_total") or 0) + 1
