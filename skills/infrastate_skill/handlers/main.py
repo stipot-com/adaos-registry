@@ -1789,6 +1789,56 @@ def _version_status(
     }
 
 
+def _prepend_drift_status(version_status: dict[str, Any], status: dict[str, str]) -> dict[str, Any]:
+    code = str(status.get("code") or "").strip()
+    if not code:
+        return dict(version_status)
+    current = [item for item in list(version_status.get("drift_statuses") or []) if isinstance(item, dict)]
+    merged = [status] + [item for item in current if str(item.get("code") or "").strip() != code]
+    tooltip = " ".join(str(item.get("tooltip") or "").strip() for item in merged if str(item.get("tooltip") or "").strip())
+    out = dict(version_status)
+    out.update(
+        {
+            "has_drift": True,
+            "status": code,
+            "status_icon": str(status.get("icon") or "shield-outline"),
+            "status_tooltip": tooltip or str(status.get("tooltip") or "Rollout quarantine is active."),
+            "drift_statuses": merged,
+        }
+    )
+    return out
+
+
+def _runtime_rollout_quarantine_status(runtime_status: dict[str, Any]) -> dict[str, str] | None:
+    if not isinstance(runtime_status, dict):
+        return None
+    lifecycle = runtime_status.get("lifecycle") if isinstance(runtime_status.get("lifecycle"), dict) else {}
+    history = runtime_status.get("history") if isinstance(runtime_status.get("history"), dict) else {}
+    healthcheck = lifecycle.get("healthcheck") if isinstance(lifecycle.get("healthcheck"), dict) else {}
+    explicit_quarantine = bool(
+        runtime_status.get("rollout_quarantined")
+        or runtime_status.get("rollout_quarantine")
+        or runtime_status.get("quarantined")
+    )
+    health_failed = bool(healthcheck) and healthcheck.get("ok") is False
+    last_activation_error = str(history.get("last_activation_error") or "").strip()
+    if not explicit_quarantine and not health_failed and not last_activation_error:
+        return None
+    reason = (
+        str(runtime_status.get("rollout_quarantine_reason") or "").strip()
+        or str(runtime_status.get("quarantine_reason") or "").strip()
+        or last_activation_error
+        or str(healthcheck.get("error") or "").strip()
+        or str(healthcheck.get("stage") or "").strip()
+        or "rollout failed"
+    )
+    return {
+        "code": "rollout_quarantine",
+        "icon": "shield-outline",
+        "tooltip": f"Runtime is quarantined after failed rollout: {reason}.",
+    }
+
+
 def _registry_payload_from_git_ref(workspace_root: Path) -> dict[str, Any] | None:
     remote = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_REMOTE") or "origin").strip() or "origin"
     branch = str(os.getenv("ADAOS_WORKSPACE_REGISTRY_BRANCH") or "main").strip() or "main"
@@ -1895,7 +1945,7 @@ def _marketplace_catalog_entries(kind_plural: str) -> list[dict[str, Any]]:
     return result
 
 
-def _skills_items(*, include_all: bool = False) -> list[dict[str, Any]]:
+def _skills_items(*, include_all: bool = True) -> list[dict[str, Any]]:
     try:
         ctx = get_ctx()
     except Exception:
@@ -1939,8 +1989,10 @@ def _skills_items(*, include_all: bool = False) -> list[dict[str, Any]]:
             continue
         slot = ""
         runtime_version = ""
+        runtime_status_payload: dict[str, Any] = {}
         try:
             st = mgr.runtime_status(name)
+            runtime_status_payload = st if isinstance(st, dict) else {}
             slot = str(st.get("active_slot") or "").strip()
             runtime_version = _clean_version_text(st.get("version")) or ""
         except Exception:
@@ -1967,6 +2019,9 @@ def _skills_items(*, include_all: bool = False) -> list[dict[str, Any]]:
             active_version=active_version,
             active=bool(slot),
         )
+        rollout_quarantine_status = _runtime_rollout_quarantine_status(runtime_status_payload)
+        if rollout_quarantine_status:
+            version_status = _prepend_drift_status(version_status, rollout_quarantine_status)
         update_available = bool(version_status.get("update_available"))
         registry_mismatch = bool(
             catalog_version
@@ -1980,6 +2035,29 @@ def _skills_items(*, include_all: bool = False) -> list[dict[str, Any]]:
         if registry_mismatch and catalog_version:
             version_display = f"{version_label} ({catalog_version})"
 
+        workspace_runtime_relation = _version_relation(workspace_source_version, active_version)
+        workspace_catalog_relation = _version_relation(workspace_source_version, catalog_version)
+        runtime_missing = not bool(slot and active_version)
+        workspace_runtime_differs = bool(
+            workspace_source_version
+            and active_version
+            and workspace_runtime_relation in {"newer", "older", "differs"}
+        )
+        workspace_catalog_differs = bool(
+            workspace_source_version
+            and catalog_version
+            and workspace_catalog_relation in {"newer", "older", "differs"}
+        )
+        can_activate = runtime_missing or workspace_runtime_differs
+        can_hard_pull = bool(catalog_version and (workspace_catalog_differs or not workspace_source_version))
+        can_push = bool(
+            workspace_source_version
+            and (
+                not catalog_version
+                or _version_relation(workspace_source_version, catalog_version) in {"newer", "differs"}
+            )
+        )
+        runtime_display = " ".join(part for part in [active_version or "none", slot] if part).strip()
         item = {
             "name": name,
             "display_name": name,
@@ -1987,16 +2065,25 @@ def _skills_items(*, include_all: bool = False) -> list[dict[str, Any]]:
             "active_version": active_version,
             "workspace_source_version": workspace_source_version,
             "catalog_version": catalog_version,
+            "catalog_display": catalog_version or "unknown",
+            "workspace_display": workspace_source_version or "unknown",
+            "runtime_display": runtime_display or "none",
             "version_display": version_display,
             "slot": slot,
             "active": bool(slot),
-            "can_activate": True,
-            "can_test": True,
+            "can_activate": can_activate,
+            "can_hard_pull": can_hard_pull,
+            "can_push": can_push,
+            "can_validate": bool(workspace_source_version),
+            "can_test": bool(active_version or workspace_source_version),
+            "can_logs": True,
             "used_by_scenarios": skill_usage.get(name, []),
             "uninstall_disabled": bool(skill_usage.get(name, [])),
             "remote_version": catalog_version,
             "update_available": update_available,
             "registry_mismatch": registry_mismatch,
+            "rollout_quarantine": bool(rollout_quarantine_status),
+            "rollout_quarantine_reason": str((rollout_quarantine_status or {}).get("tooltip") or ""),
             **version_status,
         }
         if include_all or bool(item.get("has_drift")):
@@ -2006,7 +2093,7 @@ def _skills_items(*, include_all: bool = False) -> list[dict[str, Any]]:
     return out
 
 
-def _scenario_items(*, include_all: bool = False) -> list[dict[str, Any]]:
+def _scenario_items(*, include_all: bool = True) -> list[dict[str, Any]]:
     try:
         ctx = get_ctx()
     except Exception:
@@ -2062,6 +2149,18 @@ def _scenario_items(*, include_all: bool = False) -> list[dict[str, Any]]:
             and active_version
             and _version_relation(catalog_version, active_version) in {"newer", "older", "differs"}
         )
+        workspace_runtime_relation = _version_relation(workspace_source_version, active_version)
+        workspace_catalog_relation = _version_relation(workspace_source_version, catalog_version)
+        workspace_runtime_differs = bool(
+            workspace_source_version
+            and active_version
+            and workspace_runtime_relation in {"newer", "older", "differs"}
+        )
+        workspace_catalog_differs = bool(
+            workspace_source_version
+            and catalog_version
+            and workspace_catalog_relation in {"newer", "older", "differs"}
+        )
         updated_at = getattr(row, "last_updated", None) if row is not None else capacity_entry.get("updated_at")
         item = {
             "name": name,
@@ -2069,9 +2168,24 @@ def _scenario_items(*, include_all: bool = False) -> list[dict[str, Any]]:
             "active_version": active_version,
             "workspace_source_version": workspace_source_version,
             "catalog_version": catalog_version,
+            "catalog_display": catalog_version or "unknown",
+            "workspace_display": workspace_source_version or "unknown",
+            "runtime_display": active_version or "none",
             "remote_version": catalog_version,
             "version_display": f"{version or 'unknown'}*" if registry_mismatch else (version or "unknown"),
             "updated_at": updated_at,
+            "can_hard_pull": bool(catalog_version and (workspace_catalog_differs or not workspace_source_version)),
+            "can_push": bool(
+                workspace_source_version
+                and (
+                    not catalog_version
+                    or _version_relation(workspace_source_version, catalog_version) in {"newer", "differs"}
+                )
+            ),
+            "can_activate": not bool(active_version) or workspace_runtime_differs,
+            "can_validate": bool(workspace_source_version),
+            "can_test": bool(active_version or workspace_source_version),
+            "can_logs": True,
             "uninstall_disabled": False,
             "registry_mismatch": registry_mismatch,
             **version_status,
@@ -2146,12 +2260,12 @@ def _marketplace_items(
 
     installed_skills = {
         str(item.get("name") or "").strip()
-        for item in _skills_items(include_all=True)
+        for item in _inventory_items_from(_skills_items)
         if str(item.get("name") or "").strip()
     }
     installed_scenarios = {
         str(item.get("name") or "").strip()
-        for item in _scenario_items(include_all=True)
+        for item in _inventory_items_from(_scenario_items)
         if str(item.get("name") or "").strip()
     }
 
@@ -2947,6 +3061,25 @@ def _write_ui_state(**updates: Any) -> dict[str, Any]:
     except SdkRuntimeNotInitialized:
         _UI_STATE_FALLBACK = dict(payload)
     return payload
+
+
+def _inventory_drift_only_enabled(ui_state: dict[str, Any] | None = None) -> bool:
+    state = ui_state if isinstance(ui_state, dict) else _ui_state()
+    return bool(state.get("inventory_drift_only"))
+
+
+def _filter_inventory_drift(items: list[dict[str, Any]], *, drift_only: bool) -> list[dict[str, Any]]:
+    if not drift_only:
+        return list(items)
+    return [dict(item) for item in items if bool(item.get("has_drift"))]
+
+
+def _inventory_items_from(builder) -> list[dict[str, Any]]:
+    try:
+        rows = builder(include_all=True)
+    except TypeError:
+        rows = builder()
+    return [dict(item) for item in list(rows or []) if isinstance(item, dict)]
 
 
 def _summary_render_state() -> dict[str, Any]:
@@ -5007,6 +5140,7 @@ def _summary(
 def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability: dict[str, Any]) -> list[dict[str, Any]]:
     last_refresh = float(ui_state.get("last_refresh_ts") or 0.0)
     last_action = str(ui_state.get("last_action") or "").strip()
+    drift_only = _inventory_drift_only_enabled(ui_state)
     state = str(status.get("state") or "idle")
     selected_node_id = str(ui_state.get("selected_node_id") or "").strip()
     runtime = reliability.get("runtime") if isinstance(reliability.get("runtime"), dict) else {}
@@ -5091,6 +5225,13 @@ def _action_items(status: dict[str, Any], ui_state: dict[str, Any], reliability:
             "description": "Reload current local update state",
             "subtitle": "",
             "updated_at": last_refresh or None,
+        },
+        {
+            "id": "toggle_drift_only",
+            "title": "Drift only",
+            "status": "warn" if drift_only else "idle",
+            "description": "Toggle Installed skills/scenarios between full inventory and drift-only view",
+            "subtitle": "on" if drift_only else "off",
         },
         {
             "id": "cancel_update",
@@ -5189,8 +5330,12 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
             "drain",
             "restart_sidecar",
             "skill_activate",
+            "skill_validate",
             "skill_test",
             "skill_update",
+            "skill_hard_pull",
+            "skill_push",
+            "skill_logs",
             "skill_uninstall",
             "scenario_uninstall",
         }
@@ -5198,7 +5343,32 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
         and selected_node_id != local_node_id
     ):
         raise ValueError("remote member tabs are read-only for update and transport actions")
-    if action_id in {"skill_activate", "skill_test", "skill_update", "skill_uninstall"}:
+    if action_id == "toggle_drift_only":
+        next_value = not _inventory_drift_only_enabled()
+        result = {
+            "ok": True,
+            "action": action_id,
+            "inventory_drift_only": next_value,
+        }
+        _write_ui_state(
+            inventory_drift_only=next_value,
+            last_action=action_id,
+            last_action_ts=time.time(),
+            last_refresh_ts=time.time(),
+            last_result=result,
+            last_error="",
+        )
+        return result
+    if action_id in {
+        "skill_activate",
+        "skill_validate",
+        "skill_test",
+        "skill_update",
+        "skill_hard_pull",
+        "skill_push",
+        "skill_logs",
+        "skill_uninstall",
+    }:
         name = str(_extract_param(payload, "name") or "").strip()
         if not name:
             raise ValueError("skill action requires skill name")
@@ -5230,6 +5400,22 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
                 "slot": slot,
                 "prepared": getattr(prep, "slot", None),
                 "webspace_id": webspace_id,
+            }
+        elif action_id == "skill_validate":
+            report = mgr.validate_skill(name, strict=False, probe_tools=False)
+            result = {
+                "ok": bool(getattr(report, "ok", False)),
+                "action": action_id,
+                "name": name,
+                "issues": [
+                    {
+                        "level": str(getattr(issue, "level", "") or ""),
+                        "code": str(getattr(issue, "code", "") or ""),
+                        "message": str(getattr(issue, "message", "") or ""),
+                        "where": getattr(issue, "where", None),
+                    }
+                    for issue in list(getattr(report, "issues", []) or [])
+                ],
             }
         elif action_id == "skill_test":
             try:
@@ -5277,39 +5463,62 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
                 "name": name,
                 "webspace_id": webspace_id,
             }
+        elif action_id == "skill_push":
+            message = str(
+                _extract_param(payload, "message")
+                or _extract_param(payload, "comment")
+                or _extract_param(payload, "value")
+                or ""
+            ).strip()
+            if not message:
+                message = f"chore: update {name}"
+            push_result = mgr.push(name, message)
+            result = {
+                "ok": True,
+                "action": action_id,
+                "name": name,
+                "message": message,
+                "result": push_result,
+                "webspace_id": webspace_id,
+            }
+        elif action_id == "skill_logs":
+            log_paths: dict[str, str] = {}
+            for key, attr in {
+                "service": "skill_service_log_path",
+                "runtime": "skill_runtime_log_path",
+                "ui_runtime": "skill_ui_diagnostics_log_path",
+            }.items():
+                fn = getattr(ctx.paths, attr, None)
+                if not callable(fn):
+                    continue
+                try:
+                    log_paths[key] = str(fn(name))
+                except Exception:
+                    pass
+            result = {
+                "ok": True,
+                "action": action_id,
+                "name": name,
+                "logs": log_paths,
+                "webspace_id": webspace_id,
+            }
         else:
             service = SkillUpdateService(ctx)
-            update_result = service.request_update(name, dry_run=False)
-            runtime_status_before = {}
-            try:
-                runtime_status_before = mgr.runtime_status(name)
-            except Exception:
-                runtime_status_before = {}
-            runtime_version_before = str(runtime_status_before.get("version") or "").strip()
+            update_result = service.request_update(
+                name,
+                dry_run=False,
+                force=True if action_id == "skill_hard_pull" else None,
+            )
             source_version = str(update_result.version or "").strip()
-            runtime_result: dict[str, Any] | None = None
-            try:
-                runtime_result = mgr.runtime_update(name, space="workspace")
-            except Exception:
-                _log.exception("runtime_update failed after infrastate skill update: %s", name)
-            should_prepare = bool(source_version and source_version != runtime_version_before)
-            if isinstance(runtime_result, dict) and not bool(runtime_result.get("ok", True)):
-                should_prepare = True
-            slot = ""
-            prepared_slot = ""
-            if should_prepare:
-                prep = mgr.prepare_runtime(name, run_tests=False)
-                prepared_slot = str(getattr(prep, "slot", None) or "")
-                slot = str(
-                    mgr.activate_for_space(
-                        name,
-                        version=getattr(prep, "version", None),
-                        slot=getattr(prep, "slot", None),
-                        space="default",
-                        webspace_id=webspace_id,
-                    )
-                    or ""
-                )
+            runtime_result = refresh_skill_runtime(
+                mgr,
+                name,
+                webspace_id=webspace_id,
+                source_version=source_version,
+                migrate_runtime=True,
+                ensure_installed=False,
+                require_active_version=bool(source_version),
+            )
             result = {
                 "ok": True,
                 "action": action_id,
@@ -5317,8 +5526,8 @@ def _perform_action(action_id: str, conf, payload: Any | None = None) -> dict[st
                 "updated": bool(update_result.updated),
                 "version": update_result.version,
                 "runtime": runtime_result,
-                "slot": slot,
-                "prepared": prepared_slot,
+                "slot": runtime_result.get("active_slot_after") if isinstance(runtime_result, dict) else "",
+                "prepared": runtime_result.get("migrated_slot") if isinstance(runtime_result, dict) else "",
                 "webspace_id": webspace_id,
             }
         _write_ui_state(
@@ -5802,11 +6011,17 @@ def _snapshot(webspace_id: str | None = None) -> dict[str, Any]:
     except Exception:
         slot_items = []
     try:
-        skills_items = _skills_items()
+        skills_items = _filter_inventory_drift(
+            _inventory_items_from(_skills_items),
+            drift_only=_inventory_drift_only_enabled(ui_state),
+        )
     except Exception:
         skills_items = []
     try:
-        scenario_items = _scenario_items()
+        scenario_items = _filter_inventory_drift(
+            _inventory_items_from(_scenario_items),
+            drift_only=_inventory_drift_only_enabled(ui_state),
+        )
     except Exception:
         scenario_items = []
     try:
@@ -6027,9 +6242,15 @@ def _build_stream_payload_for_receiver(receiver: str, webspace_id: str | None = 
     if token == _events_receiver():
         return _compact_card_list(list(reversed(_event_state())), include_content=False)
     if token == _skills_receiver():
-        return _skills_items()
+        return _filter_inventory_drift(
+            _inventory_items_from(_skills_items),
+            drift_only=_inventory_drift_only_enabled(),
+        )
     if token == _scenarios_receiver():
-        return _scenario_items()
+        return _filter_inventory_drift(
+            _inventory_items_from(_scenario_items),
+            drift_only=_inventory_drift_only_enabled(),
+        )
     if token in {_marketplace_skills_receiver(), _marketplace_scenarios_receiver()}:
         try:
             conf = load_config()

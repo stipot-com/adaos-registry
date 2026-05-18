@@ -369,27 +369,43 @@
 							"id": "infrastate-skills",
 							"type": "ui.table",
 							"area": "main",
-							"title": "Skill drift",
+							"title": "Installed skills",
 							"dataSource": {
 								"kind": "stream",
 								"receiver": "infrastate.skills"
 							},
 							"inputs": {
-								"emptyText": "No skill drift",
+								"emptyText": "No installed skills",
 								"columns": [
 									{ "key": "status_icon", "label": "", "kind": "icon", "tooltipKey": "status_tooltip", "width": "44px" },
 									{ "key": "display_name", "label": "Name" },
-									{ "key": "version_display", "label": "Version", "mono": true, "width": "160px" },
-									{ "key": "workspace_source_version", "label": "Workspace", "mono": true, "width": "120px" },
-									{ "key": "catalog_version", "label": "Catalog", "mono": true, "width": "120px" },
-									{ "key": "slot", "label": "Slot", "mono": true, "width": "90px" }
-								],
-								"buttons": [
-									{ "id": "activate", "label": "Activate" },
-									{ "id": "test", "label": "Test" },
-									{ "id": "update", "label": "Update", "whenKey": "update_available", "whenEquals": true },
-									{ "id": "uninstall", "label": "Uninstall", "disabledKey": "uninstall_disabled" }
-      ]
+									{ "key": "catalog_display", "label": "Catalog", "mono": true, "width": "120px" },
+									{ "key": "workspace_display", "label": "Workspace", "mono": true, "width": "120px" },
+									{
+										"key": "_workspace_actions",
+										"label": "Actions",
+										"kind": "buttons",
+										"width": "120px",
+										"buttons": [
+											{ "id": "hard_pull", "icon": "cloud-download-outline", "tooltip": "Hard pull workspace from catalog", "whenKey": "can_hard_pull", "whenEquals": true },
+											{ "id": "push", "icon": "cloud-upload-outline", "tooltip": "Push workspace changes", "whenKey": "can_push", "whenEquals": true }
+										]
+									},
+									{ "key": "runtime_display", "label": "Runtime", "mono": true, "width": "130px" },
+									{
+										"key": "_runtime_actions",
+										"label": "Actions",
+										"kind": "buttons",
+										"width": "190px",
+										"buttons": [
+											{ "id": "activate", "icon": "rocket-outline", "tooltip": "Activate prepared runtime", "whenKey": "can_activate", "whenEquals": true },
+											{ "id": "validate", "icon": "checkmark-done-outline", "tooltip": "Validate workspace skill", "whenKey": "can_validate", "whenEquals": true },
+											{ "id": "test", "icon": "flask-outline", "tooltip": "Run skill tests", "whenKey": "can_test", "whenEquals": true },
+											{ "id": "logs", "icon": "document-text-outline", "tooltip": "Open skill logs", "whenKey": "can_logs", "whenEquals": true },
+											{ "id": "uninstall", "icon": "trash-outline", "tooltip": "Uninstall skill", "disabledKey": "uninstall_disabled" }
+										]
+									}
+								]
     },
 							"actions": [
 								{
@@ -399,16 +415,38 @@
 									"params": { "id": "skill_activate", "name": "$event.name" }
 								},
 								{
+									"on": "click:hard_pull",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": { "id": "skill_hard_pull", "name": "$event.name" }
+								},
+								{
+									"on": "click:push",
+									"type": "updateState",
+									"params": { "infrastateSkillPushName": "$event.name" }
+								},
+								{
+									"on": "click:push",
+									"type": "openModal",
+									"params": { "modalId": "infrastate_skill_push_modal" }
+								},
+								{
+									"on": "click:validate",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": { "id": "skill_validate", "name": "$event.name" }
+								},
+								{
 									"on": "click:test",
 									"type": "callHost",
 									"target": "infrastate.action",
 									"params": { "id": "skill_test", "name": "$event.name" }
 								},
 								{
-									"on": "click:update",
+									"on": "click:logs",
 									"type": "callHost",
 									"target": "infrastate.action",
-									"params": { "id": "skill_update", "name": "$event.name" }
+									"params": { "id": "skill_logs", "name": "$event.name" }
 								},
 								{
 									"on": "click:uninstall",
@@ -422,22 +460,35 @@
 							"id": "infrastate-scenarios",
 							"type": "ui.table",
 							"area": "main",
-							"title": "Scenario drift",
+							"title": "Installed scenarios",
 							"dataSource": {
 								"kind": "stream",
 								"receiver": "infrastate.scenarios"
 							},
 							"inputs": {
-								"emptyText": "No scenario drift",
+								"emptyText": "No installed scenarios",
 								"columns": [
 									{ "key": "status_icon", "label": "", "kind": "icon", "tooltipKey": "status_tooltip", "width": "44px" },
 									{ "key": "name", "label": "Name" },
-									{ "key": "version_display", "label": "Version", "mono": true, "width": "160px" },
-									{ "key": "workspace_source_version", "label": "Workspace", "mono": true, "width": "120px" },
-									{ "key": "catalog_version", "label": "Catalog", "mono": true, "width": "120px" }
-								],
-								"buttons": [
-									{ "id": "uninstall", "label": "Uninstall", "disabledKey": "uninstall_disabled" }
+									{ "key": "catalog_display", "label": "Catalog", "mono": true, "width": "120px" },
+									{ "key": "workspace_display", "label": "Workspace", "mono": true, "width": "120px" },
+									{
+										"key": "_workspace_actions",
+										"label": "Actions",
+										"kind": "buttons",
+										"width": "100px",
+										"buttons": []
+									},
+									{ "key": "runtime_display", "label": "Runtime", "mono": true, "width": "120px" },
+									{
+										"key": "_runtime_actions",
+										"label": "Actions",
+										"kind": "buttons",
+										"width": "90px",
+										"buttons": [
+											{ "id": "uninstall", "icon": "trash-outline", "tooltip": "Uninstall scenario", "disabledKey": "uninstall_disabled" }
+										]
+									}
 								]
 							},
 							"actions": [
@@ -634,6 +685,48 @@
 								"itemAccordion": false,
 								"emptyText": "No active operations"
 							}
+						}
+					]
+				}
+			},
+			"infrastate_skill_push_modal": {
+				"title": "Push skill",
+				"schema": {
+					"id": "infrastate_skill_push_modal",
+					"layout": {
+						"type": "single",
+						"pattern": "stack",
+						"areas": [{ "id": "main", "role": "main" }]
+					},
+					"widgets": [
+						{
+							"id": "infrastate-skill-push-form",
+							"type": "ui.form",
+							"area": "main",
+							"title": "Push workspace changes",
+							"inputs": {
+								"fields": [
+									{
+										"id": "message",
+										"type": "textarea",
+										"label": "Message",
+										"placeholder": "ref: update"
+									}
+								],
+								"submitLabel": "Push"
+							},
+							"actions": [
+								{
+									"on": "submit",
+									"type": "callHost",
+									"target": "infrastate.action",
+									"params": {
+										"id": "skill_push",
+										"name": "$state.infrastateSkillPushName",
+										"message": "$event.values.message"
+									}
+								}
+							]
 						}
 					]
 				}
