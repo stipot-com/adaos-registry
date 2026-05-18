@@ -10,8 +10,16 @@
       "infrastate.steps": { "mode": "replace", "transport": "hub", "initialState": [] },
       "infrastate.realtime": { "mode": "replace", "transport": "hub", "initialState": [] },
       "infrastate.slots": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.skills": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.scenarios": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.skills": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": { "status": "init", "message": "Loading installed skills...", "items": [] }
+      },
+      "infrastate.scenarios": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": { "status": "init", "message": "Loading installed scenarios...", "items": [] }
+      },
       "infrastate.marketplace.skills": { "mode": "replace", "transport": "hub", "initialState": [] },
       "infrastate.marketplace.scenarios": { "mode": "replace", "transport": "hub", "initialState": [] },
       "infrastate.core_update_diagnostics": { "mode": "replace", "transport": "hub", "initialState": [] },
