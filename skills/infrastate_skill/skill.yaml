@@ -1,5 +1,5 @@
 name: infrastate_skill
-version: 0.75.10
+version: 0.75.11
 description: Локальный обзор состояния ядра, graceful update, A/B слотов и последнего
   результата обновления.
 runtime:
@@ -39,6 +39,408 @@ events:
   - hub.core_update.status
   - node.names.changed
   - operations.
+data_routes:
+- surface: widget:infrastate_widget
+  route: yjs
+  owner: skill:infrastate_skill
+  projection_slot: infrastate.summary
+  path: data/infrastate/summary
+  first_paint: ydoc default compact summary
+  recovery: Yjs replay restores the last compact infrastructure summary.
+  update_source:
+  - core.update.status
+  - hub.core_update.status
+  - infrastate.refresh
+  budget:
+    max_payload_bytes: 4096
+    max_publish_hz: 0.5
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Yjs/status badge shows stale or degraded state.
+    log: service.infrastate_skill.runtime.log
+    quarantine: true
+    metric: yjs_owner_guard.suppressed
+- surface: modal:infrastate_summary
+  route: yjs
+  owner: skill:infrastate_skill
+  projection_slot: infrastate.summary
+  path: data/infrastate/summary
+  first_paint: same compact summary as the widget
+  recovery: Yjs replay plus refresh action restores compact state.
+  budget:
+    max_payload_bytes: 4096
+    max_publish_hz: 0.5
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Modal summary shows stale/degraded state.
+    log: service.infrastate_skill.runtime.log
+    quarantine: true
+- surface: modal:node_control
+  route: yjs
+  owner: skill:infrastate_skill
+  projection_slot: infrastate.nodes
+  path: data/infrastate/nodes
+  first_paint: ydoc node tabs fallback to local hub
+  recovery: Yjs replay restores selected node tabs; refresh rebuilds from reliability
+    snapshot.
+  update_source:
+  - subnet.member.snapshot.changed
+  - node.names.changed
+  budget:
+    max_payload_bytes: 8192
+    max_publish_hz: 0.2
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Node tabs keep last compact state.
+    log: service.infrastate_skill.runtime.log
+    quarantine: true
+- surface: modal:node_editor
+  route: yjs
+  owner: skill:infrastate_skill
+  projection_slot: infrastate.node_editor
+  path: data/infrastate/node_editor
+  first_paint: empty editor control
+  recovery: Yjs replay restores selected node editor state.
+  update_source:
+  - node.names.changed
+  budget:
+    max_payload_bytes: 2048
+    max_publish_hz: 0.2
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Editor stays disabled/stale when Yjs is guarded.
+    log: service.infrastate_skill.runtime.log
+    quarantine: true
+- surface: modal:actions
+  route: yjs
+  owner: skill:infrastate_skill
+  projection_slot: infrastate.core_actions
+  path: data/infrastate/core_actions
+  first_paint: ydoc default action list
+  recovery: Yjs replay restores compact command eligibility.
+  update_source:
+  - core.update.status
+  - infrastate.action
+  budget:
+    max_payload_bytes: 4096
+    max_publish_hz: 0.5
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Actions show disabled/stale reason.
+    log: service.infrastate_skill.runtime.log
+    quarantine: true
+- surface: modal:update_actions
+  route: yjs
+  owner: skill:infrastate_skill
+  projection_slot: infrastate.update_actions
+  path: data/infrastate/update_actions
+  first_paint: ydoc default update action list
+  recovery: Yjs replay restores compact update command eligibility.
+  update_source:
+  - skills.updated
+  - scenarios.synced
+  - core.update.status
+  budget:
+    max_payload_bytes: 4096
+    max_publish_hz: 0.5
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Update actions show disabled/stale reason.
+    log: service.infrastate_skill.runtime.log
+    quarantine: true
+- surface: modal:core_update_diag_actions
+  route: yjs
+  owner: skill:infrastate_skill
+  projection_slot: infrastate.core_update_diag_actions
+  path: data/infrastate/core_update_diag_actions
+  first_paint: empty copy actions
+  recovery: Yjs replay restores copy action eligibility.
+  update_source:
+  - core.update.status
+  - hub.core_update.status
+  budget:
+    max_payload_bytes: 4096
+    max_publish_hz: 0.2
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Diagnostic actions show stale state.
+    log: service.infrastate_skill.runtime.log
+    quarantine: true
+- surface: modal:build
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.build
+  first_paint: empty build list
+  recovery: snapshot requested on stream subscribe
+  update_source:
+  - core.update.status
+  budget:
+    max_payload_bytes: 8192
+    max_publish_hz: 0.5
+    max_items: 16
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Build list keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:pipeline_steps
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.steps
+  first_paint: empty pipeline list
+  recovery: snapshot requested on stream subscribe
+  update_source:
+  - core.update.status
+  budget:
+    max_payload_bytes: 16384
+    max_publish_hz: 0.5
+    max_items: 32
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Pipeline list keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:realtime
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.realtime
+  first_paint: empty realtime list
+  recovery: snapshot requested on stream subscribe
+  update_source:
+  - subnet.nats.up
+  - subnet.nats.down
+  - node.yjs.control.completed
+  - node.yjs.control.failed
+  budget:
+    max_payload_bytes: 16384
+    max_publish_hz: 1
+    max_items: 32
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Realtime list shows last stream value and guard cards carry pressure.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:core_slots
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.slots
+  first_paint: empty slot list
+  recovery: snapshot requested on stream subscribe
+  update_source:
+  - core.update.status
+  budget:
+    max_payload_bytes: 16384
+    max_publish_hz: 0.5
+    max_items: 32
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Slot list keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:active_operations
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.operations.active
+  first_paint: empty active operations list
+  recovery: snapshot requested on stream subscribe
+  update_source:
+  - operations.
+  budget:
+    max_payload_bytes: 16384
+    max_publish_hz: 2
+    max_items: 64
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Active operations list keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:installed_skills
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.skills
+  first_paint: loading skills initial state
+  recovery: direct inventory snapshot requested on stream subscribe
+  update_source:
+  - skills.activated
+  - skill.installed
+  - skill.uninstalled
+  - skills.updated
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 0.5
+    max_items: 256
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Skills table keeps last stream value with loading/degraded state.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:installed_scenarios
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.scenarios
+  first_paint: loading scenarios initial state
+  recovery: direct inventory snapshot requested on stream subscribe
+  update_source:
+  - scenario.installed
+  - scenario.removed
+  - scenarios.synced
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 0.5
+    max_items: 256
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Scenarios table keeps last stream value with loading/degraded
+      state.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:marketplace
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.marketplace.skills
+  first_paint: empty marketplace skills list
+  recovery: marketplace snapshot requested on stream subscribe
+  update_source:
+  - skills.updated
+  - scenarios.synced
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 0.2
+    max_items: 256
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Marketplace list keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:marketplace
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.marketplace.scenarios
+  first_paint: empty marketplace scenarios list
+  recovery: marketplace snapshot requested on stream subscribe
+  update_source:
+  - skills.updated
+  - scenarios.synced
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 0.2
+    max_items: 256
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Marketplace list keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:logs
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.logs.recent
+  first_paint: empty recent logs list
+  recovery: snapshot requested on stream subscribe; raw logs stay external
+  update_source:
+  - core.update.status
+  - hub.core_update.status
+  budget:
+    max_payload_bytes: 32768
+    max_publish_hz: 0.5
+    max_items: 64
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Recent logs list keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:event_history
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.events.recent
+  first_paint: empty event history list
+  recovery: snapshot requested on stream subscribe; raw evidence stays in logs/eventbus
+  update_source:
+  - '*'
+  budget:
+    max_payload_bytes: 32768
+    max_publish_hz: 0.5
+    max_items: 64
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Event history keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:yjs_load_mark
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.yjs.load_mark
+  first_paint: empty Yjs pressure table
+  recovery: snapshot requested on stream subscribe
+  update_source:
+  - node.yjs.control.completed
+  - node.yjs.control.failed
+  budget:
+    max_payload_bytes: 24576
+    max_publish_hz: 0.5
+    max_items: 64
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Yjs load table keeps last stream value and guard card carries
+      pressure.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:core_update_diagnostics
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.core_update_diagnostics
+  first_paint: empty diagnostics list
+  recovery: snapshot requested on stream subscribe
+  update_source:
+  - core.update.status
+  - hub.core_update.status
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 0.2
+    max_items: 64
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Diagnostics list keeps last stream value.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: modal:item_details
+  route: stream
+  owner: skill:infrastate_skill
+  receiver: infrastate.details.*
+  first_paint: null detail placeholder
+  recovery: request-only detail stream snapshot on modal open
+  update_source:
+  - webio.stream.snapshot.requested
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 1
+    max_items: 1
+    snapshot_policy: manual
+  guard_visibility:
+    degraded_state: Detail modal shows stale/degraded placeholder.
+    log: service.infrastate_skill.runtime.log
+    quarantine: false
+- surface: debug:full_snapshot
+  route: tool/details
+  owner: skill:infrastate_skill
+  path: get_snapshot
+  first_paint: none
+  recovery: explicit operator/debug request only
+  update_source:
+  - get_snapshot
+  budget:
+    max_payload_bytes: 131072
+    snapshot_policy: manual
+  guard_visibility:
+    degraded_state: Tool result includes quarantine or degraded context.
+    log: service.infrastate_skill.runtime.log
+    quarantine: true
 data_projections:
 - scope: subnet
   slot: infrastate.summary
@@ -157,5 +559,5 @@ tools:
   output_schema:
     type: object
     properties: {}
-updated_at: '2026-05-18T12:22:48+00:00'
+updated_at: '2026-05-19T05:00:42+00:00'
 

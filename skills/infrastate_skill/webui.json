@@ -2,28 +2,118 @@
 	"$schema": "../../../../src/adaos/abi/webui.v1.schema.json",
   "webio": {
     "receivers": {
-      "infrastate.operations.active": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.logs.recent": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.events.recent": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.yjs.load_mark": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.build": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.steps": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.realtime": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.slots": { "mode": "replace", "transport": "hub", "initialState": [] },
+      "infrastate.operations.active": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 16384, "maxPublishHz": 2, "maxSnapshotHz": 1, "maxItems": 64 },
+        "guardVisibility": { "degradedState": "Keep last active operation rows and surface stream guard pressure.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.operations.active" },
+        "route": { "kind": "stream", "surface": "modal:active_operations", "owner": "skill:infrastate_skill", "firstPaint": "empty active operations list", "recovery": "snapshot requested on stream subscribe", "updateSource": "operations." }
+      },
+      "infrastate.logs.recent": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 32768, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 64 },
+        "guardVisibility": { "degradedState": "Keep last recent log cards; raw logs stay external.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.logs.recent" },
+        "route": { "kind": "stream", "surface": "modal:logs", "owner": "skill:infrastate_skill", "firstPaint": "empty recent logs list", "recovery": "snapshot requested on stream subscribe", "updateSource": ["core.update.status", "hub.core_update.status"] }
+      },
+      "infrastate.events.recent": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 32768, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 64 },
+        "guardVisibility": { "degradedState": "Keep last event cards; raw evidence stays in logs/eventbus.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.events.recent" },
+        "route": { "kind": "stream", "surface": "modal:event_history", "owner": "skill:infrastate_skill", "firstPaint": "empty event history list", "recovery": "snapshot requested on stream subscribe", "updateSource": "*" }
+      },
+      "infrastate.yjs.load_mark": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 24576, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 64 },
+        "guardVisibility": { "degradedState": "Keep last Yjs pressure rows; guard cards carry current pressure.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.yjs.load_mark" },
+        "route": { "kind": "stream", "surface": "modal:yjs_load_mark", "owner": "skill:infrastate_skill", "firstPaint": "empty Yjs pressure table", "recovery": "snapshot requested on stream subscribe", "updateSource": ["node.yjs.control.completed", "node.yjs.control.failed"] }
+      },
+      "infrastate.build": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 8192, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 16 },
+        "guardVisibility": { "degradedState": "Keep last build metadata rows.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.build" },
+        "route": { "kind": "stream", "surface": "modal:build", "owner": "skill:infrastate_skill", "firstPaint": "empty build list", "recovery": "snapshot requested on stream subscribe", "updateSource": "core.update.status" }
+      },
+      "infrastate.steps": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 16384, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 32 },
+        "guardVisibility": { "degradedState": "Keep last pipeline rows.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.steps" },
+        "route": { "kind": "stream", "surface": "modal:pipeline_steps", "owner": "skill:infrastate_skill", "firstPaint": "empty pipeline list", "recovery": "snapshot requested on stream subscribe", "updateSource": "core.update.status" }
+      },
+      "infrastate.realtime": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 16384, "maxPublishHz": 1, "maxSnapshotHz": 1, "maxItems": 32 },
+        "guardVisibility": { "degradedState": "Keep last realtime rows and surface route/Yjs guard cards.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.realtime" },
+        "route": { "kind": "stream", "surface": "modal:realtime", "owner": "skill:infrastate_skill", "firstPaint": "empty realtime list", "recovery": "snapshot requested on stream subscribe", "updateSource": ["subnet.nats.up", "subnet.nats.down", "node.yjs.control.completed", "node.yjs.control.failed"] }
+      },
+      "infrastate.slots": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 16384, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 32 },
+        "guardVisibility": { "degradedState": "Keep last slot manifest rows.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.slots" },
+        "route": { "kind": "stream", "surface": "modal:core_slots", "owner": "skill:infrastate_skill", "firstPaint": "empty slot list", "recovery": "snapshot requested on stream subscribe", "updateSource": "core.update.status" }
+      },
       "infrastate.skills": {
         "mode": "replace",
         "transport": "hub",
-        "initialState": { "status": "init", "message": "Loading installed skills...", "items": [] }
+        "initialState": { "status": "init", "message": "Loading installed skills...", "items": [] },
+        "budget": { "maxPayloadBytes": 65536, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 256 },
+        "guardVisibility": { "degradedState": "Keep last skills inventory stream value.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.skills" },
+        "route": { "kind": "stream", "surface": "modal:installed_skills", "owner": "skill:infrastate_skill", "firstPaint": "loading skills initial state", "recovery": "direct inventory snapshot requested on stream subscribe", "updateSource": ["skills.activated", "skill.installed", "skill.uninstalled", "skills.updated"] }
       },
       "infrastate.scenarios": {
         "mode": "replace",
         "transport": "hub",
-        "initialState": { "status": "init", "message": "Loading installed scenarios...", "items": [] }
+        "initialState": { "status": "init", "message": "Loading installed scenarios...", "items": [] },
+        "budget": { "maxPayloadBytes": 65536, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 256 },
+        "guardVisibility": { "degradedState": "Keep last scenarios inventory stream value.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.scenarios" },
+        "route": { "kind": "stream", "surface": "modal:installed_scenarios", "owner": "skill:infrastate_skill", "firstPaint": "loading scenarios initial state", "recovery": "direct inventory snapshot requested on stream subscribe", "updateSource": ["scenario.installed", "scenario.removed", "scenarios.synced"] }
       },
-      "infrastate.marketplace.skills": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.marketplace.scenarios": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.core_update_diagnostics": { "mode": "replace", "transport": "hub", "initialState": [] },
-      "infrastate.details.*": { "mode": "replace", "transport": "hub", "initialState": null }
+      "infrastate.marketplace.skills": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 65536, "maxPublishHz": 0.2, "maxSnapshotHz": 1, "maxItems": 256 },
+        "guardVisibility": { "degradedState": "Keep last marketplace skill rows.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.marketplace.skills" },
+        "route": { "kind": "stream", "surface": "modal:marketplace", "owner": "skill:infrastate_skill", "firstPaint": "empty marketplace skills list", "recovery": "marketplace snapshot requested on stream subscribe", "updateSource": ["skills.updated", "scenarios.synced"] }
+      },
+      "infrastate.marketplace.scenarios": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 65536, "maxPublishHz": 0.2, "maxSnapshotHz": 1, "maxItems": 256 },
+        "guardVisibility": { "degradedState": "Keep last marketplace scenario rows.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.marketplace.scenarios" },
+        "route": { "kind": "stream", "surface": "modal:marketplace", "owner": "skill:infrastate_skill", "firstPaint": "empty marketplace scenarios list", "recovery": "marketplace snapshot requested on stream subscribe", "updateSource": ["skills.updated", "scenarios.synced"] }
+      },
+      "infrastate.core_update_diagnostics": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 65536, "maxPublishHz": 0.2, "maxSnapshotHz": 1, "maxItems": 64 },
+        "guardVisibility": { "degradedState": "Keep last core update diagnostic cards.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.core_update_diagnostics" },
+        "route": { "kind": "stream", "surface": "modal:core_update_diagnostics", "owner": "skill:infrastate_skill", "firstPaint": "empty diagnostics list", "recovery": "snapshot requested on stream subscribe", "updateSource": ["core.update.status", "hub.core_update.status"] }
+      },
+      "infrastate.details.*": {
+        "mode": "replace",
+        "transport": "hub",
+        "initialState": null,
+        "budget": { "maxPayloadBytes": 65536, "maxPublishHz": 1, "maxSnapshotHz": 1, "maxItems": 1 },
+        "guardVisibility": { "degradedState": "Detail modal shows stale/degraded placeholder.", "log": "service.infrastate_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.infrastate.details" },
+        "route": { "kind": "stream", "surface": "modal:item_details", "owner": "skill:infrastate_skill", "firstPaint": "null detail placeholder", "recovery": "request-only detail stream snapshot on modal open", "updateSource": "webio.stream.snapshot.requested" }
+      }
     }
   },
 	"apps": [

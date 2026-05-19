@@ -6583,11 +6583,15 @@ async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = Non
     now = time.monotonic()
     pressure_policy = _projection_pressure_policy(webspace_id)
     pressure_state = str(pressure_policy.get("policy_state") or "").strip().lower()
-    if pressure_state in {"block", "throttle"}:
+    if pressure_state == "block":
         _projection_diag["blocked_total"] = int(_projection_diag.get("blocked_total") or 0) + 1
         _publish_snapshot_streams(snapshot, webspace_id=webspace_id)
         return
-    effective_min_interval_s = _MIN_YJS_PROJECTION_INTERVAL_S
+    effective_min_interval_s = (
+        _THROTTLED_YJS_PROJECTION_INTERVAL_S
+        if pressure_state == "throttle"
+        else _MIN_YJS_PROJECTION_INTERVAL_S
+    )
     for target_ws in _projection_webspace_ids(webspace_id):
         if _projection_fingerprints.get(target_ws) == fingerprint:
             _projection_diag["skip_total"] = int(_projection_diag.get("skip_total") or 0) + 1
@@ -6603,7 +6607,7 @@ async def _project_async(snapshot: dict[str, Any], webspace_id: str | None = Non
             for slot_name, value in sections.items():
                 slot_pressure_policy = _projection_pressure_policy(target_ws)
                 slot_pressure_state = str(slot_pressure_policy.get("policy_state") or "").strip().lower()
-                if slot_pressure_state in {"block", "throttle"}:
+                if slot_pressure_state == "block":
                     _projection_diag["blocked_total"] = int(_projection_diag.get("blocked_total") or 0) + 1
                     _publish_snapshot_streams(snapshot, webspace_id=webspace_id)
                     return
