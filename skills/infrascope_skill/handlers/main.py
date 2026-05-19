@@ -547,6 +547,15 @@ def _skill_post_commit_operation_rows() -> list[dict[str, Any]]:
     ]
 
 
+def _operation_rows(*, webspace_id: str | None = None) -> list[dict[str, Any]]:
+    return (
+        _active_operation_rows(webspace_id=webspace_id)
+        + _skill_migration_operation_rows()
+        + _skill_rollback_operation_rows()
+        + _skill_post_commit_operation_rows()
+    )
+
+
 def _skill_manifest_path() -> Path | None:
     for parent in Path(__file__).resolve().parents:
         for name in ("skill.yaml", "resolved.manifest.json"):
@@ -856,6 +865,43 @@ def _stream_payload_for_receiver(snapshot: dict[str, Any], receiver: str) -> Any
     return None
 
 
+def _stream_payload_for_receiver_direct(receiver: str, *, webspace_id: str) -> tuple[bool, Any]:
+    token = str(receiver or "").strip()
+    if not token:
+        return False, None
+    try:
+        if token == _operations_receiver():
+            return True, _operation_rows(webspace_id=webspace_id)
+        overview_prefix = "infrascope.overview."
+        if token.startswith(overview_prefix):
+            section = str(token[len(overview_prefix):] or "").strip()
+            rows = list_overview_collection(section, webspace_id=webspace_id)
+            return True, [_compact_row_for_stream(row) for row in rows]
+        inventory_prefix = "infrascope.inventory."
+        if token.startswith(inventory_prefix):
+            kind = _inventory_kind_token(token[len(inventory_prefix):])
+            rows = list_inventory(kind, webspace_id=webspace_id)
+            return True, [_compact_row_for_stream(row) for row in rows]
+        inspector_prefix = "infrascope.inspector."
+        if token.startswith(inspector_prefix):
+            object_id = str(token[len(inspector_prefix):] or "local").strip() or "local"
+            return True, _compact_inspector_payload(get_object_inspector(object_id, webspace_id=webspace_id))
+        inspector_field_prefix = "infrascope.inspector_field."
+        if token.startswith(inspector_field_prefix):
+            remainder = str(token[len(inspector_field_prefix):] or "").strip()
+            field, _, object_id = remainder.partition(".")
+            field = str(field or "").strip()
+            object_id = str(object_id or "local").strip() or "local"
+            payload = get_object_inspector(object_id, webspace_id=webspace_id)
+            if field in {"incidents", "actions"}:
+                return True, list(coerce_mapping(payload).get(field) or [])
+            return True, coerce_mapping(coerce_mapping(payload).get(field))
+    except Exception:
+        _log.warning("infrascope direct stream payload failed receiver=%s webspace=%s", token, webspace_id, exc_info=True)
+        return False, None
+    return False, None
+
+
 def _compact_row_for_stream(raw: Any) -> dict[str, Any]:
     row = coerce_mapping(raw)
     object_id = str(row.get("object_id") or row.get("id") or "").strip()
@@ -1103,12 +1149,7 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
     inspectors["local"] = dict(local_inspector)
     inspectors[local_actual_id] = dict(local_inspector)
     operations = _operations_snapshot(webspace_id=webspace_id)
-    operation_rows = (
-        _active_operation_rows(webspace_id=webspace_id)
-        + _skill_migration_operation_rows()
-        + _skill_rollback_operation_rows()
-        + _skill_post_commit_operation_rows()
-    )
+    operation_rows = _operation_rows(webspace_id=webspace_id)
     snapshot = {
         "summary": summary,
         "overview": {
@@ -1472,8 +1513,10 @@ def on_webio_stream_snapshot_requested(evt: Any) -> None:
     _remember_stream_receiver(webspace_id, receiver)
     if not _consume_stream_snapshot_request(webspace_id=webspace_id, receiver=receiver):
         return
-    snapshot = _stream_snapshot_for_subscribe(webspace_id)
-    stream_payload = _stream_payload_for_receiver(snapshot, receiver)
+    handled, stream_payload = _stream_payload_for_receiver_direct(receiver, webspace_id=webspace_id)
+    if not handled:
+        snapshot = _stream_snapshot_for_subscribe(webspace_id)
+        stream_payload = _stream_payload_for_receiver(snapshot, receiver)
     if stream_payload is None:
         return
     _publish_stream_payload(receiver, stream_payload, webspace_id=webspace_id, force=True)

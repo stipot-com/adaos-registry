@@ -1,5 +1,5 @@
 name: infrascope_skill
-version: 0.28.2
+version: 0.28.3
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -304,5 +304,5 @@ tools:
     type: object
 exports: {}
 prototype: default
-updated_at: '2026-05-19T05:35:18+00:00'
+updated_at: '2026-05-19T05:43:54+00:00'
 

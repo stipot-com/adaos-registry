@@ -10,13 +10,15 @@ Status: architectural split planned; detailed projection work pending.
   streams instead.
 - [x] `skill.yaml:data_routes` and `webui.json` declare first-pass stream
   budgets for overview, inventory, operations, and inspector receivers.
+- [x] Stream snapshot requests use per-receiver compact builders before falling
+  back to the monolithic snapshot cache.
 
 ## Next
 
 - [x] Audit which branches are required for the initial shell versus Details.
 - [ ] Publish shared status cards for overview, active incidents, inventory,
   runtime/browser state, registry, and operations.
-- [ ] Replace monolithic cold subscribe snapshot building with per-receiver
+- [x] Replace monolithic cold subscribe snapshot building with per-receiver
   compact builders.
 - [ ] Move large inspector payloads to active stream/detail demand.
 - [ ] Align object inspectors with the shared projection lifecycle states:
@@ -30,5 +32,5 @@ Status: architectural split planned; detailed projection work pending.
 
 - [x] Infrascope loads a minimal health/overview shell first.
 - [ ] Object details are refreshed independently.
-- [ ] Large topology/log/task-packet data never rides in the always-on widget
+- [x] Large topology/log/task-packet data never rides in the always-on widget
   projection.
