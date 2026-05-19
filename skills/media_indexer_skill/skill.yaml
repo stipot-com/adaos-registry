@@ -1,0 +1,70 @@
+name: media_indexer_skill
+version: 0.1.0
+description: Semantic indexing and multimodal search for local media files (video, audio, images) using NER, FAISS and CLIP.
+runtime:
+  python: '3.11'
+dependencies: []
+default_tool: search_media
+tools:
+- name: scan_and_index
+  entry: handlers.main:scan_and_index
+  description: Scan a directory and build a search index
+  input_schema:
+    type: object
+    required:
+    - directory
+    properties:
+      directory:
+        type: string
+        description: Path to a directory with media files.
+  output_schema:
+    type: object
+    required:
+    - status
+    - indexed_count
+    properties:
+      status:
+        type: string
+        enum:
+        - ok
+        - error
+      indexed_count:
+        type: integer
+      errors:
+        type: array
+        items:
+          type: string
+- name: search_media
+  entry: handlers.main:search_media
+  description: Search indexed media by natural language query
+  input_schema:
+    type: object
+    required:
+    - query
+    properties:
+      query:
+        type: string
+        description: Natural language search query.
+      k:
+        type: integer
+        default: 5
+        description: Number of results to return.
+  output_schema:
+    type: object
+    required:
+    - status
+    - results
+    properties:
+      status:
+        type: string
+      results:
+        type: array
+        items:
+          type: object
+          properties:
+            score:
+              type: number
+            path:
+              type: string
+            payload:
+              type: object

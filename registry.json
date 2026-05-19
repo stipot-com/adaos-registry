@@ -1,566 +1,588 @@
 {
-  "version": 1,
-  "updated_at": "2026-05-19T07:14:51+00:00",
-  "skills": [
-    {
-      "kind": "skill",
-      "id": "adaos_connect",
-      "name": "adaos_connect",
-      "version": "0.16.1",
-      "updated_at": "2026-05-12T03:48:51+00:00",
-      "path": "skills/adaos_connect",
-      "manifest": "skills/adaos_connect/skill.yaml",
-      "source": {
-        "path": "skills/adaos_connect",
-        "manifest": "skills/adaos_connect/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "adaos_connect",
-        "id": "adaos_connect"
-      },
-      "description": "Network expansion assistant for browser, Telegram, and node join flows via YJS-driven modal UI.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 1
-    },
-    {
-      "kind": "skill",
-      "id": "browsers_skill",
-      "name": "browsers_skill",
-      "version": "0.14.7",
-      "updated_at": "2026-05-17T09:23:30+00:00",
-      "path": "skills/browsers_skill",
-      "manifest": "skills/browsers_skill/skill.yaml",
-      "source": {
-        "path": "skills/browsers_skill",
-        "manifest": "skills/browsers_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "browsers_skill",
-        "id": "browsers_skill"
-      },
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 0
-    },
-    {
-      "kind": "skill",
-      "id": "demo_metrics_skill",
-      "name": "demo_metrics_skill",
-      "version": "0.11.1",
-      "updated_at": "2026-05-12T03:48:57+00:00",
-      "path": "skills/demo_metrics_skill",
-      "manifest": "skills/demo_metrics_skill/skill.yaml",
-      "source": {
-        "path": "skills/demo_metrics_skill",
-        "manifest": "skills/demo_metrics_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "demo_metrics_skill",
-        "id": "demo_metrics_skill"
-      },
-      "description": "Neutral demo skill for semantic Web UI migration with a metrics table, chart payload, and live event stream.",
-      "runtime_python": "3.11",
-      "tools_count": 3
-    },
-    {
-      "kind": "skill",
-      "id": "greet_on_boot_skill",
-      "name": "greet_on_boot_skill",
-      "version": "0.2.0",
-      "updated_at": "2026-04-07T19:49:12+00:00",
-      "path": "skills/greet_on_boot_skill",
-      "manifest": "skills/greet_on_boot_skill/skill.yaml",
-      "source": {
-        "path": "skills/greet_on_boot_skill",
-        "manifest": "skills/greet_on_boot_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "greet_on_boot_skill",
-        "id": "greet_on_boot_skill"
-      },
-      "description": "System greeting and infrastructure health-check skill used by the greet_on_boot scenario.",
-      "runtime_python": "3.11",
-      "tools_count": 2
-    },
-    {
-      "kind": "skill",
-      "id": "infra_access_skill",
-      "name": "infra_access_skill",
-      "version": "0.21.2",
-      "updated_at": "2026-05-13T16:30:11+00:00",
-      "path": "skills/infra_access_skill",
-      "manifest": "skills/infra_access_skill/skill.yaml",
-      "source": {
-        "path": "skills/infra_access_skill",
-        "manifest": "skills/infra_access_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "infra_access_skill",
-        "id": "infra_access_skill"
-      },
-      "description": "Skill-mediated operational surface for managed infra access, observability, and Root MCP token workflows.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "activation": {
-        "mode": "lazy",
-        "when": {
-          "scenarios_active": [
-            "web_desktop"
-          ],
-          "client_presence": true,
-          "webspace_scope": "active"
-        },
-        "startup_allowed": true,
-        "background_refresh": false
-      },
-      "tools_count": 3
-    },
-    {
-      "kind": "skill",
-      "id": "infrascope_skill",
-      "name": "infrascope_skill",
-      "version": "0.28.3",
-      "updated_at": "2026-05-19T05:43:54+00:00",
-      "path": "skills/infrascope_skill",
-      "manifest": "skills/infrascope_skill/skill.yaml",
-      "source": {
-        "path": "skills/infrascope_skill",
-        "manifest": "skills/infrascope_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "infrascope_skill",
-        "id": "infrascope_skill"
-      },
-      "description": "UI-facing projection skill for the Infrascope operator scenario.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "activation": {
-        "mode": "lazy",
-        "when": {
-          "scenarios_active": [
-            "infrascope"
-          ],
-          "client_presence": true,
-          "webspace_scope": "active"
-        },
-        "startup_allowed": false,
-        "background_refresh": false
-      },
-      "tools_count": 6
-    },
-    {
-      "kind": "skill",
-      "id": "infrastate_skill",
-      "name": "infrastate_skill",
-      "version": "0.75.12",
-      "updated_at": "2026-05-19T07:14:51+00:00",
-      "path": "skills/infrastate_skill",
-      "manifest": "skills/infrastate_skill/skill.yaml",
-      "source": {
-        "path": "skills/infrastate_skill",
-        "manifest": "skills/infrastate_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "infrastate_skill",
-        "id": "infrastate_skill"
-      },
-      "description": "Локальный обзор состояния ядра, graceful update, A/B слотов и последнего результата обновления.",
-      "runtime_python": "3.11",
-      "activation": {
-        "mode": "lazy",
-        "when": {
-          "scenarios_active": [
-            "web_desktop"
-          ],
-          "client_presence": true,
-          "webspace_scope": "active"
-        },
-        "startup_allowed": false,
-        "background_refresh": false
-      },
-      "tools_count": 3
-    },
-    {
-      "kind": "skill",
-      "id": "mediaserver",
-      "name": "mediaserver",
-      "version": "0.8.1",
-      "updated_at": "2026-05-12T03:49:00+00:00",
-      "path": "skills/mediaserver",
-      "manifest": "skills/mediaserver/skill.yaml",
-      "source": {
-        "path": "skills/mediaserver",
-        "manifest": "skills/mediaserver/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "mediaserver",
-        "id": "mediaserver"
-      },
-      "description": "Local MVP media debugging skill for upload/playback diagnostics and media-channel readiness checks.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 2
-    },
-    {
-      "kind": "skill",
-      "id": "new_face_vision_skill",
-      "name": "new_face_vision_skill",
-      "version": "0.2.1",
-      "updated_at": "2026-05-16T14:31:59+00:00",
-      "path": "skills/new_face_vision_skill",
-      "manifest": "skills/new_face_vision_skill/skill.yaml",
-      "source": {
-        "path": "skills/new_face_vision_skill",
-        "manifest": "skills/new_face_vision_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "new_face_vision_skill",
-        "id": "new_face_vision_skill"
-      },
-      "description": "Анализ дефектов камней на видео с помощью нейросети (сегментация DeepLabV3)",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 11
-    },
-    {
-      "kind": "skill",
-      "id": "pair_new_device_skill",
-      "name": "pair_new_device_skill",
-      "version": "0.1.0",
-      "updated_at": "2026-05-06T07:55:12+00:00",
-      "path": "skills/pair_new_device_skill",
-      "manifest": "skills/pair_new_device_skill/skill.yaml",
-      "source": {
-        "path": "skills/pair_new_device_skill",
-        "manifest": "skills/pair_new_device_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "pair_new_device_skill",
-        "id": "pair_new_device_skill"
-      },
-      "description": "Hub-side pairing skill. Generates short-lived pairing IDs and stores payloads needed to provision new browsers (TV/Smart displays).",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 1
-    },
-    {
-      "kind": "skill",
-      "id": "prompt_engineer_skill",
-      "name": "prompt_engineer_skill",
-      "version": "0.6.1",
-      "updated_at": "2026-05-12T03:49:07+00:00",
-      "path": "skills/prompt_engineer_skill",
-      "manifest": "skills/prompt_engineer_skill/skill.yaml",
-      "source": {
-        "path": "skills/prompt_engineer_skill",
-        "manifest": "skills/prompt_engineer_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "prompt_engineer_skill",
-        "id": "prompt_engineer_skill"
-      },
-      "description": "Prompt IDE backend skill that manages dev scenarios/skills, technical specs and git operations.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 23
-    },
-    {
-      "kind": "skill",
-      "id": "rasa_nlu_service_skill",
-      "name": "rasa_nlu_service_skill",
-      "version": "0.1.3",
-      "updated_at": "2026-05-19T06:21:00+00:00",
-      "path": "skills/rasa_nlu_service_skill",
-      "manifest": "skills/rasa_nlu_service_skill/skill.yaml",
-      "source": {
-        "path": "skills/rasa_nlu_service_skill",
-        "manifest": "skills/rasa_nlu_service_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "rasa_nlu_service_skill",
-        "id": "rasa_nlu_service_skill"
-      },
-      "description": "Local Rasa NLU-only service for AdaOS intent detection"
-    },
-    {
-      "kind": "skill",
-      "id": "root_mgmnt",
-      "name": "root_mgmnt",
-      "version": "0.4.1",
-      "updated_at": "2026-05-17T09:21:21+00:00",
-      "path": "skills/root_mgmnt",
-      "manifest": "skills/root_mgmnt/skill.yaml",
-      "source": {
-        "path": "skills/root_mgmnt",
-        "manifest": "skills/root_mgmnt/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "root_mgmnt",
-        "id": "root_mgmnt"
-      },
-      "description": "Private root operator skill for LLM policy, fleet activity, and subnet lifecycle hygiene.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 18
-    },
-    {
-      "kind": "skill",
-      "id": "service_doctor_skill",
-      "name": "service_doctor_skill",
-      "version": "0.0.1",
-      "updated_at": "2026-05-16T12:43:53+00:00",
-      "path": "skills/service_doctor_skill",
-      "manifest": "skills/service_doctor_skill/skill.yaml",
-      "source": {
-        "path": "skills/service_doctor_skill",
-        "manifest": "skills/service_doctor_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "service_doctor_skill",
-        "id": "service_doctor_skill"
-      },
-      "description": "Consumes skill.service.doctor.request and emits a stub doctor report (no LLM yet).",
-      "runtime_python": "3.11"
-    },
-    {
-      "kind": "skill",
-      "id": "subnet_env",
-      "name": "subnet_env",
-      "version": "0.8.1",
-      "updated_at": "2026-05-12T03:49:07+00:00",
-      "path": "skills/subnet_env",
-      "manifest": "skills/subnet_env/skill.yaml",
-      "source": {
-        "path": "skills/subnet_env",
-        "manifest": "skills/subnet_env/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "subnet_env",
-        "id": "subnet_env"
-      },
-      "description": "Local subnet environment operator skill for safe SDK-first web_desktop workflows.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "activation": {
-        "mode": "lazy",
-        "when": {
-          "scenarios_active": [
-            "web_desktop"
-          ],
-          "client_presence": true,
-          "webspace_scope": "active"
-        },
-        "startup_allowed": false,
-        "background_refresh": false
-      },
-      "tools_count": 4
-    },
-    {
-      "kind": "skill",
-      "id": "voice_chat_skill",
-      "name": "voice_chat_skill",
-      "version": "0.5.2",
-      "updated_at": "2026-05-12T10:34:36+00:00",
-      "path": "skills/voice_chat_skill",
-      "manifest": "skills/voice_chat_skill/skill.yaml",
-      "source": {
-        "path": "skills/voice_chat_skill",
-        "manifest": "skills/voice_chat_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "voice_chat_skill",
-        "id": "voice_chat_skill"
-      },
-      "description": "Voice chat bridge for web_desktop (text in -> publish chat + TTS via io.out.*; RouterService projects into Yjs by webspace_id).",
-      "runtime_python": "3.11",
-      "tools_count": 2
-    },
-    {
-      "kind": "skill",
-      "id": "weather_skill",
-      "name": "weather_skill",
-      "version": "2.6.2",
-      "updated_at": "2026-05-18T02:40:41+00:00",
-      "path": "skills/weather_skill",
-      "manifest": "skills/weather_skill/skill.yaml",
-      "source": {
-        "path": "skills/weather_skill",
-        "manifest": "skills/weather_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "weather_skill",
-        "id": "weather_skill"
-      },
-      "description": "Weather skill with Open-Meteo current conditions, forecast, browser location support and declarative UI actions.",
-      "runtime_python": "3.11",
-      "tools_count": 2
-    },
-    {
-      "kind": "skill",
-      "id": "web_desktop_skill",
-      "name": "web_desktop_skill",
-      "version": "0.2.1",
-      "updated_at": "2026-05-12T03:49:11+00:00",
-      "path": "skills/web_desktop_skill",
-      "manifest": "skills/web_desktop_skill/skill.yaml",
-      "source": {
-        "path": "skills/web_desktop_skill",
-        "manifest": "skills/web_desktop_skill/skill.yaml"
-      },
-      "install": {
-        "kind": "skill",
-        "name": "web_desktop_skill",
-        "id": "web_desktop_skill"
-      },
-      "description": "Desktop shell skill that handles icon/widget installation via the web desktop SDK.",
-      "entry": "handlers/main.py",
-      "runtime_python": "3.11",
-      "tools_count": 0
-    }
-  ],
-  "scenarios": [
-    {
-      "kind": "scenario",
-      "id": "infrascope",
-      "name": "infrascope",
-      "version": "0.10.2",
-      "updated_at": "2026-05-12T05:02:28+00:00",
-      "path": "scenarios/infrascope",
-      "manifest": "scenarios/infrascope/scenario.yaml",
-      "source": {
-        "path": "scenarios/infrascope",
-        "manifest": "scenarios/infrascope/scenario.yaml"
-      },
-      "install": {
-        "kind": "scenario",
-        "name": "infrascope",
-        "id": "infrascope"
-      },
-      "description": "Operator control-plane scenario for overview, inventory, and in-context object inspection.",
-      "skills": {
-        "required": [
-          "infrascope_skill"
-        ]
-      }
-    },
-    {
-      "kind": "scenario",
-      "id": "new_face_vision_scenario",
-      "name": "new_face_vision",
-      "version": "0.2.1",
-      "updated_at": "2026-05-16T14:32:19+00:00",
-      "path": "scenarios/new_face_vision",
-      "manifest": "scenarios/new_face_vision/scenario.yaml",
-      "source": {
-        "path": "scenarios/new_face_vision",
-        "manifest": "scenarios/new_face_vision/scenario.yaml"
-      },
-      "install": {
-        "kind": "scenario",
-        "name": "new_face_vision",
-        "id": "new_face_vision_scenario"
-      },
-      "description": "Desktop scenario for frame analysis through new_face_vision_skill.",
-      "manifest_id": "new_face_vision_scenario",
-      "skills": {
-        "required": [
-          "new_face_vision_skill"
-        ]
-      }
-    },
-    {
-      "kind": "scenario",
-      "id": "prompt_engineer_scenario",
-      "name": "prompt_engineer_scenario",
-      "version": "0.3.1",
-      "updated_at": "2026-05-12T03:49:28+00:00",
-      "path": "scenarios/prompt_engineer_scenario",
-      "manifest": "scenarios/prompt_engineer_scenario/scenario.yaml",
-      "source": {
-        "path": "scenarios/prompt_engineer_scenario",
-        "manifest": "scenarios/prompt_engineer_scenario/scenario.yaml"
-      },
-      "install": {
-        "kind": "scenario",
-        "name": "prompt_engineer_scenario",
-        "id": "prompt_engineer_scenario"
-      },
-      "description": "Prompt engineering IDE workspace for dev skills and scenarios.",
-      "skills": {
-        "required": [
-          "prompt_engineer_skill"
-        ]
-      }
-    },
-    {
-      "kind": "scenario",
-      "id": "taiga_ui_demo_scenario",
-      "name": "taiga_ui_demo_scenario",
-      "version": "0.10.1",
-      "updated_at": "2026-05-12T03:49:29+00:00",
-      "path": "scenarios/taiga_ui_demo_scenario",
-      "manifest": "scenarios/taiga_ui_demo_scenario/scenario.yaml",
-      "source": {
-        "path": "scenarios/taiga_ui_demo_scenario",
-        "manifest": "scenarios/taiga_ui_demo_scenario/scenario.yaml"
-      },
-      "install": {
-        "kind": "scenario",
-        "name": "taiga_ui_demo_scenario",
-        "id": "taiga_ui_demo_scenario"
-      },
-      "description": "Desktop demo scenario for the first semantic Web UI control task with a table, chart payload, and live event stream.",
-      "skills": {
-        "required": [
-          "web_desktop_skill",
-          "demo_metrics_skill"
-        ]
-      }
-    },
-    {
-      "kind": "scenario",
-      "id": "web_desktop",
-      "name": "web_desktop",
-      "version": "0.3.1",
-      "updated_at": "2026-05-12T03:49:31+00:00",
-      "path": "scenarios/web_desktop",
-      "manifest": "scenarios/web_desktop/scenario.yaml",
-      "source": {
-        "path": "scenarios/web_desktop",
-        "manifest": "scenarios/web_desktop/scenario.yaml"
-      },
-      "install": {
-        "kind": "scenario",
-        "name": "web_desktop",
-        "id": "web_desktop"
-      },
-      "description": "Desktop shell scenario that defines the main UI layout, registry and base catalog.",
-      "skills": {
-        "required": [
-          "web_desktop_skill",
-          "greet_on_boot_skill",
-          "pair_new_device_skill",
-          "voice_chat_skill"
-        ]
-      }
-    }
-  ]
+    "version":  1,
+    "updated_at":  "2026-05-19T17:49:37+00:00",
+    "skills":  [
+                   {
+                       "kind":  "skill",
+                       "id":  "adaos_connect",
+                       "name":  "adaos_connect",
+                       "version":  "0.16.1",
+                       "updated_at":  "2026-05-12T03:48:51+00:00",
+                       "path":  "skills/adaos_connect",
+                       "manifest":  "skills/adaos_connect/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/adaos_connect",
+                                      "manifest":  "skills/adaos_connect/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "adaos_connect",
+                                       "id":  "adaos_connect"
+                                   },
+                       "description":  "Network expansion assistant for browser, Telegram, and node join flows via YJS-driven modal UI.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  1
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "browsers_skill",
+                       "name":  "browsers_skill",
+                       "version":  "0.14.7",
+                       "updated_at":  "2026-05-17T09:23:30+00:00",
+                       "path":  "skills/browsers_skill",
+                       "manifest":  "skills/browsers_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/browsers_skill",
+                                      "manifest":  "skills/browsers_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "browsers_skill",
+                                       "id":  "browsers_skill"
+                                   },
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  0
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "demo_metrics_skill",
+                       "name":  "demo_metrics_skill",
+                       "version":  "0.11.1",
+                       "updated_at":  "2026-05-12T03:48:57+00:00",
+                       "path":  "skills/demo_metrics_skill",
+                       "manifest":  "skills/demo_metrics_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/demo_metrics_skill",
+                                      "manifest":  "skills/demo_metrics_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "demo_metrics_skill",
+                                       "id":  "demo_metrics_skill"
+                                   },
+                       "description":  "Neutral demo skill for semantic Web UI migration with a metrics table, chart payload, and live event stream.",
+                       "runtime_python":  "3.11",
+                       "tools_count":  3
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "greet_on_boot_skill",
+                       "name":  "greet_on_boot_skill",
+                       "version":  "0.2.0",
+                       "updated_at":  "2026-04-07T19:49:12+00:00",
+                       "path":  "skills/greet_on_boot_skill",
+                       "manifest":  "skills/greet_on_boot_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/greet_on_boot_skill",
+                                      "manifest":  "skills/greet_on_boot_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "greet_on_boot_skill",
+                                       "id":  "greet_on_boot_skill"
+                                   },
+                       "description":  "System greeting and infrastructure health-check skill used by the greet_on_boot scenario.",
+                       "runtime_python":  "3.11",
+                       "tools_count":  2
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "infra_access_skill",
+                       "name":  "infra_access_skill",
+                       "version":  "0.21.2",
+                       "updated_at":  "2026-05-13T16:30:11+00:00",
+                       "path":  "skills/infra_access_skill",
+                       "manifest":  "skills/infra_access_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/infra_access_skill",
+                                      "manifest":  "skills/infra_access_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "infra_access_skill",
+                                       "id":  "infra_access_skill"
+                                   },
+                       "description":  "Skill-mediated operational surface for managed infra access, observability, and Root MCP token workflows.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "activation":  {
+                                          "mode":  "lazy",
+                                          "when":  {
+                                                       "scenarios_active":  [
+                                                                                "web_desktop"
+                                                                            ],
+                                                       "client_presence":  true,
+                                                       "webspace_scope":  "active"
+                                                   },
+                                          "startup_allowed":  true,
+                                          "background_refresh":  false
+                                      },
+                       "tools_count":  3
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "infrascope_skill",
+                       "name":  "infrascope_skill",
+                       "version":  "0.28.3",
+                       "updated_at":  "2026-05-19T05:43:54+00:00",
+                       "path":  "skills/infrascope_skill",
+                       "manifest":  "skills/infrascope_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/infrascope_skill",
+                                      "manifest":  "skills/infrascope_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "infrascope_skill",
+                                       "id":  "infrascope_skill"
+                                   },
+                       "description":  "UI-facing projection skill for the Infrascope operator scenario.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "activation":  {
+                                          "mode":  "lazy",
+                                          "when":  {
+                                                       "scenarios_active":  [
+                                                                                "infrascope"
+                                                                            ],
+                                                       "client_presence":  true,
+                                                       "webspace_scope":  "active"
+                                                   },
+                                          "startup_allowed":  false,
+                                          "background_refresh":  false
+                                      },
+                       "tools_count":  6
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "infrastate_skill",
+                       "name":  "infrastate_skill",
+                       "version":  "0.75.12",
+                       "updated_at":  "2026-05-19T07:14:51+00:00",
+                       "path":  "skills/infrastate_skill",
+                       "manifest":  "skills/infrastate_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/infrastate_skill",
+                                      "manifest":  "skills/infrastate_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "infrastate_skill",
+                                       "id":  "infrastate_skill"
+                                   },
+                       "description":  "Локальный обзор состояния ядра, graceful update, A/B слотов и последнего результата обновления.",
+                       "runtime_python":  "3.11",
+                       "activation":  {
+                                          "mode":  "lazy",
+                                          "when":  {
+                                                       "scenarios_active":  [
+                                                                                "web_desktop"
+                                                                            ],
+                                                       "client_presence":  true,
+                                                       "webspace_scope":  "active"
+                                                   },
+                                          "startup_allowed":  false,
+                                          "background_refresh":  false
+                                      },
+                       "tools_count":  3
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "media_indexer_skill",
+                       "name":  "media_indexer_skill",
+                       "version":  "0.1.0",
+                       "updated_at":  "2026-05-19T17:49:37+00:00",
+                       "path":  "skills/media_indexer_skill",
+                       "manifest":  "skills/media_indexer_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/media_indexer_skill",
+                                      "manifest":  "skills/media_indexer_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "media_indexer_skill",
+                                       "id":  "media_indexer_skill"
+                                   },
+                       "description":  "Semantic indexing and multimodal search for local media files (video, audio, images) using NER, FAISS and CLIP.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  2
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "mediaserver",
+                       "name":  "mediaserver",
+                       "version":  "0.8.1",
+                       "updated_at":  "2026-05-12T03:49:00+00:00",
+                       "path":  "skills/mediaserver",
+                       "manifest":  "skills/mediaserver/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/mediaserver",
+                                      "manifest":  "skills/mediaserver/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "mediaserver",
+                                       "id":  "mediaserver"
+                                   },
+                       "description":  "Local MVP media debugging skill for upload/playback diagnostics and media-channel readiness checks.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  2
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "new_face_vision_skill",
+                       "name":  "new_face_vision_skill",
+                       "version":  "0.2.1",
+                       "updated_at":  "2026-05-16T14:31:59+00:00",
+                       "path":  "skills/new_face_vision_skill",
+                       "manifest":  "skills/new_face_vision_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/new_face_vision_skill",
+                                      "manifest":  "skills/new_face_vision_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "new_face_vision_skill",
+                                       "id":  "new_face_vision_skill"
+                                   },
+                       "description":  "Анализ дефектов камней на видео с помощью нейросети (сегментация DeepLabV3)",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  11
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "pair_new_device_skill",
+                       "name":  "pair_new_device_skill",
+                       "version":  "0.1.0",
+                       "updated_at":  "2026-05-06T07:55:12+00:00",
+                       "path":  "skills/pair_new_device_skill",
+                       "manifest":  "skills/pair_new_device_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/pair_new_device_skill",
+                                      "manifest":  "skills/pair_new_device_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "pair_new_device_skill",
+                                       "id":  "pair_new_device_skill"
+                                   },
+                       "description":  "Hub-side pairing skill. Generates short-lived pairing IDs and stores payloads needed to provision new browsers (TV/Smart displays).",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  1
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "prompt_engineer_skill",
+                       "name":  "prompt_engineer_skill",
+                       "version":  "0.6.1",
+                       "updated_at":  "2026-05-12T03:49:07+00:00",
+                       "path":  "skills/prompt_engineer_skill",
+                       "manifest":  "skills/prompt_engineer_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/prompt_engineer_skill",
+                                      "manifest":  "skills/prompt_engineer_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "prompt_engineer_skill",
+                                       "id":  "prompt_engineer_skill"
+                                   },
+                       "description":  "Prompt IDE backend skill that manages dev scenarios/skills, technical specs and git operations.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  23
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "rasa_nlu_service_skill",
+                       "name":  "rasa_nlu_service_skill",
+                       "version":  "0.1.3",
+                       "updated_at":  "2026-05-19T06:21:00+00:00",
+                       "path":  "skills/rasa_nlu_service_skill",
+                       "manifest":  "skills/rasa_nlu_service_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/rasa_nlu_service_skill",
+                                      "manifest":  "skills/rasa_nlu_service_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "rasa_nlu_service_skill",
+                                       "id":  "rasa_nlu_service_skill"
+                                   },
+                       "description":  "Local Rasa NLU-only service for AdaOS intent detection"
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "root_mgmnt",
+                       "name":  "root_mgmnt",
+                       "version":  "0.4.1",
+                       "updated_at":  "2026-05-17T09:21:21+00:00",
+                       "path":  "skills/root_mgmnt",
+                       "manifest":  "skills/root_mgmnt/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/root_mgmnt",
+                                      "manifest":  "skills/root_mgmnt/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "root_mgmnt",
+                                       "id":  "root_mgmnt"
+                                   },
+                       "description":  "Private root operator skill for LLM policy, fleet activity, and subnet lifecycle hygiene.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  18
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "service_doctor_skill",
+                       "name":  "service_doctor_skill",
+                       "version":  "0.0.1",
+                       "updated_at":  "2026-05-16T12:43:53+00:00",
+                       "path":  "skills/service_doctor_skill",
+                       "manifest":  "skills/service_doctor_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/service_doctor_skill",
+                                      "manifest":  "skills/service_doctor_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "service_doctor_skill",
+                                       "id":  "service_doctor_skill"
+                                   },
+                       "description":  "Consumes skill.service.doctor.request and emits a stub doctor report (no LLM yet).",
+                       "runtime_python":  "3.11"
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "subnet_env",
+                       "name":  "subnet_env",
+                       "version":  "0.8.1",
+                       "updated_at":  "2026-05-12T03:49:07+00:00",
+                       "path":  "skills/subnet_env",
+                       "manifest":  "skills/subnet_env/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/subnet_env",
+                                      "manifest":  "skills/subnet_env/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "subnet_env",
+                                       "id":  "subnet_env"
+                                   },
+                       "description":  "Local subnet environment operator skill for safe SDK-first web_desktop workflows.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "activation":  {
+                                          "mode":  "lazy",
+                                          "when":  {
+                                                       "scenarios_active":  [
+                                                                                "web_desktop"
+                                                                            ],
+                                                       "client_presence":  true,
+                                                       "webspace_scope":  "active"
+                                                   },
+                                          "startup_allowed":  false,
+                                          "background_refresh":  false
+                                      },
+                       "tools_count":  4
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "voice_chat_skill",
+                       "name":  "voice_chat_skill",
+                       "version":  "0.5.2",
+                       "updated_at":  "2026-05-12T10:34:36+00:00",
+                       "path":  "skills/voice_chat_skill",
+                       "manifest":  "skills/voice_chat_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/voice_chat_skill",
+                                      "manifest":  "skills/voice_chat_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "voice_chat_skill",
+                                       "id":  "voice_chat_skill"
+                                   },
+                       "description":  "Voice chat bridge for web_desktop (text in -\u003e publish chat + TTS via io.out.*; RouterService projects into Yjs by webspace_id).",
+                       "runtime_python":  "3.11",
+                       "tools_count":  2
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "weather_skill",
+                       "name":  "weather_skill",
+                       "version":  "2.6.2",
+                       "updated_at":  "2026-05-18T02:40:41+00:00",
+                       "path":  "skills/weather_skill",
+                       "manifest":  "skills/weather_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/weather_skill",
+                                      "manifest":  "skills/weather_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "weather_skill",
+                                       "id":  "weather_skill"
+                                   },
+                       "description":  "Weather skill with Open-Meteo current conditions, forecast, browser location support and declarative UI actions.",
+                       "runtime_python":  "3.11",
+                       "tools_count":  2
+                   },
+                   {
+                       "kind":  "skill",
+                       "id":  "web_desktop_skill",
+                       "name":  "web_desktop_skill",
+                       "version":  "0.2.1",
+                       "updated_at":  "2026-05-12T03:49:11+00:00",
+                       "path":  "skills/web_desktop_skill",
+                       "manifest":  "skills/web_desktop_skill/skill.yaml",
+                       "source":  {
+                                      "path":  "skills/web_desktop_skill",
+                                      "manifest":  "skills/web_desktop_skill/skill.yaml"
+                                  },
+                       "install":  {
+                                       "kind":  "skill",
+                                       "name":  "web_desktop_skill",
+                                       "id":  "web_desktop_skill"
+                                   },
+                       "description":  "Desktop shell skill that handles icon/widget installation via the web desktop SDK.",
+                       "entry":  "handlers/main.py",
+                       "runtime_python":  "3.11",
+                       "tools_count":  0
+                   }
+               ],
+    "scenarios":  [
+                      {
+                          "kind":  "scenario",
+                          "id":  "infrascope",
+                          "name":  "infrascope",
+                          "version":  "0.10.2",
+                          "updated_at":  "2026-05-12T05:02:28+00:00",
+                          "path":  "scenarios/infrascope",
+                          "manifest":  "scenarios/infrascope/scenario.yaml",
+                          "source":  {
+                                         "path":  "scenarios/infrascope",
+                                         "manifest":  "scenarios/infrascope/scenario.yaml"
+                                     },
+                          "install":  {
+                                          "kind":  "scenario",
+                                          "name":  "infrascope",
+                                          "id":  "infrascope"
+                                      },
+                          "description":  "Operator control-plane scenario for overview, inventory, and in-context object inspection.",
+                          "skills":  {
+                                         "required":  [
+                                                          "infrascope_skill"
+                                                      ]
+                                     }
+                      },
+                      {
+                          "kind":  "scenario",
+                          "id":  "new_face_vision_scenario",
+                          "name":  "new_face_vision",
+                          "version":  "0.2.1",
+                          "updated_at":  "2026-05-16T14:32:19+00:00",
+                          "path":  "scenarios/new_face_vision",
+                          "manifest":  "scenarios/new_face_vision/scenario.yaml",
+                          "source":  {
+                                         "path":  "scenarios/new_face_vision",
+                                         "manifest":  "scenarios/new_face_vision/scenario.yaml"
+                                     },
+                          "install":  {
+                                          "kind":  "scenario",
+                                          "name":  "new_face_vision",
+                                          "id":  "new_face_vision_scenario"
+                                      },
+                          "description":  "Desktop scenario for frame analysis through new_face_vision_skill.",
+                          "manifest_id":  "new_face_vision_scenario",
+                          "skills":  {
+                                         "required":  [
+                                                          "new_face_vision_skill"
+                                                      ]
+                                     }
+                      },
+                      {
+                          "kind":  "scenario",
+                          "id":  "prompt_engineer_scenario",
+                          "name":  "prompt_engineer_scenario",
+                          "version":  "0.3.1",
+                          "updated_at":  "2026-05-12T03:49:28+00:00",
+                          "path":  "scenarios/prompt_engineer_scenario",
+                          "manifest":  "scenarios/prompt_engineer_scenario/scenario.yaml",
+                          "source":  {
+                                         "path":  "scenarios/prompt_engineer_scenario",
+                                         "manifest":  "scenarios/prompt_engineer_scenario/scenario.yaml"
+                                     },
+                          "install":  {
+                                          "kind":  "scenario",
+                                          "name":  "prompt_engineer_scenario",
+                                          "id":  "prompt_engineer_scenario"
+                                      },
+                          "description":  "Prompt engineering IDE workspace for dev skills and scenarios.",
+                          "skills":  {
+                                         "required":  [
+                                                          "prompt_engineer_skill"
+                                                      ]
+                                     }
+                      },
+                      {
+                          "kind":  "scenario",
+                          "id":  "taiga_ui_demo_scenario",
+                          "name":  "taiga_ui_demo_scenario",
+                          "version":  "0.10.1",
+                          "updated_at":  "2026-05-12T03:49:29+00:00",
+                          "path":  "scenarios/taiga_ui_demo_scenario",
+                          "manifest":  "scenarios/taiga_ui_demo_scenario/scenario.yaml",
+                          "source":  {
+                                         "path":  "scenarios/taiga_ui_demo_scenario",
+                                         "manifest":  "scenarios/taiga_ui_demo_scenario/scenario.yaml"
+                                     },
+                          "install":  {
+                                          "kind":  "scenario",
+                                          "name":  "taiga_ui_demo_scenario",
+                                          "id":  "taiga_ui_demo_scenario"
+                                      },
+                          "description":  "Desktop demo scenario for the first semantic Web UI control task with a table, chart payload, and live event stream.",
+                          "skills":  {
+                                         "required":  [
+                                                          "web_desktop_skill",
+                                                          "demo_metrics_skill"
+                                                      ]
+                                     }
+                      },
+                      {
+                          "kind":  "scenario",
+                          "id":  "web_desktop",
+                          "name":  "web_desktop",
+                          "version":  "0.3.1",
+                          "updated_at":  "2026-05-12T03:49:31+00:00",
+                          "path":  "scenarios/web_desktop",
+                          "manifest":  "scenarios/web_desktop/scenario.yaml",
+                          "source":  {
+                                         "path":  "scenarios/web_desktop",
+                                         "manifest":  "scenarios/web_desktop/scenario.yaml"
+                                     },
+                          "install":  {
+                                          "kind":  "scenario",
+                                          "name":  "web_desktop",
+                                          "id":  "web_desktop"
+                                      },
+                          "description":  "Desktop shell scenario that defines the main UI layout, registry and base catalog.",
+                          "skills":  {
+                                         "required":  [
+                                                          "web_desktop_skill",
+                                                          "greet_on_boot_skill",
+                                                          "pair_new_device_skill",
+                                                          "voice_chat_skill"
+                                                      ]
+                                     }
+                      }
+                  ]
 }
