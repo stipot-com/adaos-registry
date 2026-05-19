@@ -172,6 +172,7 @@ _projection_diag = {
     "snapshot_request_total": 0,
     "snapshot_request_forced_total": 0,
     "snapshot_request_coalesced_total": 0,
+    "tool_project_admitted_under_pressure_total": 0,
 }
 _PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="infrastate-projection")
 
@@ -1372,6 +1373,7 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "snapshot_request_total": int(_projection_diag.get("snapshot_request_total") or 0),
         "snapshot_request_forced_total": int(_projection_diag.get("snapshot_request_forced_total") or 0),
         "snapshot_request_coalesced_total": int(_projection_diag.get("snapshot_request_coalesced_total") or 0),
+        "tool_project_admitted_under_pressure_total": int(_projection_diag.get("tool_project_admitted_under_pressure_total") or 0),
         "tool_project_suppressed_total": int(_projection_diag.get("tool_project_suppressed_total") or 0),
         "tool_project_current_skip_total": int(_projection_diag.get("tool_project_current_skip_total") or 0),
         "pressure_cache_ttl_s": float(_projection_diag.get("pressure_cache_ttl_s") or 0.0),
@@ -1434,13 +1436,17 @@ def _should_project_snapshot_result(webspace_id: str | None, *, reason: str) -> 
         return True
     policy_state = str(policy.get("policy_state") or "").strip().lower()
     observed_state = str(policy.get("observed_state") or "").strip().lower()
-    if policy_state in {"block", "throttle", "warn"} or observed_state in {"high", "critical"}:
+    if policy_state == "block":
         _projection_diag["tool_project_suppressed_total"] = int(_projection_diag.get("tool_project_suppressed_total") or 0) + 1
         _projection_diag["last_tool_project_suppressed_reason"] = reason
         _projection_diag["last_tool_project_suppressed_policy_state"] = policy_state
         _projection_diag["last_tool_project_suppressed_observed_state"] = observed_state
         _projection_diag["last_tool_project_suppressed_at"] = time.time()
         return False
+    if policy_state in {"throttle", "warn"} or observed_state in {"high", "critical"}:
+        _projection_diag["tool_project_admitted_under_pressure_total"] = int(
+            _projection_diag.get("tool_project_admitted_under_pressure_total") or 0
+        ) + 1
     return True
 
 
