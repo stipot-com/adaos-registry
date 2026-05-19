@@ -174,6 +174,11 @@ def _parse(payload: dict[str, Any]) -> dict[str, Any]:
 class Handler(BaseHTTPRequestHandler):
     server_version = "AdaOSRasaNLU/0.1"
 
+    def log_message(self, format: str, *args: Any) -> None:
+        if self.path == "/health":
+            return
+        super().log_message(format, *args)
+
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/health":
             _json_response(
