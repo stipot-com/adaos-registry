@@ -1,5 +1,5 @@
 name: infrascope_skill
-version: 0.28.1
+version: 0.28.2
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -64,6 +64,123 @@ events:
   - core.update.status
   - hub.core_update.status
   - node.names.changed
+data_routes:
+- surface: scenario:infrascope.overview_summary
+  route: yjs
+  owner: skill:infrascope_skill
+  projection_slot: infrascope.snapshot
+  path: data/infrascope/summary
+  first_paint: compact summary from the last Yjs snapshot
+  recovery: Yjs replay restores the last compact summary; refresh rebuilds it when
+    the scenario is active.
+  update_source:
+  - infrascope.refresh
+  - browser.session.changed
+  - core.update.status
+  - subnet.member.snapshot.changed
+  budget:
+    max_payload_bytes: 4096
+    max_publish_hz: 0.5
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Overview summary keeps the last compact state and points to stream
+      details.
+    log: service.infrascope_skill.runtime.log
+    quarantine: true
+    metric: yjs_owner_guard.infrascope.snapshot
+- surface: scenario:infrascope.overview_health
+  route: stream
+  owner: skill:infrascope_skill
+  receiver: infrascope.overview.health_strip
+  first_paint: empty health strip until snapshot-on-subscribe publishes compact rows
+  recovery: Stream snapshot request republishes the latest compact health rows.
+  update_source:
+  - webio.stream.snapshot.requested
+  - browser.session.changed
+  - subnet.member.snapshot.changed
+  budget:
+    max_payload_bytes: 16384
+    max_publish_hz: 1
+    coalesce_ms: 500
+    max_items: 16
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Keep last compact health rows; object details remain behind inspector
+      streams.
+    log: service.infrascope_skill.runtime.log
+    quarantine: false
+    metric: webio_stream_guard.infrascope.overview.health_strip
+- surface: scenario:infrascope.overview_incidents
+  route: stream
+  owner: skill:infrascope_skill
+  receiver: infrascope.overview.active_incidents
+  first_paint: empty incident list until snapshot-on-subscribe publishes compact rows
+  recovery: Stream snapshot request republishes the latest compact incident rows.
+  update_source:
+  - webio.stream.snapshot.requested
+  - operations.
+  - core.update.status
+  - subnet.member.snapshot.changed
+  budget:
+    max_payload_bytes: 32768
+    max_publish_hz: 1
+    coalesce_ms: 500
+    max_items: 128
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Keep last compact incident rows and open inspector details on
+      demand.
+    log: service.infrascope_skill.runtime.log
+    quarantine: false
+    metric: webio_stream_guard.infrascope.overview.active_incidents
+- surface: scenario:infrascope.inventory
+  route: stream
+  owner: skill:infrascope_skill
+  receiver: infrascope.inventory.*
+  first_paint: empty inventory tables until the active tab subscribes
+  recovery: Stream snapshot request republishes only the subscribed inventory kind.
+  update_source:
+  - webio.stream.snapshot.requested
+  - skill.installed
+  - skill.uninstalled
+  - scenario.installed
+  - scenario.removed
+  - capacity.changed
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 0.5
+    coalesce_ms: 1000
+    max_items: 256
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Keep last compact inventory rows; full object state stays behind
+      inspector streams.
+    log: service.infrascope_skill.runtime.log
+    quarantine: false
+    metric: webio_stream_guard.infrascope.inventory
+- surface: scenario:infrascope.inspector
+  route: stream
+  owner: skill:infrascope_skill
+  receiver: infrascope.inspector.*
+  first_paint: empty inspector until a selected object subscribes
+  recovery: Stream snapshot request rebuilds the selected inspector only.
+  update_source:
+  - webio.stream.snapshot.requested
+  - desktop.scenario.set
+  - subnet.member.snapshot.changed
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 1
+    coalesce_ms: 500
+    max_items: 1
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Inspector shows stale selected-object details instead of blocking
+      Overview.
+    log: service.infrascope_skill.runtime.log
+    quarantine: false
+    metric: webio_stream_guard.infrascope.inspector
 data_projections:
 - scope: subnet
   slot: infrascope.snapshot
@@ -187,5 +304,5 @@ tools:
     type: object
 exports: {}
 prototype: default
-updated_at: '2026-05-12T05:02:28+00:00'
+updated_at: '2026-05-19T05:35:18+00:00'
 

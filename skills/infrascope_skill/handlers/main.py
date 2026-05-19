@@ -204,6 +204,16 @@ def _projection_object_index(projection: Any) -> dict[str, CanonicalObject]:
     return out
 
 
+def _details_ref_for_object(object_id: str) -> dict[str, str]:
+    token = str(object_id or "").strip()
+    if not token:
+        return {}
+    return {
+        "kind": "stream",
+        "receiver": _inspector_receiver(token),
+    }
+
+
 def _decorate_row(
     raw: Any,
     *,
@@ -218,11 +228,14 @@ def _decorate_row(
     subtitle = str(item.get("subtitle") or item.get("summary") or "").strip()
     kind = str(item.get("kind") or (getattr(obj, "kind", None) if obj else "") or "").strip()
     status = _status_token(item.get("status") or (getattr(obj, "status", None) if obj else None))
-    details = item.get("details")
-    if details is None and obj is not None:
-        details = obj.to_dict()
+    details_ref = coerce_mapping(item.get("details_ref")) or _details_ref_for_object(object_id)
+    base = {
+        key: value
+        for key, value in item.items()
+        if key not in {"details", "object", "raw", "payload"}
+    }
     return {
-        **item,
+        **base,
         "id": str(item.get("id") or object_id or title),
         "object_id": object_id or (str(getattr(obj, "id", "") or "").strip() if obj else ""),
         "object_title": str(item.get("object_title") or title),
@@ -231,7 +244,7 @@ def _decorate_row(
         "kind": kind,
         "status": status,
         "icon": str(item.get("icon") or fallback_icon or _icon_for_kind(kind)),
-        "details": details if details is not None else item,
+        "details_ref": details_ref,
     }
 
 
@@ -255,10 +268,7 @@ def _incident_rows(items: list[Any], *, object_index: dict[str, CanonicalObject]
                 "severity": severity,
                 "status": status,
                 "icon": _icon_for_kind(getattr(obj, "kind", None) if obj else ""),
-                "details": {
-                    "incident": item,
-                    "object": obj.to_dict() if obj is not None else {},
-                },
+                "details_ref": coerce_mapping(item.get("details_ref")) or _details_ref_for_object(object_id),
             }
         )
     return out
