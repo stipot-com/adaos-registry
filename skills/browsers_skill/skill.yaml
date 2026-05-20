@@ -1,5 +1,5 @@
 name: browsers_skill
-version: 0.14.7
+version: 0.15.1
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -12,27 +12,107 @@ data_projections:
   targets:
   - backend: yjs
     path: data/browsers/summary
-- scope: subnet
-  slot: browsers.devices
-  targets:
-  - backend: yjs
-    path: data/browsers/devices
-- scope: subnet
-  slot: browsers.clients
-  targets:
-  - backend: yjs
-    path: data/browsers/clients
-- scope: subnet
-  slot: browsers.current_summary
-  targets:
-  - backend: yjs
-    path: data/browsers/current_summary
-- scope: subnet
-  slot: browsers.current_name
-  targets:
-  - backend: yjs
-    path: data/browsers/current_name
+data_routes:
+- surface: modal:browsers_summary
+  route: yjs
+  owner: skill:browsers_skill
+  projection_slot: browsers.summary
+  path: data/browsers/summary
+  first_paint: compact browser counts from the last Yjs snapshot
+  recovery: Yjs replay restores the compact count; refresh rebuilds it.
+  update_source:
+  - browser.session.changed
+  - device.registered
+  - desktop.webspace.refresh
+  budget:
+    max_payload_bytes: 2048
+    max_publish_hz: 0.5
+    coalesce_ms: 1000
+    snapshot_policy: none
+  guard_visibility:
+    degraded_state: Summary keeps the last compact count and points to stream details.
+    log: service.browsers_skill.runtime.log
+    quarantine: true
+    metric: yjs_owner_guard.browsers.summary
+- surface: modal:browsers_devices
+  route: stream
+  owner: skill:browsers_skill
+  receiver: browsers.devices
+  first_paint: empty devices list until snapshot-on-subscribe publishes rows
+  recovery: Stream snapshot request republishes current browser devices.
+  update_source:
+  - webio.stream.snapshot.requested
+  - browser.session.changed
+  - device.registered
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 1
+    max_items: 256
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Keep last browser devices rows and surface stream guard pressure.
+    log: service.browsers_skill.runtime.log
+    quarantine: false
+    metric: webio_stream_guard.browsers.devices
+- surface: modal:browsers_clients
+  route: stream
+  owner: skill:browsers_skill
+  receiver: browsers.clients
+  first_paint: empty clients list until snapshot-on-subscribe publishes rows
+  recovery: Stream snapshot request republishes current temporary clients.
+  update_source:
+  - webio.stream.snapshot.requested
+  - browser.session.changed
+  - device.registered
+  budget:
+    max_payload_bytes: 65536
+    max_publish_hz: 1
+    max_items: 256
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Keep last browser client rows and surface stream guard pressure.
+    log: service.browsers_skill.runtime.log
+    quarantine: false
+    metric: webio_stream_guard.browsers.clients
+- surface: modal:browser_current
+  route: stream
+  owner: skill:browsers_skill
+  receiver: browsers.current_summary
+  first_paint: empty selected-browser summary until subscribe snapshot
+  recovery: Stream snapshot request republishes selected browser summary.
+  update_source:
+  - webio.stream.snapshot.requested
+  - browsers_skill.select_browser
+  budget:
+    max_payload_bytes: 8192
+    max_publish_hz: 1
+    max_items: 16
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Keep last selected-browser summary rows.
+    log: service.browsers_skill.runtime.log
+    quarantine: false
+    metric: webio_stream_guard.browsers.current_summary
+- surface: modal:browser_current_name
+  route: stream
+  owner: skill:browsers_skill
+  receiver: browsers.current_name
+  first_paint: empty selected-browser name until subscribe snapshot
+  recovery: Stream snapshot request republishes selected browser name.
+  update_source:
+  - webio.stream.snapshot.requested
+  - browsers_skill.select_browser
+  budget:
+    max_payload_bytes: 2048
+    max_publish_hz: 1
+    max_items: 1
+    snapshot_policy: on_subscribe
+  guard_visibility:
+    degraded_state: Keep last selected-browser name value.
+    log: service.browsers_skill.runtime.log
+    quarantine: false
+    metric: webio_stream_guard.browsers.current_name
 tools: []
 exports: {}
-updated_at: '2026-05-17T09:23:30+00:00'
+updated_at: '2026-05-20T11:55:28+00:00'
 

@@ -4,26 +4,48 @@
     "receivers": {
       "browsers.summary": {
         "mode": "replace",
-        "transport": "hub"
+        "transport": "hub",
+        "initialState": {
+          "title": "Browsers",
+          "value": 0,
+          "subtitle": "0 devices | 0 clients",
+          "details": "0 online"
+        },
+        "budget": { "maxPayloadBytes": 2048, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 1 },
+        "guardVisibility": { "degradedState": "Keep last compact browser count.", "log": "service.browsers_skill.runtime.log", "quarantine": true, "metric": "yjs_owner_guard.browsers.summary" },
+        "route": { "kind": "yjs", "surface": "modal:browsers_summary", "owner": "skill:browsers_skill", "firstPaint": "last compact Yjs summary", "recovery": "Yjs replay or refresh action", "updateSource": ["browser.session.changed", "device.registered"] }
       },
       "browsers.devices": {
         "mode": "replace",
         "transport": "hub",
-        "initialState": []
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 65536, "maxPublishHz": 1, "maxSnapshotHz": 1, "maxItems": 256 },
+        "guardVisibility": { "degradedState": "Keep last browser device rows and surface stream guard pressure.", "log": "service.browsers_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.browsers.devices" },
+        "route": { "kind": "stream", "surface": "modal:browsers_devices", "owner": "skill:browsers_skill", "firstPaint": "empty browser device list", "recovery": "snapshot requested on stream subscribe", "updateSource": ["webio.stream.snapshot.requested", "browser.session.changed", "device.registered"] }
       },
       "browsers.clients": {
         "mode": "replace",
         "transport": "hub",
-        "initialState": []
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 65536, "maxPublishHz": 1, "maxSnapshotHz": 1, "maxItems": 256 },
+        "guardVisibility": { "degradedState": "Keep last browser client rows and surface stream guard pressure.", "log": "service.browsers_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.browsers.clients" },
+        "route": { "kind": "stream", "surface": "modal:browsers_clients", "owner": "skill:browsers_skill", "firstPaint": "empty browser client list", "recovery": "snapshot requested on stream subscribe", "updateSource": ["webio.stream.snapshot.requested", "browser.session.changed", "device.registered"] }
       },
       "browsers.current_summary": {
         "mode": "replace",
         "transport": "hub",
-        "initialState": []
+        "initialState": [],
+        "budget": { "maxPayloadBytes": 8192, "maxPublishHz": 1, "maxSnapshotHz": 1, "maxItems": 16 },
+        "guardVisibility": { "degradedState": "Keep last selected-browser summary rows.", "log": "service.browsers_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.browsers.current_summary" },
+        "route": { "kind": "stream", "surface": "modal:browser_current", "owner": "skill:browsers_skill", "firstPaint": "empty selected-browser summary", "recovery": "snapshot requested on stream subscribe", "updateSource": ["webio.stream.snapshot.requested", "browsers_skill.select_browser"] }
       },
       "browsers.current_name": {
         "mode": "replace",
-        "transport": "hub"
+        "transport": "hub",
+        "initialState": { "value": "" },
+        "budget": { "maxPayloadBytes": 2048, "maxPublishHz": 1, "maxSnapshotHz": 1, "maxItems": 1 },
+        "guardVisibility": { "degradedState": "Keep last selected-browser name value.", "log": "service.browsers_skill.runtime.log", "quarantine": false, "metric": "webio_stream_guard.browsers.current_name" },
+        "route": { "kind": "stream", "surface": "modal:browser_current_name", "owner": "skill:browsers_skill", "firstPaint": "empty selected-browser name", "recovery": "snapshot requested on stream subscribe", "updateSource": ["webio.stream.snapshot.requested", "browsers_skill.select_browser"] }
       }
     }
   },
@@ -125,8 +147,8 @@
               "area": "main",
               "title": "Devices",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/devices"
+                "kind": "stream",
+                "receiver": "browsers.devices"
               },
               "inputs": {
                 "titleKey": "title",
@@ -168,8 +190,8 @@
               "area": "main",
               "title": "Clients",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/clients"
+                "kind": "stream",
+                "receiver": "browsers.clients"
               },
               "inputs": {
                 "titleKey": "title",
@@ -229,8 +251,8 @@
               "area": "main",
               "title": "Browser",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/current_summary"
+                "kind": "stream",
+                "receiver": "browsers.current_summary"
               },
               "inputs": {
                 "titleKey": "title",
@@ -245,8 +267,8 @@
               "area": "main",
               "title": "Browser name",
               "dataSource": {
-                "kind": "y",
-                "path": "data/browsers/current_name"
+                "kind": "stream",
+                "receiver": "browsers.current_name"
               },
               "inputs": {
                 "bindField": "value",

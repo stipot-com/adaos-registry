@@ -36,24 +36,12 @@ _PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bro
 _PENDING_REFRESH_BY_WS: dict[str, Any] = {}
 REQUIRES_DATA_PROJECTIONS = [
     "browsers.summary",
-    "browsers.devices",
-    "browsers.clients",
-    "browsers.current_summary",
-    "browsers.current_name",
 ]
 _DATA_PROJECTION_ENTRIES = [
     {"scope": "subnet", "slot": "browsers.summary", "targets": [{"backend": "yjs", "path": "data/browsers/summary"}]},
-    {"scope": "subnet", "slot": "browsers.devices", "targets": [{"backend": "yjs", "path": "data/browsers/devices"}]},
-    {"scope": "subnet", "slot": "browsers.clients", "targets": [{"backend": "yjs", "path": "data/browsers/clients"}]},
-    {"scope": "subnet", "slot": "browsers.current_summary", "targets": [{"backend": "yjs", "path": "data/browsers/current_summary"}]},
-    {"scope": "subnet", "slot": "browsers.current_name", "targets": [{"backend": "yjs", "path": "data/browsers/current_name"}]},
 ]
 _PROJECTION_SLOTS = [
     ProjectionSlot("browsers.summary", "data/browsers/summary"),
-    ProjectionSlot("browsers.devices", "data/browsers/devices"),
-    ProjectionSlot("browsers.clients", "data/browsers/clients"),
-    ProjectionSlot("browsers.current_summary", "data/browsers/current_summary"),
-    ProjectionSlot("browsers.current_name", "data/browsers/current_name"),
 ]
 _PROJECTION_SLOT_BY_NAME = {slot.name: slot for slot in _PROJECTION_SLOTS}
 _PROJECTION_RUNTIME = ProjectionRuntime(
@@ -240,7 +228,7 @@ def _ensure_skill_data_projections() -> None:
         from adaos.services.agent_context import get_ctx
 
         ctx = get_ctx()
-        if ctx.projections.resolve("subnet", "browsers.devices"):
+        if ctx.projections.resolve("subnet", "browsers.summary"):
             return
         ctx.projections.load_entries(_DATA_PROJECTION_ENTRIES)
     except Exception:
@@ -376,31 +364,48 @@ def _build_snapshot(target_ws: str | None = None) -> tuple[dict[str, Any], str]:
 async def _publish_snapshot(target_ws: str | None = None, *, fanout: bool = False, force: bool = False) -> dict[str, Any]:
     _ensure_skill_data_projections()
     payload, effective_ws = _build_snapshot(target_ws)
-    available_entries = list(payload["devices"]) + list(payload["clients"])
     for ws in _projection_webspaces(effective_ws, fanout=fanout):
-        current_id = _resolve_current_browser_id(available_entries, ws)
-        ws_current_summary, ws_current_name = _current_browser_payload(current_id)
         await _set_projection_if_changed("browsers.summary", payload["summary"], webspace_id=ws, force=force)
-        await _set_projection_if_changed("browsers.devices", payload["devices"], webspace_id=ws, force=force)
-        await _set_projection_if_changed("browsers.clients", payload["clients"], webspace_id=ws, force=force)
-        await _set_projection_if_changed("browsers.current_summary", ws_current_summary, webspace_id=ws, force=force)
-        await _set_projection_if_changed("browsers.current_name", ws_current_name, webspace_id=ws, force=force)
+        _publish_active_streams_from_snapshot(payload, webspace_id=ws)
     return payload
 
 
 def _build_stream_payload(receiver: str, webspace_id: str | None = None) -> Any | None:
     payload, effective_ws = _build_snapshot(webspace_id)
-    available_entries = list(payload["devices"]) + list(payload["clients"])
-    current_id = _resolve_current_browser_id(available_entries, effective_ws)
+    return _stream_payloads_from_snapshot(payload, webspace_id=effective_ws).get(receiver)
+
+
+def _stream_payloads_from_snapshot(payload: Mapping[str, Any], *, webspace_id: str) -> dict[str, Any]:
+    available_entries = list(payload.get("devices") or []) + list(payload.get("clients") or [])
+    current_id = _resolve_current_browser_id(available_entries, webspace_id)
     current_summary, current_name = _current_browser_payload(current_id)
     data_by_receiver = {
-        "browsers.summary": payload["summary"],
-        "browsers.devices": payload["devices"],
-        "browsers.clients": payload["clients"],
+        "browsers.summary": payload.get("summary") or {},
+        "browsers.devices": list(payload.get("devices") or []),
+        "browsers.clients": list(payload.get("clients") or []),
         "browsers.current_summary": current_summary,
         "browsers.current_name": current_name,
     }
-    return data_by_receiver.get(receiver)
+    return data_by_receiver
+
+
+def _active_stream_receivers(webspace_id: str) -> list[str]:
+    target_ws = str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
+    return [
+        str(entry.get("receiver") or "").strip()
+        for entry in _STREAM_RUNTIME.active_receivers_snapshot()
+        if str(entry.get("webspace_id") or "").strip() == target_ws and str(entry.get("receiver") or "").strip()
+    ]
+
+
+def _publish_active_streams_from_snapshot(payload: Mapping[str, Any], *, webspace_id: str) -> None:
+    data_by_receiver = _stream_payloads_from_snapshot(payload, webspace_id=webspace_id)
+    for receiver in _active_stream_receivers(webspace_id):
+        if receiver not in data_by_receiver:
+            continue
+        result = _STREAM_RUNTIME.publish_snapshot(receiver, data_by_receiver[receiver], webspace_id=webspace_id)
+        if result.error:
+            _LOG.debug("browsers active stream publish failed receiver=%s error=%s", receiver, result.error)
 
 
 def _publish_stream_snapshot(receiver: str, webspace_id: str | None = None) -> None:
