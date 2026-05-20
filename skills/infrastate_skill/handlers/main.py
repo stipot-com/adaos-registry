@@ -41,6 +41,7 @@ from adaos.services.realtime_sidecar import realtime_sidecar_diag_path, realtime
 from adaos.services.reliability import assess_transport_diagnostics, reliability_snapshot
 from adaos.services.runtime_lifecycle import runtime_lifecycle_snapshot
 from adaos.services.runtime_refresh import rebuild_webspace_projection_sync, refresh_skill_runtime
+from adaos.services.status import HotEventBudget
 from adaos.services.capacity import get_local_capacity, install_scenario_in_capacity
 from adaos.services.scenario.webspace_runtime import WebspaceService
 from adaos.services.operations import get_operation_manager, submit_install_operation
@@ -143,6 +144,9 @@ _background_refresh_thread: threading.Thread | None = None
 _background_refresh_pending = False
 _background_refresh_webspace_id: str | None = None
 _background_refresh_reason = ""
+_BROWSER_RUNTIME_REFRESH_BUDGET = HotEventBudget(debounce_ms=1500, window_ms=10000, max_events=2)
+_BROWSER_RUNTIME_TRAILING_REFRESH_BY_WS: dict[str, Any] = {}
+_BROWSER_RUNTIME_TRAILING_REFRESH_LOCK = threading.RLock()
 _marketplace_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 _registry_catalog_cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
 _registry_catalog_meta_cache: dict[tuple[str, str], tuple[float, dict[str, str]]] = {}
@@ -173,6 +177,8 @@ _projection_diag = {
     "snapshot_request_forced_total": 0,
     "snapshot_request_coalesced_total": 0,
     "tool_project_admitted_under_pressure_total": 0,
+    "browser_runtime_refresh_suppressed_total": 0,
+    "browser_runtime_refresh_trailing_total": 0,
 }
 _PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="infrastate-projection")
 
@@ -1376,6 +1382,8 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "tool_project_admitted_under_pressure_total": int(_projection_diag.get("tool_project_admitted_under_pressure_total") or 0),
         "tool_project_suppressed_total": int(_projection_diag.get("tool_project_suppressed_total") or 0),
         "tool_project_current_skip_total": int(_projection_diag.get("tool_project_current_skip_total") or 0),
+        "browser_runtime_refresh_suppressed_total": int(_projection_diag.get("browser_runtime_refresh_suppressed_total") or 0),
+        "browser_runtime_refresh_trailing_total": int(_projection_diag.get("browser_runtime_refresh_trailing_total") or 0),
         "pressure_cache_ttl_s": float(_projection_diag.get("pressure_cache_ttl_s") or 0.0),
         "last_policy_state": str(_projection_diag.get("last_policy_state") or ""),
         "last_policy_owner": str(_projection_diag.get("last_policy_owner") or ""),
@@ -1388,6 +1396,11 @@ def _projection_diag_snapshot() -> dict[str, Any]:
         "last_tool_project_suppressed_policy_state": str(_projection_diag.get("last_tool_project_suppressed_policy_state") or ""),
         "last_tool_project_suppressed_observed_state": str(_projection_diag.get("last_tool_project_suppressed_observed_state") or ""),
         "last_tool_project_suppressed_at": float(_projection_diag.get("last_tool_project_suppressed_at") or 0.0),
+        "last_browser_runtime_refresh_suppressed_reason": str(_projection_diag.get("last_browser_runtime_refresh_suppressed_reason") or ""),
+        "last_browser_runtime_refresh_suppressed_event": str(_projection_diag.get("last_browser_runtime_refresh_suppressed_event") or ""),
+        "last_browser_runtime_refresh_suppressed_key": str(_projection_diag.get("last_browser_runtime_refresh_suppressed_key") or ""),
+        "last_browser_runtime_refresh_suppressed_retry_after_ms": int(_projection_diag.get("last_browser_runtime_refresh_suppressed_retry_after_ms") or 0),
+        "browser_runtime_refresh_budget": _BROWSER_RUNTIME_REFRESH_BUDGET.snapshot(),
         "fingerprinted_webspaces": sorted(_projection_fingerprints),
         "sdk_projection": _PROJECTION_RUNTIME.diagnostics_snapshot(),
         "sdk_stream": _STREAM_RUNTIME.diagnostics_snapshot(),
@@ -3626,6 +3639,19 @@ def _run_background_refresh_thread() -> None:
         _background_refresh_thread = None
 
 
+def _start_background_refresh_thread_if_needed() -> None:
+    global _background_refresh_thread
+
+    if _background_refresh_thread is not None and _background_refresh_thread.is_alive():
+        return
+    _background_refresh_thread = threading.Thread(
+        target=_run_background_refresh_thread,
+        name="infrastate-background-refresh",
+        daemon=True,
+    )
+    _background_refresh_thread.start()
+
+
 def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = "runtime.event") -> None:
     global _background_refresh_thread
     global _background_refresh_pending
@@ -3642,6 +3668,7 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        _start_background_refresh_thread_if_needed()
         return
     if _background_refresh_task is not None and not _background_refresh_task.done():
         return
@@ -6864,16 +6891,100 @@ def on_registry_changed(evt: Any) -> None:
     )
 
 
+def _browser_runtime_refresh_key(webspace_id: str | None) -> str:
+    return str(webspace_id or default_webspace_id()).strip() or default_webspace_id()
+
+
+def _delayed_browser_runtime_refresh_active(handle: Any) -> bool:
+    try:
+        if hasattr(handle, "cancelled"):
+            return not bool(handle.cancelled())
+        if hasattr(handle, "is_alive"):
+            return bool(handle.is_alive())
+    except Exception:
+        return False
+    return handle is not None
+
+
+def _schedule_delayed_browser_runtime_refresh(
+    *,
+    webspace_id: str | None = None,
+    reason: str = "browser.runtime.changed",
+    delay_ms: int = 1000,
+) -> None:
+    key = _browser_runtime_refresh_key(webspace_id)
+    delay_s = max(0.05, min(30.0, float(delay_ms or 1000) / 1000.0))
+
+    def _fire() -> None:
+        with _BROWSER_RUNTIME_TRAILING_REFRESH_LOCK:
+            _BROWSER_RUNTIME_TRAILING_REFRESH_BY_WS.pop(key, None)
+        _projection_diag["browser_runtime_refresh_trailing_total"] = (
+            int(_projection_diag.get("browser_runtime_refresh_trailing_total") or 0) + 1
+        )
+        try:
+            _schedule_snapshot_refresh(webspace_id=webspace_id, reason=f"{reason}:trailing")
+        except Exception:
+            _log.warning("delayed infrastate browser-runtime refresh failed", exc_info=True)
+
+    with _BROWSER_RUNTIME_TRAILING_REFRESH_LOCK:
+        existing = _BROWSER_RUNTIME_TRAILING_REFRESH_BY_WS.get(key)
+        if existing is not None and _delayed_browser_runtime_refresh_active(existing):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            timer = threading.Timer(delay_s, _fire)
+            timer.daemon = True
+            _BROWSER_RUNTIME_TRAILING_REFRESH_BY_WS[key] = timer
+            timer.start()
+            return
+        handle = loop.call_later(delay_s, _fire)
+        _BROWSER_RUNTIME_TRAILING_REFRESH_BY_WS[key] = handle
+
+
+def _schedule_browser_runtime_snapshot_refresh(evt: Any) -> None:
+    payload = getattr(evt, "payload", evt)
+    event_type = str(getattr(evt, "type", "") or "browser.session.changed")
+    webspace_id = _webspace_id_from_payload(payload)
+    key = _browser_runtime_refresh_key(webspace_id)
+    decision = _BROWSER_RUNTIME_REFRESH_BUDGET.admit(
+        "infrastate.browser_runtime.changed",
+        key=key,
+    )
+    if not decision.admitted:
+        _projection_diag["browser_runtime_refresh_suppressed_total"] = (
+            int(_projection_diag.get("browser_runtime_refresh_suppressed_total") or 0) + 1
+        )
+        _projection_diag["last_browser_runtime_refresh_suppressed_reason"] = decision.reason
+        _projection_diag["last_browser_runtime_refresh_suppressed_event"] = event_type
+        _projection_diag["last_browser_runtime_refresh_suppressed_key"] = decision.key
+        _projection_diag["last_browser_runtime_refresh_suppressed_retry_after_ms"] = int(decision.retry_after_ms or 0)
+        if decision.suppressed_total == 1 or decision.suppressed_total % 25 == 0:
+            _log.info(
+                "infrastate browser-runtime refresh coalesced event=%s key=%s reason=%s retry_after_ms=%s suppressed=%s",
+                event_type,
+                decision.key,
+                decision.reason,
+                decision.retry_after_ms,
+                decision.suppressed_total,
+            )
+        _schedule_delayed_browser_runtime_refresh(
+            webspace_id=webspace_id,
+            reason=event_type,
+            delay_ms=decision.retry_after_ms or int(_BACKGROUND_REFRESH_DEBOUNCE_S * 1000) or 1000,
+        )
+        return
+    _schedule_snapshot_refresh(
+        webspace_id=webspace_id,
+        reason=event_type,
+    )
+
+
 @subscribe("device.registered")
 @subscribe("browser.session.changed")
 @subscribe("webrtc.peer.state.changed")
 def on_browser_runtime_changed(evt: Any) -> None:
-    payload = getattr(evt, "payload", evt)
-    event_type = str(getattr(evt, "type", "") or "browser.session.changed")
-    _schedule_snapshot_refresh(
-        webspace_id=_webspace_id_from_payload(payload),
-        reason=event_type,
-    )
+    _schedule_browser_runtime_snapshot_refresh(evt)
 
 
 @subscribe("desktop.webspace.refresh")
