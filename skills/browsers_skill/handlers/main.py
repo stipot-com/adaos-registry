@@ -285,15 +285,8 @@ def _browser_subtitle(entry: Mapping[str, Any]) -> str:
 
 
 def _browser_details(entry: Mapping[str, Any]) -> str:
-    rows = [
-        f"ID: {str(entry.get('id') or '').strip() or '-'}",
-        f"Access: {str(entry.get('access_class') or 'device').strip() or 'device'}",
-        f"Lifetime: {sdk_access_links.lifetime_label(dict(entry))}",
-        f"Last webspace: {str(entry.get('last_webspace_id') or '').strip() or '-'}",
-        f"Last seen: {_iso(entry.get('last_seen_at')) or '-'}",
-        f"Status: {'online' if bool(entry.get('online')) else 'offline'}",
-    ]
-    return "\n".join(rows)
+    access = str(entry.get("access_class") or "device").strip() or "device"
+    return f"Last seen: {_iso(entry.get('last_seen_at')) or '-'} | Access: {access}"
 
 
 def _browser_tiles(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -307,7 +300,6 @@ def _browser_tiles(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "icon": "browsers-outline",
             "online": bool(entry.get("online")),
             "status": "online" if bool(entry.get("online")) else "offline",
-            "uiSubtitle": _browser_subtitle(entry),
         }
         for entry in entries
         if str(entry.get("id") or "").strip()

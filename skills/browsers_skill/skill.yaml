@@ -1,5 +1,5 @@
 name: browsers_skill
-version: 0.15.4
+version: 0.15.5
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -126,5 +126,5 @@ data_routes:
     metric: webio_stream_guard.browsers.current_name
 tools: []
 exports: {}
-updated_at: '2026-05-20T15:27:01+00:00'
+updated_at: '2026-05-20T15:32:44+00:00'
 
