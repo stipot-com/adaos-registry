@@ -1,11 +1,23 @@
 name: browsers_skill
-version: 0.15.2
+version: 0.15.3
 entry: handlers/main.py
 runtime:
   python: '3.11'
 description: ''
 dependencies: []
-events: {}
+events:
+  subscribe:
+  - sys.ready
+  - skills.activated
+  - desktop.webspace.refresh
+  - desktop.webspace.reload
+  - desktop.webspace.reloaded
+  - browser.session.changed
+  - device.registered
+  - subnet.member.link.up
+  - subnet.member.link.down
+  - webio.stream.snapshot.requested
+  - webio.stream.subscription.changed
 data_projections:
 - scope: subnet
   slot: browsers.summary
@@ -114,5 +126,5 @@ data_routes:
     metric: webio_stream_guard.browsers.current_name
 tools: []
 exports: {}
-updated_at: '2026-05-20T11:56:10+00:00'
+updated_at: '2026-05-20T12:35:28+00:00'
 

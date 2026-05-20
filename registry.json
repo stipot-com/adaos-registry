@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-05-20T11:56:10+00:00",
+  "updated_at": "2026-05-20T12:35:28+00:00",
   "skills": [
     {
       "kind": "skill",
@@ -28,8 +28,8 @@
       "kind": "skill",
       "id": "browsers_skill",
       "name": "browsers_skill",
-      "version": "0.15.2",
-      "updated_at": "2026-05-20T11:56:10+00:00",
+      "version": "0.15.3",
+      "updated_at": "2026-05-20T12:35:28+00:00",
       "path": "skills/browsers_skill",
       "manifest": "skills/browsers_skill/skill.yaml",
       "source": {
