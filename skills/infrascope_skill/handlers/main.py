@@ -15,6 +15,7 @@ import yaml
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data import ctx_subnet
 from adaos.sdk.io import stream_publish
+from adaos.sdk import status as status_sdk
 from adaos.services.core_update import read_last_result as read_core_update_last_result
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.operations.manager import get_operation_manager
@@ -914,6 +915,177 @@ def _stream_payload_for_receiver_direct(receiver: str, *, webspace_id: str) -> t
     return False, None
 
 
+def _status_card_ref(receiver: str) -> dict[str, str]:
+    token = str(receiver or "").strip()
+    if not token:
+        return {}
+    return {
+        "kind": "stream",
+        "receiver": token,
+    }
+
+
+def _status_card_route(receiver: str, *, surface: str) -> dict[str, str]:
+    token = str(receiver or "").strip()
+    route = _status_card_ref(token)
+    if not route:
+        return {}
+    route["snapshot_policy"] = "on_subscribe"
+    route["surface"] = surface
+    return route
+
+
+def _status_from_rows(rows: list[Any], *, empty: str = CanonicalStatus.ONLINE.value) -> str:
+    if not rows:
+        return empty
+    worst = max((_status_rank(coerce_mapping(row).get("status")) for row in rows), default=0)
+    if worst >= _status_rank(CanonicalStatus.OFFLINE.value):
+        return CanonicalStatus.OFFLINE.value
+    if worst >= _status_rank(CanonicalStatus.DEGRADED.value):
+        return CanonicalStatus.DEGRADED.value
+    if worst >= _status_rank(CanonicalStatus.WARNING.value):
+        return CanonicalStatus.WARNING.value
+    if worst >= _status_rank(CanonicalStatus.UNKNOWN.value):
+        return CanonicalStatus.UNKNOWN.value
+    return CanonicalStatus.ONLINE.value
+
+
+def _infrascope_status_cards(snapshot: dict[str, Any], *, webspace_id: str) -> list[dict[str, Any]]:
+    ws = str(webspace_id or "").strip() or default_webspace_id()
+    summary = coerce_mapping(snapshot.get("summary"))
+    meta = coerce_mapping(snapshot.get("meta"))
+    overview = coerce_mapping(snapshot.get("overview"))
+    inventory = coerce_mapping(snapshot.get("inventory"))
+    operations = coerce_mapping(snapshot.get("operations"))
+    errors = list(snapshot.get("errors") or [])
+    partial = bool(meta.get("partial")) or bool(errors)
+
+    health_rows = [coerce_mapping(row) for row in list(overview.get("health_strip") or [])]
+    incident_rows = [coerce_mapping(row) for row in list(overview.get("active_incidents") or [])]
+    operation_rows = [coerce_mapping(row) for row in list(operations.get("items") or overview.get("active_operations") or [])]
+    browser_rows = [coerce_mapping(row) for row in list(inventory.get("browsers") or [])]
+    runtime_rows = [coerce_mapping(row) for row in list(inventory.get("runtimes") or [])]
+    skill_rows = [coerce_mapping(row) for row in list(inventory.get("skills") or [])]
+    scenario_rows = [coerce_mapping(row) for row in list(inventory.get("scenarios") or [])]
+    all_rows = [coerce_mapping(row) for row in list(inventory.get("all") or [])]
+
+    summary_status = _status_token(summary.get("value") or summary.get("status"))
+    if partial and _status_rank(summary_status) < _status_rank(CanonicalStatus.WARNING.value):
+        summary_status = CanonicalStatus.WARNING.value
+    incident_status = CanonicalStatus.WARNING.value if incident_rows else CanonicalStatus.ONLINE.value
+    operation_status = _status_from_rows(operation_rows)
+    browser_runtime_status = _status_from_rows(
+        [*browser_rows, *runtime_rows],
+        empty=CanonicalStatus.UNKNOWN.value,
+    )
+    registry_status = _status_from_rows([*skill_rows, *scenario_rows], empty=CanonicalStatus.UNKNOWN.value)
+    inventory_status = CanonicalStatus.WARNING.value if partial else (CanonicalStatus.ONLINE.value if all_rows else CanonicalStatus.UNKNOWN.value)
+
+    summary_text = str(summary.get("subtitle") or summary.get("description") or "overview ready").strip()
+    if errors:
+        summary_text = str(errors[0])[:160]
+
+    ttl_ms = 30000
+    return [
+        {
+            "id": "overview",
+            "kind": "overview",
+            "status": summary_status,
+            "summary": summary_text,
+            "webspace_id": ws,
+            "ttl_ms": ttl_ms,
+            "details_ref": _status_card_ref(_overview_receiver("health_strip")),
+            "route": _status_card_route(_overview_receiver("health_strip"), surface="scenario:infrascope.overview"),
+            "metadata": {
+                "health_total": len(health_rows),
+                "partial": partial,
+                "error_total": int(meta.get("error_total") or len(errors)),
+            },
+        },
+        {
+            "id": "active_incidents",
+            "kind": "incident_summary",
+            "status": incident_status,
+            "summary": f"{len(incident_rows)} active incidents",
+            "webspace_id": ws,
+            "ttl_ms": ttl_ms,
+            "incident_id": str(incident_rows[0].get("id") or "") if len(incident_rows) == 1 else None,
+            "details_ref": _status_card_ref(_overview_receiver("active_incidents")),
+            "route": _status_card_route(_overview_receiver("active_incidents"), surface="scenario:infrascope.overview"),
+            "metadata": {"active_total": len(incident_rows)},
+        },
+        {
+            "id": "inventory",
+            "kind": "inventory",
+            "status": inventory_status,
+            "summary": f"{len(all_rows)} control-plane objects",
+            "webspace_id": ws,
+            "ttl_ms": ttl_ms,
+            "details_ref": _status_card_ref(_inventory_receiver("all")),
+            "route": _status_card_route(_inventory_receiver("all"), surface="scenario:infrascope.inventory"),
+            "metadata": {
+                "objects": len(all_rows),
+                "hubs": len(list(inventory.get("hubs") or [])),
+                "members": len(list(inventory.get("members") or [])),
+                "skills": len(skill_rows),
+                "scenarios": len(scenario_rows),
+            },
+        },
+        {
+            "id": "browser_runtime",
+            "kind": "runtime",
+            "status": browser_runtime_status,
+            "summary": f"{len(browser_rows)} browsers, {len(runtime_rows)} runtimes",
+            "webspace_id": ws,
+            "ttl_ms": ttl_ms,
+            "details_ref": _status_card_ref(_inventory_receiver("browsers")),
+            "route": _status_card_route(_inventory_receiver("browsers"), surface="scenario:infrascope.inventory"),
+            "metadata": {
+                "browser_total": len(browser_rows),
+                "runtime_total": len(runtime_rows),
+            },
+        },
+        {
+            "id": "registry",
+            "kind": "registry",
+            "status": registry_status,
+            "summary": f"{len(skill_rows)} skills, {len(scenario_rows)} scenarios",
+            "webspace_id": ws,
+            "ttl_ms": ttl_ms,
+            "details_ref": _status_card_ref(_inventory_receiver("skills")),
+            "route": _status_card_route(_inventory_receiver("skills"), surface="scenario:infrascope.inventory"),
+            "metadata": {
+                "skill_total": len(skill_rows),
+                "scenario_total": len(scenario_rows),
+            },
+        },
+        {
+            "id": "operations",
+            "kind": "operations",
+            "status": operation_status,
+            "summary": f"{len(operation_rows)} active operations",
+            "webspace_id": ws,
+            "ttl_ms": ttl_ms,
+            "details_ref": _status_card_ref(_operations_receiver()),
+            "route": _status_card_route(_operations_receiver(), surface="scenario:infrascope.operations"),
+            "metadata": {"active_total": len(operation_rows)},
+        },
+    ]
+
+
+def _publish_status_cards(snapshot: dict[str, Any], *, webspace_id: str) -> None:
+    cards = _infrascope_status_cards(snapshot, webspace_id=webspace_id)
+    try:
+        status_sdk.publish_status_many(
+            cards,
+            owner="skill:infrascope_skill",
+            scope="infrascope",
+            _meta={"webspace_id": str(webspace_id or "").strip() or default_webspace_id()},
+        )
+    except Exception:
+        _log.debug("failed to publish infrascope status cards", exc_info=True)
+
+
 def _compact_row_for_stream(raw: Any) -> dict[str, Any]:
     row = coerce_mapping(raw)
     object_id = str(row.get("object_id") or row.get("id") or "").strip()
@@ -1303,6 +1475,7 @@ def _refresh_snapshot_targets(targets: list[str]) -> dict[str, Any]:
         if _project_snapshot(snapshot, webspace_id=target_ws):
             projected += 1
         _publish_snapshot_streams(snapshot, webspace_id=target_ws)
+        _publish_status_cards(snapshot, webspace_id=target_ws)
     return {
         "ok": True,
         "projected": projected,
@@ -1596,6 +1769,7 @@ def refresh_snapshot(webspace_id: str | None = None, task_goal: str | None = Non
             if _project_snapshot(snapshot, webspace_id=target_ws):
                 projected += 1
             _publish_snapshot_streams(snapshot, webspace_id=target_ws)
+            _publish_status_cards(snapshot, webspace_id=target_ws)
         return {
             "ok": True,
             "projected": projected,

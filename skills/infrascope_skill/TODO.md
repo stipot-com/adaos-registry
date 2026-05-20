@@ -12,11 +12,14 @@ Status: architectural split planned; detailed projection work pending.
   budgets for overview, inventory, operations, and inspector receivers.
 - [x] Stream snapshot requests use per-receiver compact builders before falling
   back to the monolithic snapshot cache.
+- [x] Overview, active incidents, inventory, browser/runtime state, registry,
+  and operations publish compact shared status cards that point to the existing
+  stream receivers for details.
 
 ## Next
 
 - [x] Audit which branches are required for the initial shell versus Details.
-- [ ] Publish shared status cards for overview, active incidents, inventory,
+- [x] Publish shared status cards for overview, active incidents, inventory,
   runtime/browser state, registry, and operations.
 - [x] Replace monolithic cold subscribe snapshot building with per-receiver
   compact builders.
