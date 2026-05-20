@@ -284,22 +284,13 @@ def _browser_subtitle(entry: Mapping[str, Any]) -> str:
     return " | ".join(bits)
 
 
-def _browser_details(entry: Mapping[str, Any]) -> str:
-    access = str(entry.get("access_class") or "device").strip() or "device"
-    return f"Last seen: {_iso(entry.get('last_seen_at')) or '-'} | Access: {access}"
-
-
 def _browser_tiles(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "id": str(entry.get("id") or "").strip(),
-            "device_id": str(entry.get("id") or "").strip(),
             "title": _browser_title(entry),
             "subtitle": _browser_subtitle(entry),
-            "content": _browser_details(entry),
-            "icon": "browsers-outline",
             "online": bool(entry.get("online")),
-            "status": "online" if bool(entry.get("online")) else "offline",
         }
         for entry in entries
         if str(entry.get("id") or "").strip()

@@ -153,9 +153,6 @@
               "inputs": {
                 "titleKey": "title",
                 "subtitleKey": "subtitle",
-                "detailsPath": "content",
-                "showDetails": true,
-                "itemAccordion": true,
                 "onlineOnlyStateKey": "browsersOnlineOnly",
                 "emptyText": "No permanent browser devices",
                 "buttons": [
@@ -172,7 +169,7 @@
                   "type": "callSkill",
                   "target": "browsers_skill.select_browser",
                   "params": {
-                    "device_id": "$event.device_id"
+                    "device_id": "$event.id"
                   }
                 },
                 {
@@ -196,9 +193,6 @@
               "inputs": {
                 "titleKey": "title",
                 "subtitleKey": "subtitle",
-                "detailsPath": "content",
-                "showDetails": true,
-                "itemAccordion": true,
                 "onlineOnlyStateKey": "browsersOnlineOnly",
                 "emptyText": "No temporary browser clients",
                 "buttons": [
@@ -215,7 +209,7 @@
                   "type": "callSkill",
                   "target": "browsers_skill.select_browser",
                   "params": {
-                    "device_id": "$event.device_id"
+                    "device_id": "$event.id"
                   }
                 },
                 {
