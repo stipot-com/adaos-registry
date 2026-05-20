@@ -105,6 +105,20 @@ _stream_request_diag = {
     "forced_total": 0,
     "coalesced_total": 0,
 }
+_STREAM_PAYLOAD_DIAG_LOCK = threading.RLock()
+_stream_payload_diag = {
+    "published_total": 0,
+    "published_last_receiver": "",
+    "published_last_bytes": 0,
+    "published_max_bytes": 0,
+    "direct_total": 0,
+    "direct_last_receiver": "",
+    "direct_last_bytes": 0,
+    "direct_max_bytes": 0,
+    "truncated_total": 0,
+    "truncated_last_receiver": "",
+}
+_overview_section_bytes_diag: dict[str, int] = {section: 0 for section in _OVERVIEW_SECTIONS}
 _hot_refresh_diag = {
     "suppressed_total": 0,
     "trailing_total": 0,
@@ -661,6 +675,60 @@ def _stream_payload_max_bytes() -> int:
         return 196608
 
 
+def _record_stream_payload_diag(
+    receiver: str,
+    data: Any,
+    *,
+    direct: bool = False,
+    payload_bytes: int | None = None,
+    truncated: bool = False,
+) -> int:
+    token = str(receiver or "").strip()
+    size = int(payload_bytes if payload_bytes is not None else _stream_payload_bytes(data))
+    with _STREAM_PAYLOAD_DIAG_LOCK:
+        if direct:
+            _stream_payload_diag["direct_total"] = int(_stream_payload_diag.get("direct_total") or 0) + 1
+            _stream_payload_diag["direct_last_receiver"] = token
+            _stream_payload_diag["direct_last_bytes"] = size
+            _stream_payload_diag["direct_max_bytes"] = max(int(_stream_payload_diag.get("direct_max_bytes") or 0), size)
+        else:
+            _stream_payload_diag["published_total"] = int(_stream_payload_diag.get("published_total") or 0) + 1
+            _stream_payload_diag["published_last_receiver"] = token
+            _stream_payload_diag["published_last_bytes"] = size
+            _stream_payload_diag["published_max_bytes"] = max(int(_stream_payload_diag.get("published_max_bytes") or 0), size)
+        if truncated:
+            _stream_payload_diag["truncated_total"] = int(_stream_payload_diag.get("truncated_total") or 0) + 1
+            _stream_payload_diag["truncated_last_receiver"] = token
+    return size
+
+
+def _record_overview_section_bytes(section: str, payload: Any) -> None:
+    token = str(section or "").strip()
+    if not token:
+        return
+    _overview_section_bytes_diag[token] = _stream_payload_bytes(payload)
+
+
+def _overview_section_bytes(overview: dict[str, Any]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for section in _OVERVIEW_SECTIONS:
+        payload = [_compact_row_for_stream(row) for row in list(overview.get(section) or [])]
+        size = _stream_payload_bytes(payload)
+        out[section] = size
+        _overview_section_bytes_diag[section] = size
+    return out
+
+
+def _stream_payload_diag_snapshot() -> dict[str, Any]:
+    with _STREAM_PAYLOAD_DIAG_LOCK:
+        payload = dict(_stream_payload_diag)
+    return {
+        **payload,
+        "overview_section_bytes": dict(_overview_section_bytes_diag),
+        "max_payload_bytes": _stream_payload_max_bytes(),
+    }
+
+
 def _payload_truncated_notice(*, receiver: str, payload_bytes: int, max_bytes: int) -> dict[str, Any]:
     return {
         "id": "payload-truncated",
@@ -680,7 +748,9 @@ def _fit_stream_payload(receiver: str, data: Any) -> Any:
     max_bytes = _stream_payload_max_bytes()
     payload_bytes = _stream_payload_bytes(data)
     if payload_bytes <= max_bytes:
+        _record_stream_payload_diag(receiver, data, payload_bytes=payload_bytes)
         return data
+    _record_stream_payload_diag(receiver, data, payload_bytes=payload_bytes, truncated=True)
     if isinstance(data, list):
         trimmed: list[Any] = []
         notice = _payload_truncated_notice(receiver=receiver, payload_bytes=payload_bytes, max_bytes=max_bytes)
@@ -884,21 +954,30 @@ def _stream_payload_for_receiver_direct(receiver: str, *, webspace_id: str) -> t
         return False, None
     try:
         if token == _operations_receiver():
-            return True, _operation_rows(webspace_id=webspace_id)
+            payload = _operation_rows(webspace_id=webspace_id)
+            _record_stream_payload_diag(token, payload, direct=True)
+            return True, payload
         overview_prefix = "infrascope.overview."
         if token.startswith(overview_prefix):
             section = str(token[len(overview_prefix):] or "").strip()
             rows = list_overview_collection(section, webspace_id=webspace_id)
-            return True, [_compact_row_for_stream(row) for row in rows]
+            payload = [_compact_row_for_stream(row) for row in rows]
+            _record_overview_section_bytes(section, payload)
+            _record_stream_payload_diag(token, payload, direct=True)
+            return True, payload
         inventory_prefix = "infrascope.inventory."
         if token.startswith(inventory_prefix):
             kind = _inventory_kind_token(token[len(inventory_prefix):])
             rows = list_inventory(kind, webspace_id=webspace_id)
-            return True, [_compact_row_for_stream(row) for row in rows]
+            payload = [_compact_row_for_stream(row) for row in rows]
+            _record_stream_payload_diag(token, payload, direct=True)
+            return True, payload
         inspector_prefix = "infrascope.inspector."
         if token.startswith(inspector_prefix):
             object_id = str(token[len(inspector_prefix):] or "local").strip() or "local"
-            return True, _compact_inspector_payload(get_object_inspector(object_id, webspace_id=webspace_id))
+            payload = _compact_inspector_payload(get_object_inspector(object_id, webspace_id=webspace_id))
+            _record_stream_payload_diag(token, payload, direct=True)
+            return True, payload
         inspector_field_prefix = "infrascope.inspector_field."
         if token.startswith(inspector_field_prefix):
             remainder = str(token[len(inspector_field_prefix):] or "").strip()
@@ -907,8 +986,12 @@ def _stream_payload_for_receiver_direct(receiver: str, *, webspace_id: str) -> t
             object_id = str(object_id or "local").strip() or "local"
             payload = get_object_inspector(object_id, webspace_id=webspace_id)
             if field in {"incidents", "actions"}:
-                return True, list(coerce_mapping(payload).get(field) or [])
-            return True, coerce_mapping(coerce_mapping(payload).get(field))
+                result = list(coerce_mapping(payload).get(field) or [])
+                _record_stream_payload_diag(token, result, direct=True)
+                return True, result
+            result = coerce_mapping(coerce_mapping(payload).get(field))
+            _record_stream_payload_diag(token, result, direct=True)
+            return True, result
     except Exception:
         _log.warning("infrascope direct stream payload failed receiver=%s webspace=%s", token, webspace_id, exc_info=True)
         return False, None
@@ -1352,6 +1435,7 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
             "object_total": len(inventory.get("all") or inspectors),
             "partial": bool(errors),
             "error_total": len(errors),
+            "overview_section_bytes": _overview_section_bytes(overview),
             "hot_refresh": {
                 "suppressed_total": int(_hot_refresh_diag.get("suppressed_total") or 0),
                 "trailing_total": int(_hot_refresh_diag.get("trailing_total") or 0),
@@ -1755,6 +1839,22 @@ def get_object_inspector(
 def get_snapshot(webspace_id: str | None = None, task_goal: str | None = None) -> dict[str, Any]:
     _ensure_skill_data_projections()
     return _compact_snapshot_for_yjs(_snapshot_or_fallback(webspace_id=webspace_id, task_goal=task_goal))
+
+
+@tool("get_projection_diagnostics")
+def get_projection_diagnostics() -> dict[str, Any]:
+    return {
+        "stream_payloads": _stream_payload_diag_snapshot(),
+        "stream_requests": dict(_stream_request_diag),
+        "hot_refresh": {
+            "suppressed_total": int(_hot_refresh_diag.get("suppressed_total") or 0),
+            "trailing_total": int(_hot_refresh_diag.get("trailing_total") or 0),
+            "last_event": str(_hot_refresh_diag.get("last_event") or ""),
+            "last_reason": str(_hot_refresh_diag.get("last_reason") or ""),
+            "last_key": str(_hot_refresh_diag.get("last_key") or ""),
+            "last_retry_after_ms": int(_hot_refresh_diag.get("last_retry_after_ms") or 0),
+        },
+    }
 
 
 @tool("refresh_snapshot")

@@ -15,6 +15,8 @@ Status: architectural split planned; detailed projection work pending.
 - [x] Overview, active incidents, inventory, browser/runtime state, registry,
   and operations publish compact shared status cards that point to the existing
   stream receivers for details.
+- [x] Stream/direct receiver diagnostics record payload byte sizes and overview
+  section byte counts without embedding detail payloads in status cards.
 
 ## Next
 
@@ -26,7 +28,7 @@ Status: architectural split planned; detailed projection work pending.
 - [ ] Move large inspector payloads to active stream/detail demand.
 - [ ] Align object inspectors with the shared projection lifecycle states:
   `pending`, `ready`, `refreshing`, `stale`, `error`.
-- [ ] Add byte-size diagnostics for overview sections and each inspector
+- [x] Add byte-size diagnostics for overview sections and each inspector
   projection fragment.
 - [ ] Ensure node-aware addressing uses shared helpers rather than skill-local
   path conventions.
