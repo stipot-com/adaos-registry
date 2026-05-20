@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
@@ -18,6 +19,7 @@ from adaos.sdk.data import access_links as sdk_access_links
 from adaos.sdk.data import device_access as sdk_device_access
 from adaos.sdk.data import ctx_subnet
 from adaos.sdk.io import stream_publish
+from adaos.services.status import HotEventBudget
 
 try:
     from adaos.services.yjs.webspace import default_webspace_id
@@ -34,6 +36,8 @@ _LOG = logging.getLogger("adaos.skill.browsers")
 _SELECTED_BROWSER_BY_WS: dict[str, str] = {}
 _PROJECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browsers-projection")
 _PENDING_REFRESH_BY_WS: dict[str, Any] = {}
+_DELAYED_REFRESH_BY_WS: dict[str, threading.Timer] = {}
+_BROWSER_SESSION_REFRESH_BUDGET = HotEventBudget(debounce_ms=1000, window_ms=10000, max_events=3)
 REQUIRES_DATA_PROJECTIONS = [
     "browsers.summary",
 ]
@@ -221,6 +225,32 @@ def _schedule_publish_snapshot(target_ws: str | None = None, *, fanout: bool = F
         except Exception:
             pass
     return _run_coro(_publish_snapshot(target_ws, fanout=fanout, force=force), wait=False, key=key)
+
+
+def _schedule_delayed_refresh(
+    target_ws: str | None = None,
+    *,
+    fanout: bool = False,
+    force: bool = False,
+    delay_ms: int = 1000,
+) -> None:
+    key = "*" if fanout else str(target_ws or default_webspace_id()).strip() or default_webspace_id()
+    existing = _DELAYED_REFRESH_BY_WS.get(key)
+    if existing is not None and existing.is_alive():
+        return
+
+    def _fire() -> None:
+        _DELAYED_REFRESH_BY_WS.pop(key, None)
+        try:
+            _schedule_publish_snapshot(target_ws, fanout=fanout, force=force)
+        except Exception:
+            _LOG.warning("delayed browsers refresh failed", exc_info=True)
+
+    delay_s = max(0.05, min(30.0, float(delay_ms or 1000) / 1000.0))
+    timer = threading.Timer(delay_s, _fire)
+    timer.daemon = True
+    _DELAYED_REFRESH_BY_WS[key] = timer
+    timer.start()
 
 
 def _ensure_skill_data_projections() -> None:
@@ -737,10 +767,31 @@ def _on_refresh(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     target_ws = _webspace_id_from_payload(payload)
     topic = _event_topic(evt)
+    fanout = _should_fanout_projection_refresh(topic, target_ws)
+    force = _should_force_projection_refresh(topic)
+    if topic == "browser.session.changed":
+        budget_key = str(target_ws or default_webspace_id()).strip() or default_webspace_id()
+        decision = _BROWSER_SESSION_REFRESH_BUDGET.admit(topic, key=budget_key)
+        if not decision.admitted:
+            _LOG.info(
+                "browsers refresh coalesced topic=%s key=%s reason=%s retry_after_ms=%s suppressed=%s",
+                topic,
+                decision.key,
+                decision.reason,
+                decision.retry_after_ms,
+                decision.suppressed_total,
+            )
+            _schedule_delayed_refresh(
+                target_ws,
+                fanout=fanout,
+                force=force,
+                delay_ms=decision.retry_after_ms or 1000,
+            )
+            return
     _refresh_snapshot_sync(
         target_ws,
-        fanout=_should_fanout_projection_refresh(topic, target_ws),
-        force=_should_force_projection_refresh(topic),
+        fanout=fanout,
+        force=force,
     )
 
 
