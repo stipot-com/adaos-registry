@@ -19,6 +19,7 @@ from adaos.services.core_update import read_last_result as read_core_update_last
 from adaos.services.core_update import read_status as read_core_update_status
 from adaos.services.operations.manager import get_operation_manager
 from adaos.services.scenario.webspace_runtime import WebspaceService
+from adaos.services.status import HotEventBudget
 from adaos.services.system_model.mappers import coerce_mapping
 from adaos.services.system_model.model import CanonicalObject, CanonicalStatus
 from adaos.services.system_model.service import (
@@ -85,6 +86,9 @@ _background_refresh_task: asyncio.Task[None] | None = None
 _background_refresh_pending_all = False
 _background_refresh_webspace_ids: set[str] = set()
 _background_refresh_reason = ""
+_HOT_REFRESH_BUDGET = HotEventBudget(debounce_ms=1500, window_ms=10000, max_events=2)
+_TRAILING_REFRESH_BY_KEY: dict[str, Any] = {}
+_TRAILING_REFRESH_LOCK = threading.RLock()
 _last_projected_fingerprints: dict[str, str] = {}
 _last_projected_at_mono: dict[str, float] = {}
 _last_good_snapshots: dict[str, dict[str, Any]] = {}
@@ -99,6 +103,14 @@ _stream_request_diag = {
     "requested_total": 0,
     "forced_total": 0,
     "coalesced_total": 0,
+}
+_hot_refresh_diag = {
+    "suppressed_total": 0,
+    "trailing_total": 0,
+    "last_event": "",
+    "last_reason": "",
+    "last_key": "",
+    "last_retry_after_ms": 0,
 }
 
 
@@ -1168,6 +1180,14 @@ def _snapshot(*, webspace_id: str | None = None, task_goal: str | None = None) -
             "object_total": len(inventory.get("all") or inspectors),
             "partial": bool(errors),
             "error_total": len(errors),
+            "hot_refresh": {
+                "suppressed_total": int(_hot_refresh_diag.get("suppressed_total") or 0),
+                "trailing_total": int(_hot_refresh_diag.get("trailing_total") or 0),
+                "last_event": str(_hot_refresh_diag.get("last_event") or ""),
+                "last_reason": str(_hot_refresh_diag.get("last_reason") or ""),
+                "last_key": str(_hot_refresh_diag.get("last_key") or ""),
+                "last_retry_after_ms": int(_hot_refresh_diag.get("last_retry_after_ms") or 0),
+            },
         },
     }
     if errors:
@@ -1370,6 +1390,91 @@ def _schedule_snapshot_refresh(*, webspace_id: str | None = None, reason: str = 
     )
 
 
+def _hot_refresh_key(*, topic: str, webspace_id: str | None) -> str:
+    ws = str(webspace_id or _event_webspace_fallback()).strip() or default_webspace_id()
+    return f"{topic}:{ws}"
+
+
+def _trailing_refresh_active(handle: Any) -> bool:
+    try:
+        if hasattr(handle, "cancelled"):
+            return not bool(handle.cancelled())
+        if hasattr(handle, "is_alive"):
+            return bool(handle.is_alive())
+    except Exception:
+        return False
+    return handle is not None
+
+
+def _schedule_trailing_hot_refresh(
+    *,
+    topic: str,
+    webspace_id: str | None = None,
+    reason: str = "runtime.event",
+    delay_ms: int = 1000,
+) -> None:
+    key = _hot_refresh_key(topic=topic, webspace_id=webspace_id)
+    delay_s = max(0.05, min(30.0, float(delay_ms or 1000) / 1000.0))
+
+    def _fire() -> None:
+        with _TRAILING_REFRESH_LOCK:
+            _TRAILING_REFRESH_BY_KEY.pop(key, None)
+        _hot_refresh_diag["trailing_total"] = int(_hot_refresh_diag.get("trailing_total") or 0) + 1
+        try:
+            _schedule_snapshot_refresh(webspace_id=webspace_id, reason=f"{reason}:trailing")
+        except Exception:
+            _log.warning("delayed infrascope refresh failed topic=%s webspace=%s", topic, webspace_id or "-", exc_info=True)
+
+    with _TRAILING_REFRESH_LOCK:
+        existing = _TRAILING_REFRESH_BY_KEY.get(key)
+        if existing is not None and _trailing_refresh_active(existing):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            timer = threading.Timer(delay_s, _fire)
+            timer.daemon = True
+            _TRAILING_REFRESH_BY_KEY[key] = timer
+            timer.start()
+            return
+        handle = loop.call_later(delay_s, _fire)
+        _TRAILING_REFRESH_BY_KEY[key] = handle
+
+
+def _schedule_budgeted_snapshot_refresh(
+    *,
+    topic: str,
+    webspace_id: str | None = None,
+    reason: str = "runtime.event",
+) -> None:
+    key = _hot_refresh_key(topic=topic, webspace_id=webspace_id)
+    decision = _HOT_REFRESH_BUDGET.admit(topic, key=key)
+    if not decision.admitted:
+        _hot_refresh_diag["suppressed_total"] = int(_hot_refresh_diag.get("suppressed_total") or 0) + 1
+        _hot_refresh_diag["last_event"] = reason
+        _hot_refresh_diag["last_reason"] = decision.reason
+        _hot_refresh_diag["last_key"] = decision.key
+        _hot_refresh_diag["last_retry_after_ms"] = int(decision.retry_after_ms or 0)
+        if decision.suppressed_total == 1 or decision.suppressed_total % 25 == 0:
+            _log.info(
+                "infrascope refresh coalesced topic=%s event=%s key=%s reason=%s retry_after_ms=%s suppressed=%s",
+                topic,
+                reason,
+                decision.key,
+                decision.reason,
+                decision.retry_after_ms,
+                decision.suppressed_total,
+            )
+        _schedule_trailing_hot_refresh(
+            topic=topic,
+            webspace_id=webspace_id,
+            reason=reason,
+            delay_ms=decision.retry_after_ms or int(_refresh_debounce_s() * 1000) or 1000,
+        )
+        return
+    _schedule_snapshot_refresh(webspace_id=webspace_id, reason=reason)
+
+
 def _overview_summary_from_projection(projection: Any) -> dict[str, Any]:
     context = coerce_mapping(getattr(projection, "context", {}))
     summary_tile = coerce_mapping(context.get("summary_tile"))
@@ -1559,7 +1664,8 @@ def on_operations_changed(evt: Any) -> None:
 def on_browser_runtime_changed(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     event_type = str(getattr(evt, "type", "") or "webrtc.peer.state.changed")
-    _schedule_snapshot_refresh(
+    _schedule_budgeted_snapshot_refresh(
+        topic="infrascope.browser_runtime.changed",
         webspace_id=_webspace_id_from_payload(payload),
         reason=event_type,
     )
@@ -1631,6 +1737,17 @@ def on_webspace_event(evt: Any) -> None:
 def on_runtime_event(evt: Any) -> None:
     payload = getattr(evt, "payload", evt)
     event_type = str(getattr(evt, "type", "") or "runtime.event")
+    if event_type in {
+        "subnet.member.meta.changed",
+        "subnet.member.snapshot.changed",
+        "subnet.member.snapshot.requested",
+    }:
+        _schedule_budgeted_snapshot_refresh(
+            topic="infrascope.member_snapshot.changed",
+            webspace_id=_webspace_id_from_payload(payload),
+            reason=event_type,
+        )
+        return
     _schedule_snapshot_refresh(
         webspace_id=_webspace_id_from_payload(payload),
         reason=event_type,
