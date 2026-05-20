@@ -13,7 +13,7 @@
         },
         "budget": { "maxPayloadBytes": 2048, "maxPublishHz": 0.5, "maxSnapshotHz": 1, "maxItems": 1 },
         "guardVisibility": { "degradedState": "Keep last compact browser count.", "log": "service.browsers_skill.runtime.log", "quarantine": true, "metric": "yjs_owner_guard.browsers.summary" },
-        "route": { "kind": "yjs", "surface": "modal:browsers_summary", "owner": "skill:browsers_skill", "firstPaint": "last compact Yjs summary", "recovery": "Yjs replay or refresh action", "updateSource": ["browser.session.changed", "device.registered"] }
+        "route": { "kind": "stream", "surface": "modal:browsers_summary", "owner": "skill:browsers_skill", "firstPaint": "empty browser summary", "recovery": "snapshot requested on stream subscribe", "updateSource": ["webio.stream.snapshot.requested", "browser.session.changed", "device.registered"] }
       },
       "browsers.devices": {
         "mode": "replace",
