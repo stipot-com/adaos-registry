@@ -1,5 +1,5 @@
 name: infrascope_skill
-version: 0.28.6
+version: 0.28.7
 entry: handlers/main.py
 runtime:
   python: '3.11'
@@ -302,7 +302,15 @@ tools:
         - 'null'
   output_schema:
     type: object
+- name: get_projection_diagnostics
+  description: Return compact Infrascope projection and stream payload diagnostics.
+  entry: handlers.main:get_projection_diagnostics
+  input_schema:
+    type: object
+    properties: {}
+  output_schema:
+    type: object
 exports: {}
 prototype: default
-updated_at: '2026-05-20T19:34:39+00:00'
+updated_at: '2026-05-20T19:36:14+00:00'
 
