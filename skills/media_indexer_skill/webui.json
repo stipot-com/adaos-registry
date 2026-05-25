@@ -1,0 +1,247 @@
+{
+    "$schema":  "../../../../src/adaos/abi/webui.v1.schema.json",
+    "apps":  [
+                 {
+                     "id":  "media_indexer_app",
+                     "title":  "Media Indexer",
+                     "icon":  "videocam-outline",
+                     "launchModal":  "media_indexer_modal"
+                 }
+             ],
+    "widgets":  [
+
+                ],
+    "registry":  {
+                     "modals":  {
+                                    "media_indexer_modal":  {
+                                                                "title":  "Media Indexer",
+                                                                "schema":  {
+                                                                               "id":  "media_indexer_modal",
+                                                                               "title":  "Media Indexer",
+                                                                               "layout":  {
+                                                                                              "type":  "single",
+                                                                                              "pattern":  "stack",
+                                                                                              "areas":  [
+                                                                                                            {
+                                                                                                                "id":  "main",
+                                                                                                                "role":  "main"
+                                                                                                            }
+                                                                                                        ]
+                                                                                          },
+                                                                               "widgets":  [
+                                                                                               {
+                                                                                                   "id":  "media-indexer-summary",
+                                                                                                   "type":  "visual.metricTile",
+                                                                                                   "area":  "main",
+                                                                                                   "title":  "Index status",
+                                                                                                   "dataSource":  {
+                                                                                                                      "kind":  "y",
+                                                                                                                      "path":  "data/media_indexer/status",
+                                                                                                                      "observeRoot":  true
+                                                                                                                  },
+                                                                                                   "inputs":  {
+                                                                                                                  "valuePath":  "value",
+                                                                                                                  "labelPath":  "label",
+                                                                                                                  "subtitlePath":  "subtitle",
+                                                                                                                  "descriptionPath":  "description",
+                                                                                                                  "noticePath":  "error",
+                                                                                                                  "emptyText":  "Ready"
+                                                                                                              }
+                                                                                               },
+                                                                                               {
+                                                                                                   "id":  "media-indexer-directory",
+                                                                                                   "type":  "input.text",
+                                                                                                   "area":  "main",
+                                                                                                   "title":  "Directory",
+                                                                                                   "dataSource":  {
+                                                                                                                      "kind":  "y",
+                                                                                                                      "path":  "data/media_indexer/form",
+                                                                                                                      "observeRoot":  true
+                                                                                                                  },
+                                                                                                   "inputs":  {
+                                                                                                                  "bindField":  "directory",
+                                                                                                                  "placeholder":  "D:\\diploma_final\\demo_media",
+                                                                                                                  "commitMode":  "manual",
+                                                                                                                  "saveLabel":  "Set directory"
+                                                                                                              },
+                                                                                                   "actions":  [
+                                                                                                                   {
+                                                                                                                       "on":  "change",
+                                                                                                                       "type":  "callHost",
+                                                                                                                       "target":  "media_indexer.action",
+                                                                                                                       "params":  {
+                                                                                                                                      "id":  "set_directory",
+                                                                                                                                      "directory":  "$event.value",
+                                                                                                                                      "_observe":  {
+                                                                                                                                                       "kind":  "y",
+                                                                                                                                                       "path":  "data/media_indexer/status",
+                                                                                                                                                       "scope":  "node",
+                                                                                                                                                       "timeout_ms":  9000
+                                                                                                                                                   }
+                                                                                                                                  }
+                                                                                                                   }
+                                                                                                               ]
+                                                                                               },
+                                                                                               {
+                                                                                                   "id":  "media-indexer-actions",
+                                                                                                   "type":  "input.commandBar",
+                                                                                                   "area":  "main",
+                                                                                                   "inputs":  {
+                                                                                                                  "variant":  "stack",
+                                                                                                                  "size":  "small",
+                                                                                                                  "buttons":  [
+                                                                                                                                  {
+                                                                                                                                      "id":  "scan_demo",
+                                                                                                                                      "label":  "Scan demo folder",
+                                                                                                                                      "icon":  "folder-open-outline"
+                                                                                                                                  },
+                                                                                                                                  {
+                                                                                                                                      "id":  "scan_selected",
+                                                                                                                                      "label":  "Scan selected",
+                                                                                                                                      "icon":  "sync-outline"
+                                                                                                                                  },
+                                                                                                                                  {
+                                                                                                                                      "id":  "search_test",
+                                                                                                                                      "label":  "Search test",
+                                                                                                                                      "icon":  "search-outline"
+                                                                                                                                  }
+                                                                                                                              ]
+                                                                                                              },
+                                                                                                   "actions":  [
+                                                                                                                   {
+                                                                                                                       "on":  "click:scan_demo",
+                                                                                                                       "type":  "callHost",
+                                                                                                                       "target":  "media_indexer.action",
+                                                                                                                       "params":  {
+                                                                                                                                      "id":  "scan",
+                                                                                                                                      "directory":  "D:\\diploma_final\\demo_media",
+                                                                                                                                      "_observe":  {
+                                                                                                                                                       "kind":  "y",
+                                                                                                                                                       "path":  "data/media_indexer/status",
+                                                                                                                                                       "scope":  "node",
+                                                                                                                                                       "timeout_ms":  600000
+                                                                                                                                                   }
+                                                                                                                                  }
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "on":  "click:scan_selected",
+                                                                                                                       "type":  "callHost",
+                                                                                                                       "target":  "media_indexer.action",
+                                                                                                                       "params":  {
+                                                                                                                                      "id":  "scan",
+                                                                                                                                      "_observe":  {
+                                                                                                                                                       "kind":  "y",
+                                                                                                                                                       "path":  "data/media_indexer/status",
+                                                                                                                                                       "scope":  "node",
+                                                                                                                                                       "timeout_ms":  600000
+                                                                                                                                                   }
+                                                                                                                                  }
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "on":  "click:search_test",
+                                                                                                                       "type":  "callHost",
+                                                                                                                       "target":  "media_indexer.action",
+                                                                                                                       "params":  {
+                                                                                                                                      "id":  "search",
+                                                                                                                                      "query":  "test",
+                                                                                                                                      "k":  5,
+                                                                                                                                      "_observe":  {
+                                                                                                                                                       "kind":  "y",
+                                                                                                                                                       "path":  "data/media_indexer/results",
+                                                                                                                                                       "scope":  "node",
+                                                                                                                                                       "timeout_ms":  60000
+                                                                                                                                                   }
+                                                                                                                                  }
+                                                                                                                   }
+                                                                                                               ]
+                                                                                               },
+                                                                                               {
+                                                                                                   "id":  "media-indexer-query",
+                                                                                                   "type":  "input.text",
+                                                                                                   "area":  "main",
+                                                                                                   "title":  "Search query",
+                                                                                                   "dataSource":  {
+                                                                                                                      "kind":  "y",
+                                                                                                                      "path":  "data/media_indexer/form",
+                                                                                                                      "observeRoot":  true
+                                                                                                                  },
+                                                                                                   "inputs":  {
+                                                                                                                  "bindField":  "query",
+                                                                                                                  "placeholder":  "Find scenes, people, audio, images...",
+                                                                                                                  "commitMode":  "manual",
+                                                                                                                  "saveLabel":  "Search"
+                                                                                                              },
+                                                                                                   "actions":  [
+                                                                                                                   {
+                                                                                                                       "on":  "change",
+                                                                                                                       "type":  "callHost",
+                                                                                                                       "target":  "media_indexer.action",
+                                                                                                                       "params":  {
+                                                                                                                                      "id":  "search",
+                                                                                                                                      "query":  "$event.value",
+                                                                                                                                      "k":  5,
+                                                                                                                                      "_observe":  {
+                                                                                                                                                       "kind":  "y",
+                                                                                                                                                       "path":  "data/media_indexer/results",
+                                                                                                                                                       "scope":  "node",
+                                                                                                                                                       "timeout_ms":  60000
+                                                                                                                                                   }
+                                                                                                                                  }
+                                                                                                                   }
+                                                                                                               ]
+                                                                                               },
+                                                                                               {
+                                                                                                   "id":  "media-indexer-results",
+                                                                                                   "type":  "ui.list",
+                                                                                                   "area":  "main",
+                                                                                                   "title":  "Results",
+                                                                                                   "dataSource":  {
+                                                                                                                      "kind":  "y",
+                                                                                                                      "path":  "data/media_indexer/results",
+                                                                                                                      "observeRoot":  true
+                                                                                                                  },
+                                                                                                   "inputs":  {
+                                                                                                                  "titleKey":  "path",
+                                                                                                                  "subtitleKey":  "score",
+                                                                                                                  "detailsPath":  "payload",
+                                                                                                                  "showDetails":  false,
+                                                                                                                  "itemAccordion":  false,
+                                                                                                                  "emptyText":  "No search results yet"
+                                                                                                              }
+                                                                                               }
+                                                                                           ]
+                                                                           }
+                                                            }
+                                },
+                     "widgets":  {
+
+                                 }
+                 },
+    "ydoc_defaults":  {
+                          "data/media_indexer":  {
+                                                     "status":  {
+                                                                    "value":  "ready",
+                                                                    "label":  "Media Indexer",
+                                                                    "subtitle":  "semantic local media search",
+                                                                    "description":  "Set a directory, build an index, then search by natural language.",
+                                                                    "error":  ""
+                                                                },
+                                                     "form":  {
+                                                                  "directory":  "D:\\diploma_final\\demo_media",
+                                                                  "query":  "test",
+                                                                  "k":  5
+                                                              },
+                                                     "results":  [
+
+                                                                 ]
+                                                 }
+                      },
+    "contributions":  [
+                          {
+                              "extensionPoint":  "desktop.apps",
+                              "type":  "app",
+                              "id":  "media_indexer_app",
+                              "autoInstall":  true
+                          }
+                      ]
+}

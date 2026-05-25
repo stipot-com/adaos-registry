@@ -4,6 +4,16 @@ description: Semantic indexing and multimodal search for local media files (vide
 runtime:
   python: '3.11'
 dependencies: []
+events:
+  subscribe:
+  - media_indexer.action
+  publish: []
+data_projections:
+- scope: subnet
+  slot: media_indexer.snapshot
+  targets:
+  - backend: yjs
+    path: data/media_indexer
 default_tool: search_media
 tools:
 - name: scan_and_index
