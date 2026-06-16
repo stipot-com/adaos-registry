@@ -1,0 +1,35 @@
+{
+  "id": "good_morning",
+  "version": "0.1.0",
+  "title": "Good Morning",
+  "description": "Morning greeting with weather_skill.get_weather routed via router (console/voice/telegram).",
+  "workflow": {
+    "initial_state": "collect",
+    "states": {
+      "collect": {
+        "label": "Collect morning weather",
+        "actions": [
+          {
+            "id": "collect",
+            "label": "Fetch weather and greet",
+            "trigger": "timer",
+            "tool": "weather_skill.get_weather",
+            "next_state": "done"
+          }
+        ]
+      },
+      "done": {
+        "label": "Good morning delivered",
+        "actions": [
+          {
+            "id": "collect",
+            "label": "Refresh morning brief",
+            "trigger": "manual",
+            "tool": "weather_skill.get_weather",
+            "next_state": "done"
+          }
+        ]
+      }
+    }
+  }
+}

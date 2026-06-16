@@ -1,0 +1,16 @@
+{
+  "object_type": "scenario",
+  "object_id": "good_morning",
+  "base_tz": "",
+  "tz_addenda": [],
+  "prepare": {
+    "general_prompt": "",
+    "iterations": []
+  },
+  "generate": {
+    "general_prompt": "",
+    "iterations": []
+  },
+  "llm_profile_id": null,
+  "target_node_id": null
+}
